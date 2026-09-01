@@ -15,6 +15,7 @@ const SS_RATE = 0.05; // ประกันสังคมฝั่งนาย�
 const SS_CAP_PER_STAFF = 750; // เพดานเงินสมทบต่อคนต่อเดือน
 const LAND_TAX_FLAT = 800; // ภาษีที่ดิน+ป้ายรายปี (ร้านเล็กในที่เช่า)
 const VAT_THRESHOLD = 1_800_000; // รายได้สะสมต่อปีที่ต้องจดทะเบียน VAT
+const ZONE_BASE_DEMAND = 90; // ลูกค้าศักยภาพทั้งโซนต่อ tick ที่ demandMultiplier=1 — ผู้เล่นกับคู่แข่งแย่งกันจากพูลนี้
 
 // อัตราภาษีเงินได้บุคคลธรรมดาแบบขั้นบันได (โครงสร้างจริงของไทย)
 const PIT_BRACKETS = [
@@ -109,7 +110,52 @@ function defaultState() {
       vatRegistered: false,
       lastMonthSummary: null, // { revenue, cost, wage, ss, netProfit }
       lastYearSummary: null, // { profit, tax, landTax }
+      salesEma: 0, // ยอดขาย/tick เฉลี่ยแบบเรียบ ใช้คำนวณส่วนแบ่งตลาด
     },
+    npcs: [
+      {
+        id: "chain",
+        name: "เชนสะดวกซื้อหมูปิ้ง",
+        style: "chain",
+        price: 14,
+        reputation: 70,
+        capacity: 18, // ใหญ่กว่าร้านผู้เล่นมาก มีหลายจุดขาย
+        costPerUnit: 6,
+        cash: 500000,
+        dailyOverhead: 900,
+        closed: false,
+        closedAt: null,
+        salesEma: 0,
+      },
+      {
+        id: "legacy",
+        name: "ป้าติ๋มหมูปิ้งเจ้าเก่า",
+        style: "legacy",
+        price: 18,
+        reputation: 80,
+        capacity: 7,
+        costPerUnit: 7,
+        cash: 60000,
+        dailyOverhead: 250,
+        closed: false,
+        closedAt: null,
+        salesEma: 0,
+      },
+      {
+        id: "startup",
+        name: "หมูปิ้งฟิวชั่นสตาร์ทอัพ",
+        style: "startup",
+        price: 11,
+        reputation: 35,
+        capacity: 10,
+        costPerUnit: 8,
+        cash: 150000,
+        dailyOverhead: 1200, // เผาเงินกับการตลาด
+        closed: false,
+        closedAt: null,
+        salesEma: 0,
+      },
+    ],
   };
 }
 
@@ -196,6 +242,8 @@ function simulateOneTick(atMs) {
     biz.customersToday = 0;
     biz.currentDay = dayKey;
 
+    runNpcDailyUpkeep(biz, atMs);
+
     const monthKey = dayKey.slice(0, 7);
     if (monthKey !== biz.currentMonth) {
       // ข้ามเดือน: หักประกันสังคมฝั่งนายจ้าง (5% ของค่าแรงเดือนนี้ เพดานคนละ 750) พับกำไรเข้ายอดปี
@@ -229,25 +277,66 @@ function simulateOneTick(atMs) {
   }
 
   const hourFraction = bangkokHourFraction(d);
-  const capacityPerTick = 6 * biz.staff; // ไม้/tick ต่อพนักงาน 1 คน
   const adBoost = atMs < biz.adBoostUntil ? 1.4 : 1;
-  const demandUnits =
-    capacityPerTick * demandMultiplier(hourFraction) * priceElasticity(biz.price) * (biz.reputation / 100) * adBoost;
-  const unitsSold = Math.max(0, Math.min(Math.round(demandUnits), biz.stock));
 
-  if (unitsSold > 0) {
-    const revenue = unitsSold * biz.price;
-    const cost = unitsSold * biz.costPerUnit;
-    biz.stock -= unitsSold;
-    state.cash += revenue - cost;
-    biz.dailyRevenue += revenue;
-    biz.dailyCost += cost;
-    biz.customersToday += unitsSold;
-    biz.salesHistory.push({ t: atMs, profit: revenue - cost });
-    if (biz.salesHistory.length > 30) biz.salesHistory.shift();
-  }
+  // ---- ตลาดรวมของโซน: ผู้เล่นกับคู่แข่งแย่งลูกค้ากลุ่มเดียวกันตามความน่าดึงดูด (ราคา×ชื่อเสียง×ขนาดร้าน) ----
+  const activeNpcs = state.npcs.filter((n) => !n.closed);
+  const entities = [
+    { ref: biz, isPlayer: true, price: biz.price, reputation: biz.reputation, capacity: 6 * biz.staff * adBoost, stock: biz.stock, costPerUnit: biz.costPerUnit },
+    ...activeNpcs.map((n) => ({ ref: n, isPlayer: false, price: n.price, reputation: n.reputation, capacity: n.capacity, stock: Infinity, costPerUnit: n.costPerUnit })),
+  ];
+  const weights = entities.map((e) => priceElasticity(e.price) * (e.reputation / 100) * e.capacity);
+  const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
+  const totalDemand = ZONE_BASE_DEMAND * demandMultiplier(hourFraction);
+
+  entities.forEach((e, i) => {
+    const share = totalDemand * (weights[i] / totalWeight);
+    const sold = Math.max(0, Math.min(Math.round(share), e.capacity, e.stock));
+    e.ref.salesEma = e.ref.salesEma * 0.98 + sold * 0.02; // ใช้แสดงส่วนแบ่งตลาดแบบเรียบ
+
+    if (sold <= 0) return;
+    const revenue = sold * e.price;
+    const cost = sold * e.costPerUnit;
+    if (e.isPlayer) {
+      biz.stock -= sold;
+      state.cash += revenue - cost;
+      biz.dailyRevenue += revenue;
+      biz.dailyCost += cost;
+      biz.customersToday += sold;
+      biz.salesHistory.push({ t: atMs, profit: revenue - cost });
+      if (biz.salesHistory.length > 30) biz.salesHistory.shift();
+    } else {
+      e.ref.cash += revenue - cost;
+    }
+  });
 
   biz.lastTickAt = atMs;
+}
+
+// พฤติกรรมคู่แข่งแต่ละบุคลิก ปรับวันละครั้งตอนข้ามวัน — เช่นเดียวกับผู้เล่น NPC หักค่าใช้จ่ายจริงและล้มละลายได้จริง (หมวด 08)
+function runNpcDailyUpkeep(biz, atMs) {
+  state.npcs.forEach((n) => {
+    if (n.closed) return;
+    n.cash -= n.dailyOverhead;
+
+    if (n.style === "chain") {
+      // เชนทุนใหญ่ตัดราคาตามผู้เล่นเสมอ กดราคาต่ำกว่า 1 บาท
+      n.price = clamp(biz.price - 1, 8, 16);
+    } else if (n.style === "legacy") {
+      // เจ้าถิ่นเก่าแก่ไม่ลดราคา ชื่อเสียงค่อยๆ ฟื้นกลับ
+      n.reputation = clamp(n.reputation + 0.1, 0, 85);
+    } else if (n.style === "startup") {
+      // สตาร์ทอัพเผาเงินแลกส่วนแบ่ง ลดราคาเรื่อยๆ ชื่อเสียงขึ้นเร็วจากการตลาด
+      n.price = clamp(n.price - 0.3, 8, 20);
+      n.reputation = clamp(n.reputation + 0.5, 0, 60);
+    }
+
+    if (n.cash <= 0 && !n.closed) {
+      n.closed = true;
+      n.closedAt = atMs;
+      state.news.unshift(`${n.name} ปิดกิจการแล้ว — เงินทุนหมด`);
+    }
+  });
 }
 
 // รัน tick ทั้งหมดตั้งแต่ lastTickAt จนถึง untilMs (ใช้ทั้ง live และคำนวณย้อนหลังตอนกลับมา)
@@ -360,22 +449,35 @@ const panels = {
     </div>
   `;
   },
-  market: () => `
+  market: () => {
+    const biz = state.business;
+    const rows = [
+      { name: `${biz.name} (คุณ)`, ema: biz.salesEma, price: biz.price, reputation: biz.reputation, you: true, closed: false },
+      ...state.npcs.map((n) => ({ name: n.name, ema: n.salesEma, price: n.price, reputation: Math.round(n.reputation), you: false, closed: n.closed })),
+    ];
+    const totalEma = rows.reduce((s, r) => s + (r.closed ? 0 : r.ema), 0) || 1;
+    const ranked = rows
+      .map((r) => ({ ...r, share: r.closed ? 0 : (r.ema / totalEma) * 100 }))
+      .sort((a, b) => b.share - a.share);
+    const rank = ranked.findIndex((r) => r.you) + 1;
+    const rowsHtml = ranked
+      .map(
+        (r, i) => `
+      <div class="kpi" style="grid-column:span 3;display:flex;justify-content:space-between;align-items:center;text-align:left;${r.you ? "border-color:var(--amber)" : ""}">
+        <span>${i + 1}. ${r.name}${r.closed ? " · ปิดกิจการแล้ว" : ""}</span>
+        <b style="font-size:14px;${r.you ? "color:var(--amber)" : ""}">${r.closed ? "—" : r.share.toFixed(1) + "%"}</b>
+      </div>`
+      )
+      .join("");
+    return `
     <div>
       <h2>ส่วนแบ่งตลาด · ศรีราชา</h2>
-      <p class="sub">อันดับ 2 จาก 14 ร้านในโซนเดียวกัน</p>
+      <p class="sub">อันดับ ${rank} จาก ${ranked.length} ร้านในโซนเดียวกัน (คำนวณจากยอดขายเฉลี่ยล่าสุด)</p>
     </div>
-    <p class="placeholder">
-      1. เชนทุนใหญ่ — 31%<br>
-      2. <strong>ร้านคุณ — 22%</strong><br>
-      3. เจ้าถิ่นเก่าแก่ — 18%<br>
-      4. สตาร์ทอัพเผาเงิน — 9%
-    </p>
-    <div class="action-grid">
-      <button class="action-btn">ดูโปรไฟล์คู่แข่ง</button>
-      <button class="action-btn">วิเคราะห์ราคา</button>
-    </div>
-  `,
+    <div class="kpi-row" style="grid-template-columns:1fr;gap:8px">${rowsHtml}</div>
+    <p class="placeholder">ราคาไม้ละ: คุณ ${fmtMoney(biz.price)} · ${state.npcs.filter((n) => !n.closed).map((n) => `${n.name} ${fmtMoney(n.price)}`).join(" · ")}</p>
+  `;
+  },
   people: () => `
     <div>
       <h2>ผู้คน</h2>
