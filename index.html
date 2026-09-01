@@ -76,10 +76,18 @@
       <!-- viewport -->
       <section class="viewport" id="viewport" aria-label="แผนที่โลกจำลอง">
         <div class="viewport-tag">
-          <strong id="vpArea">อ.ศรีราชา · โซนย่านการค้า</strong>
-          <span id="vpDayPhase">กลางวัน</span>
+          <button id="mapBack" class="map-back" hidden type="button">◀ ย้อนกลับ</button>
+          <div>
+            <strong id="vpArea">ประเทศไทย</strong>
+            <span id="vpDayPhase">กลางวัน</span>
+          </div>
         </div>
-        <svg class="diorama" viewBox="0 0 900 400" role="img" aria-label="แผนที่ไอโซเมตริกจำลองอำเภอศรีราชา">
+
+        <svg id="mapCountry" class="geo-map" viewBox="0 0 900 520" role="img" aria-label="แผนที่ประเทศไทยระดับจังหวัด จากข้อมูลภูมิศาสตร์จริง"></svg>
+
+        <svg id="mapProvince" class="geo-map" viewBox="0 0 900 520" role="img" aria-label="แผนที่จังหวัดชลบุรีระดับอำเภอ จากข้อมูลภูมิศาสตร์จริง" hidden></svg>
+
+        <svg id="mapDistrict" class="diorama" viewBox="0 0 900 400" role="img" aria-label="แผนที่ไอโซเมตริกจำลองอำเภอศรีราชา" hidden>
           <polygon points="460,90 760,240 460,390 160,240" class="tile-ground"/>
           <g class="tile-grid">
             <line x1="310" y1="165" x2="610" y2="315"/>

@@ -127,11 +127,32 @@ button:focus-visible,.rail-btn:focus-visible{outline:2px solid var(--amber);outl
   position:absolute;top:12px;left:12px;z-index:2;
   background:var(--surface);border:1px solid var(--line-soft);border-radius:4px;
   padding:6px 12px;box-shadow:var(--shadow);
-  display:flex;flex-direction:column;line-height:1.3;
+  display:flex;align-items:center;gap:10px;line-height:1.3;
 }
-.viewport-tag strong{font-family:"Chakra Petch",sans-serif;font-size:13px}
+.viewport-tag strong{font-family:"Chakra Petch",sans-serif;font-size:13px;display:block}
 .viewport-tag span{font-size:11px;color:var(--ink-3);font-family:"IBM Plex Mono",monospace}
-.diorama{width:min(900px,92%);height:auto;transition:filter 1.2s ease}
+.map-back{
+  background:var(--surface-2);border:1px solid var(--line);border-radius:3px;
+  padding:5px 9px;font-size:11.5px;color:var(--ink-2);font-family:"Chakra Petch",sans-serif;
+}
+.map-back:hover{background:var(--line-soft)}
+
+.geo-map,.diorama{width:min(900px,92%);height:auto;transition:filter 1.2s ease}
+.geo-map[hidden],.diorama[hidden],.map-back[hidden]{display:none}
+.geo-map{cursor:default}
+.geo-shape{
+  fill:var(--surface-2);stroke:var(--surface);stroke-width:1.2;
+  transition:fill .15s ease;
+}
+.geo-shape:hover{fill:var(--line-soft)}
+.geo-shape.is-playable{fill:var(--amber-soft);stroke:var(--amber);cursor:pointer}
+.geo-shape.is-playable:hover{fill:var(--amber);fill-opacity:.35}
+.geo-shape.is-locked{cursor:not-allowed;opacity:.7}
+.geo-label{
+  font-family:"IBM Plex Sans Thai",sans-serif;font-size:10px;fill:var(--ink-2);
+  text-anchor:middle;pointer-events:none;
+}
+.geo-label.is-playable{fill:var(--amber);font-weight:600}
 .tile-ground{fill:var(--surface-2);stroke:var(--line)}
 .tile-grid line{stroke:var(--line);opacity:.5}
 .tile-road{fill:var(--surface);stroke:var(--line)}

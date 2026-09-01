@@ -1,4 +1,6 @@
-// ===== เฟส 1: Game Shell — นาฬิกาไทยจริง (Asia/Bangkok) + สลับแผงขวาตามหมวดที่เลือก =====
+// ===== เฟส 1-2: Game Shell + แผนที่จริง =====
+// เฟส 1: นาฬิกาไทยจริง (Asia/Bangkok) + สลับแผงขวาตามหมวดที่เลือก
+// เฟส 2: แผนที่ประเทศ/จังหวัดจากขอบเขตภูมิศาสตร์จริง (GeoJSON) — ระดับอำเภอยังเป็นไอโซเมตริกจำลอง (หมวด 05)
 // state ตอนนี้เป็น mock ล้วน ยังไม่ต่อ backend — โครงสร้างอิงคอนเซปต์ UX/UI หมวด 02–14
 
 const $ = (id) => document.getElementById(id);
@@ -45,9 +47,8 @@ function tickClock() {
 
   const day = isDaytime(now);
   $("vpDayPhase").textContent = day ? "กลางวัน" : "กลางคืน";
-  document.querySelector(".diorama").style.filter = day
-    ? "brightness(1) saturate(1)"
-    : "brightness(0.62) saturate(0.85) hue-rotate(-6deg)";
+  const dayFilter = day ? "brightness(1) saturate(1)" : "brightness(0.62) saturate(0.85) hue-rotate(-6deg)";
+  document.querySelectorAll(".geo-map, .diorama").forEach((el) => { el.style.filter = dayFilter; });
 
   // tick จำลองทุก 15 นาทีจริง — คำนวณเวลานับถอยหลังไปยัง tick ถัดไป
   const min = now.getMinutes();
@@ -193,6 +194,155 @@ document.querySelectorAll(".rail-btn").forEach((btn) => {
   });
 });
 
+// ---------- แผนที่จริง: ประเทศ → จังหวัด (GeoJSON) → อำเภอ (ไอโซเมตริก) ----------
+// ระดับ 1-2 ใช้ขอบเขตจริงจาก OpenGISData-Thailand (chingchai/OpenGISData-Thailand)
+// เดโมนี้เปิดใช้งานเต็มเฉพาะจังหวัดชลบุรี → อำเภอศรีราชา ตามคอนเซปต์หมวด 05
+
+const PLAYABLE_PROVINCE = "20"; // pro_code ของชลบุรี
+const PLAYABLE_DISTRICT = "2007"; // amp_code ของศรีราชา
+const map = { level: "country", provinceData: null };
+
+function flattenCoords(coords, out) {
+  if (typeof coords[0] === "number") out.push(coords);
+  else coords.forEach((c) => flattenCoords(c, out));
+  return out;
+}
+
+function makeProjection(featureCollection, viewW, viewH, pad) {
+  const pts = [];
+  featureCollection.features.forEach((f) => flattenCoords(f.geometry.coordinates, pts));
+  const lons = pts.map((p) => p[0]);
+  const lats = pts.map((p) => p[1]);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+  const spanX = (maxLon - minLon) * cosLat;
+  const spanY = maxLat - minLat;
+  const scale = Math.min((viewW - pad * 2) / spanX, (viewH - pad * 2) / spanY);
+  const offX = pad + ((viewW - pad * 2) - spanX * scale) / 2;
+  const offY = pad + ((viewH - pad * 2) - spanY * scale) / 2;
+  return ([lon, lat]) => [
+    offX + (lon - minLon) * cosLat * scale,
+    offY + (maxLat - lat) * scale,
+  ];
+}
+
+function ringPath(ring, project) {
+  return ring.map((pt, i) => `${i === 0 ? "M" : "L"}${project(pt).map((n) => n.toFixed(1)).join(",")}`).join(" ") + "Z";
+}
+
+function geometryPath(geom, project) {
+  if (geom.type === "Polygon") return geom.coordinates.map((r) => ringPath(r, project)).join(" ");
+  if (geom.type === "MultiPolygon") return geom.coordinates.map((poly) => poly.map((r) => ringPath(r, project)).join(" ")).join(" ");
+  return "";
+}
+
+function ringCentroid(ring, project) {
+  const pts = ring.map(project);
+  const x = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const y = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  return [x, y];
+}
+
+async function loadGeoJSON(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`โหลดข้อมูลแผนที่ไม่สำเร็จ: ${path}`);
+  return res.json();
+}
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+  return el;
+}
+
+async function renderCountryMap() {
+  const svg = $("mapCountry");
+  svg.innerHTML = "";
+  let data;
+  try {
+    data = await loadGeoJSON("geo/provinces.geojson");
+  } catch (err) {
+    svg.appendChild(svgEl("text", { x: 20, y: 30, class: "geo-label" })).textContent = "โหลดแผนที่ไม่สำเร็จ — ต้องรันผ่านเว็บเซิร์ฟเวอร์ (ไม่ใช่เปิดไฟล์ตรงๆ)";
+    return;
+  }
+  const project = makeProjection(data, 900, 520, 24);
+  data.features.forEach((f) => {
+    const isPlayable = f.properties.pro_code === PLAYABLE_PROVINCE;
+    const path = svgEl("path", {
+      d: geometryPath(f.geometry, project),
+      class: `geo-shape ${isPlayable ? "is-playable" : "is-locked"}`,
+    });
+    const title = svgEl("title", {});
+    title.textContent = `${f.properties.pro_th} (${f.properties.pro_en})${isPlayable ? " — เปิดเล่นได้" : " — ยังไม่มีข้อมูล"}`;
+    path.appendChild(title);
+    path.addEventListener("click", () => {
+      if (isPlayable) zoomToProvince();
+      else alert(`${f.properties.pro_th}\n\nเดโมนี้เปิดใช้งานเต็มเฉพาะจังหวัดชลบุรี จังหวัดอื่นจะทยอยเพิ่มข้อมูลตามเฟส 6 ของคอนเซปต์`);
+    });
+    svg.appendChild(path);
+  });
+}
+
+async function renderProvinceMap() {
+  const svg = $("mapProvince");
+  svg.innerHTML = "";
+  if (!map.provinceData) map.provinceData = await loadGeoJSON("geo/chonburi-districts.geojson");
+  const data = map.provinceData;
+  const project = makeProjection(data, 900, 520, 24);
+  data.features.forEach((f) => {
+    const isPlayable = f.properties.amp_code === PLAYABLE_DISTRICT;
+    const path = svgEl("path", {
+      d: geometryPath(f.geometry, project),
+      class: `geo-shape ${isPlayable ? "is-playable" : "is-locked"}`,
+    });
+    const title = svgEl("title", {});
+    title.textContent = `${f.properties.amp_th} (${f.properties.amp_en})${isPlayable ? " — เปิดเล่นได้" : " — ยังไม่มีข้อมูล"}`;
+    path.appendChild(title);
+    path.addEventListener("click", () => {
+      if (isPlayable) zoomToDistrict();
+      else alert(`อ.${f.properties.amp_th}\n\nเดโมนี้เปิดใช้งานเต็มเฉพาะอำเภอศรีราชา อำเภออื่นในชลบุรีจะทยอยเพิ่มทีหลัง`);
+    });
+    svg.appendChild(path);
+
+    const ring = f.geometry.type === "Polygon" ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
+    const [cx, cy] = ringCentroid(ring, project);
+    const label = svgEl("text", { x: cx.toFixed(1), y: cy.toFixed(1), class: `geo-label ${isPlayable ? "is-playable" : ""}` });
+    label.textContent = f.properties.amp_th;
+    svg.appendChild(label);
+  });
+}
+
+function showLayer(el, show) {
+  // <svg> ไม่รองรับ IDL property `.hidden` แบบ HTMLElement — ต้องสั่ง attribute ตรงๆ ให้ตรงกับ CSS [hidden]
+  if (show) el.removeAttribute("hidden");
+  else el.setAttribute("hidden", "");
+}
+
+function setMapLevel(level) {
+  map.level = level;
+  showLayer($("mapCountry"), level === "country");
+  showLayer($("mapProvince"), level === "province");
+  showLayer($("mapDistrict"), level === "district");
+  $("mapBack").hidden = level === "country";
+  if (level === "country") $("vpArea").textContent = "ประเทศไทย";
+  if (level === "province") $("vpArea").textContent = "จ.ชลบุรี";
+  if (level === "district") $("vpArea").textContent = "อ.ศรีราชา · โซนย่านการค้า";
+}
+
+async function zoomToProvince() {
+  await renderProvinceMap();
+  setMapLevel("province");
+}
+function zoomToDistrict() {
+  setMapLevel("district");
+}
+function mapBack() {
+  if (map.level === "district") setMapLevel("province");
+  else if (map.level === "province") setMapLevel("country");
+}
+$("mapBack").addEventListener("click", mapBack);
+
 // ---------- ticker ข่าว ----------
 let newsIndex = 0;
 function renderNews() {
@@ -207,6 +357,8 @@ renderNews();
 tickClock();
 setInterval(tickClock, 1000);
 setInterval(renderNews, 6000);
+setMapLevel("country");
+renderCountryMap();
 
 $("reportBtn").addEventListener("click", () => {
   alert(
