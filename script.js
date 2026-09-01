@@ -74,6 +74,8 @@ function defaultState() {
     debt: 0,
     energy: 68,
     reputation: 34,
+    lastRestDay: null,
+    lastNetworkDay: null,
     activePanel: "map",
     news: [
       "ราคาหมูขึ้น 6% ผลจากต้นทุนอาหารสัตว์",
@@ -219,6 +221,11 @@ function demandMultiplier(hourFraction) {
   return 0.9; // ช่วงเบา (สาย/บ่าย)
 }
 
+// พลังงานต่ำกว่า 30 = ประสิทธิภาพลด (หมวด 09) — ต่ำสุดเหลือ 55%
+function energyEfficiency() {
+  return state.energy >= 30 ? 1 : clamp(0.55 + (state.energy / 30) * 0.45, 0.55, 1);
+}
+
 function priceElasticity(price) {
   // ราคายิ่งสูง ดีมานด์ยิ่งลด เป็นเส้นตรงหยาบๆ ครอบ 8–30 บาท
   return clamp(1.7 - price / 22, 0.25, 1.7);
@@ -243,6 +250,13 @@ function simulateOneTick(atMs) {
     biz.currentDay = dayKey;
 
     runNpcDailyUpkeep(biz, atMs);
+
+    // ชีวิตส่วนตัว: บริหารร้านเองกินพลังงานทุกวัน จ้างคนช่วยได้เยอะยิ่งเหนื่อยน้อยลง (หมวด 09)
+    state.energy = clamp(state.energy - Math.max(4, 14 - biz.staff * 3), 0, 100);
+    // ชื่อเสียงผู้เล่นโตช้าๆ ตามชื่อเสียงร้าน แต่ตกถ้าปล่อยให้ของหมดทั้งวัน
+    state.reputation = clamp(state.reputation + (biz.stock > 0 ? 0.4 : -1.5), 0, 100);
+    // ใบอนุญาตหมดอายุ = ชื่อเสียงร้านตกจนกว่าจะต่ออายุ
+    if (atMs > biz.permitExpiresAt) biz.reputation = clamp(biz.reputation - 1.5, 10, 100);
 
     const monthKey = dayKey.slice(0, 7);
     if (monthKey !== biz.currentMonth) {
@@ -282,7 +296,7 @@ function simulateOneTick(atMs) {
   // ---- ตลาดรวมของโซน: ผู้เล่นกับคู่แข่งแย่งลูกค้ากลุ่มเดียวกันตามความน่าดึงดูด (ราคา×ชื่อเสียง×ขนาดร้าน) ----
   const activeNpcs = state.npcs.filter((n) => !n.closed);
   const entities = [
-    { ref: biz, isPlayer: true, price: biz.price, reputation: biz.reputation, capacity: 6 * biz.staff * adBoost, stock: biz.stock, costPerUnit: biz.costPerUnit },
+    { ref: biz, isPlayer: true, price: biz.price, reputation: biz.reputation, capacity: 6 * biz.staff * adBoost * energyEfficiency(), stock: biz.stock, costPerUnit: biz.costPerUnit },
     ...activeNpcs.map((n) => ({ ref: n, isPlayer: false, price: n.price, reputation: n.reputation, capacity: n.capacity, stock: Infinity, costPerUnit: n.costPerUnit })),
   ];
   const weights = entities.map((e) => priceElasticity(e.price) * (e.reputation / 100) * e.capacity);
@@ -478,44 +492,77 @@ const panels = {
     <p class="placeholder">ราคาไม้ละ: คุณ ${fmtMoney(biz.price)} · ${state.npcs.filter((n) => !n.closed).map((n) => `${n.name} ${fmtMoney(n.price)}`).join(" · ")}</p>
   `;
   },
-  people: () => `
+  people: () => {
+    const biz = state.business;
+    const hireCost = 2000 + biz.staff * 1500;
+    const dailyWage = biz.staff * biz.staffWage;
+    const netDrain = biz.staff > 0 ? Math.max(4, 14 - biz.staff * 3) : 14;
+    const canFire = biz.staff > 0;
+    return `
     <div>
       <h2>ผู้คน</h2>
-      <p class="sub">พนักงาน 3 · ความสัมพันธ์ 5 ราย</p>
+      <p class="sub">พนักงาน ${biz.staff} คน · ค่าแรงรวม ${fmtMoney(dailyWage)}/วัน</p>
     </div>
-    <p class="placeholder">
-      น้องมิ้ว — พนักงานประจำ · ความพอใจ 82%<br>
-      พี่กิตติ — นักลงทุนท้องถิ่น · สนใจธุรกิจอาหารเช้า<br>
-      คุณนิดา — ซัพพลายเออร์วัตถุดิบ · ความน่าเชื่อถือสูง
-    </p>
+    <div class="kpi-row">
+      <div class="kpi"><span>กำลังผลิต</span><b>${fmtNum(6 * biz.staff)} ไม้/tick</b></div>
+      <div class="kpi"><span>ค่าแรง/คน</span><b style="font-size:13px">${fmtMoney(biz.staffWage)}</b></div>
+      <div class="kpi"><span>พลังงานที่เสีย</span><b>−${netDrain}/วัน</b></div>
+    </div>
+    <p class="placeholder">ยิ่งมีพนักงานมาก ยิ่งแบ่งเบาแรงคุณ (พลังงานลดน้อยลง) และเพิ่มกำลังขายต่อ tick แต่ค่าแรงกับประกันสังคมก็สูงตาม</p>
     <div class="action-grid">
-      <button class="action-btn primary">จ้างงานเพิ่ม</button>
-      <button class="action-btn">สร้างเครือข่าย</button>
+      <button class="action-btn primary" data-biz="hire" ${state.cash < hireCost ? "disabled" : ""}>จ้างเพิ่ม +1 · ${fmtMoney(hireCost)}</button>
+      <button class="action-btn" data-biz="fire" ${canFire ? "" : "disabled"}>ให้ออก 1 คน</button>
     </div>
-  `,
-  gov: () => `
+  `;
+  },
+  gov: () => {
+    const biz = state.business;
+    const daysLeft = Math.ceil((biz.permitExpiresAt - Date.now()) / 86400000);
+    const expired = daysLeft <= 0;
+    const renewCost = 1500;
+    const accruedTax = Math.max(0, personalIncomeTax(biz.annualProfit) - biz.taxPaidThisYear);
+    return `
     <div>
       <h2>ราชการ</h2>
-      <p class="sub">ใบอนุญาต 2 รายการ · กำหนดยื่นภาษี 1 รายการ</p>
+      <p class="sub">ใบอนุญาต 1 รายการ · ภาษีค้างประเมิน ${fmtMoney(accruedTax)}</p>
     </div>
-    <div class="warn-box">ใบอนุญาตจำหน่ายอาหารหมดอายุใน 12 วัน</div>
-    <div class="warn-box">ภ.ง.ด.1 ครบกำหนด 7 เม.ย.</div>
+    <div class="warn-box">${expired
+      ? `ใบอนุญาตจำหน่ายอาหาร <strong>หมดอายุแล้ว</strong> — ชื่อเสียงร้านลดลงทุกวันจนกว่าจะต่ออายุ`
+      : `ใบอนุญาตจำหน่ายอาหาร เหลือ ${daysLeft} วัน`}</div>
+    <div class="warn-box">${biz.vatRegistered
+      ? "จดทะเบียน VAT แล้ว · ต้องยื่น ภ.พ.30 ทุกเดือน"
+      : `ยังไม่ถึงเกณฑ์ VAT (รายได้ปีนี้ ${fmtMoney(biz.annualRevenue + biz.monthRevenue)} / ${fmtMoney(VAT_THRESHOLD)})`}</div>
+    ${biz.staff > 0 ? `<div class="warn-box">ขึ้นทะเบียนประกันสังคมพนักงาน ${biz.staff} คน · นายจ้างสมทบ 5%</div>` : ""}
     <div class="action-grid">
-      <button class="action-btn primary">ต่อใบอนุญาต</button>
-      <button class="action-btn">ยื่นแบบภาษี</button>
+      <button class="action-btn primary" data-biz="renewPermit" ${state.cash < renewCost ? "disabled" : ""}>ต่อใบอนุญาต 1 ปี · ${fmtMoney(renewCost)}</button>
+      <button class="action-btn" data-biz="prepayTax" ${accruedTax <= 0 || state.cash < accruedTax ? "disabled" : ""}>ยื่นภาษีล่วงหน้า</button>
     </div>
-  `,
-  life: () => `
+  `;
+  },
+  life: () => {
+    const today = bangkokDateKey(new Date());
+    const restedToday = state.lastRestDay === today;
+    const networkedToday = state.lastNetworkDay === today;
+    const lowEnergy = state.energy < 30;
+    const eff = Math.round(energyEfficiency() * 100);
+    return `
     <div>
       <h2>ชีวิตส่วนตัว</h2>
-      <p class="sub">พลังงาน ${state.energy}/100 · ชื่อเสียง ${state.reputation}/100</p>
+      <p class="sub">พลังงาน ${Math.round(state.energy)}/100 · ชื่อเสียง ${Math.round(state.reputation)}/100</p>
     </div>
-    <p class="placeholder">จัดสรรเวลา 16 ชั่วโมงของวันนี้ — ทำงาน / ดูแลธุรกิจ / เรียน / พักผ่อน / ครอบครัว</p>
+    <div class="kpi-row">
+      <div class="kpi"><span>ประสิทธิภาพ</span><b style="${lowEnergy ? "color:var(--red)" : ""}">${eff}%</b></div>
+      <div class="kpi"><span>พักผ่อนวันนี้</span><b style="font-size:13px">${restedToday ? "แล้ว" : "ยัง"}</b></div>
+      <div class="kpi"><span>เข้าสังคมวันนี้</span><b style="font-size:13px">${networkedToday ? "แล้ว" : "ยัง"}</b></div>
+    </div>
+    ${lowEnergy ? `<div class="warn-box">พลังงานต่ำกว่า 30 — กำลังขายเหลือ ${eff}% ควรพักผ่อน</div>` : ""}
+    <p class="placeholder">พลังงานลดทุกวันจากการบริหารร้านเอง จ้างพนักงานเพิ่มช่วยลดภาระได้ · ชื่อเสียงเพิ่มเมื่อของไม่ขาด และตกเมื่อปล่อยให้ของหมด</p>
     <div class="action-grid">
-      <button class="action-btn primary">จัดตารางวันนี้</button>
-      <button class="action-btn">พักผ่อน</button>
+      <button class="action-btn primary" data-biz="rest" ${restedToday ? "disabled" : ""}>${restedToday ? "พักผ่อนแล้ววันนี้" : "พักผ่อน +25 พลังงาน"}</button>
+      <button class="action-btn" data-biz="network" ${networkedToday || state.cash < 500 ? "disabled" : ""}>${networkedToday ? "เข้าสังคมแล้ววันนี้" : "เลี้ยงรับรอง ฿500 · +3 ชื่อเสียง"}</button>
     </div>
-  `,
+  `;
+  },
 };
 
 function renderPanel() {
@@ -575,6 +622,39 @@ const bizActions = {
     if (pay <= 0) return;
     state.cash -= pay;
     biz.taxPaidThisYear += pay;
+    afterBizAction();
+  },
+  fire() {
+    const biz = state.business;
+    if (biz.staff <= 0) return;
+    biz.staff -= 1;
+    state.cash -= biz.staffWage * 3; // ชดเชยเลิกจ้าง 3 วัน
+    afterBizAction();
+  },
+  renewPermit() {
+    const biz = state.business;
+    const cost = 1500;
+    if (state.cash < cost) return;
+    state.cash -= cost;
+    // ต่อจากวันหมดอายุเดิมถ้ายังไม่หมด ไม่งั้นนับจากวันนี้
+    const base = Math.max(Date.now(), biz.permitExpiresAt);
+    biz.permitExpiresAt = base + 365 * 24 * 60 * 60 * 1000;
+    afterBizAction();
+  },
+  rest() {
+    const today = bangkokDateKey(new Date());
+    if (state.lastRestDay === today) return;
+    state.energy = clamp(state.energy + 25, 0, 100);
+    state.lastRestDay = today;
+    afterBizAction();
+  },
+  network() {
+    const today = bangkokDateKey(new Date());
+    if (state.lastNetworkDay === today || state.cash < 500) return;
+    state.cash -= 500;
+    state.reputation = clamp(state.reputation + 3, 0, 100);
+    state.business.reputation = clamp(state.business.reputation + 1, 0, 100);
+    state.lastNetworkDay = today;
     afterBizAction();
   },
 };
