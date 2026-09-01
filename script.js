@@ -11,6 +11,33 @@ const fmtNum = (n) => new Intl.NumberFormat("th-TH").format(Math.round(n));
 const SAVE_KEY = "thailand-sim-save-v1";
 const TICK_MS = 15 * 60 * 1000;
 const MAX_CATCHUP_MS = 72 * 60 * 60 * 1000; // เพดานคำนวณย้อนหลัง 72 ชม. (หมวด 02)
+const SS_RATE = 0.05; // ประกันสังคมฝั่งนายจ้าง 5%
+const SS_CAP_PER_STAFF = 750; // เพดานเงินสมทบต่อคนต่อเดือน
+const LAND_TAX_FLAT = 800; // ภาษีที่ดิน+ป้ายรายปี (ร้านเล็กในที่เช่า)
+const VAT_THRESHOLD = 1_800_000; // รายได้สะสมต่อปีที่ต้องจดทะเบียน VAT
+
+// อัตราภาษีเงินได้บุคคลธรรมดาแบบขั้นบันได (โครงสร้างจริงของไทย)
+const PIT_BRACKETS = [
+  [150000, 0],
+  [300000, 0.05],
+  [500000, 0.1],
+  [750000, 0.15],
+  [1000000, 0.2],
+  [2000000, 0.25],
+  [5000000, 0.3],
+  [Infinity, 0.35],
+];
+function personalIncomeTax(annualProfit) {
+  if (annualProfit <= 0) return 0;
+  let tax = 0;
+  let prevCap = 0;
+  for (const [cap, rate] of PIT_BRACKETS) {
+    if (annualProfit <= prevCap) break;
+    tax += (Math.min(annualProfit, cap) - prevCap) * rate;
+    prevCap = cap;
+  }
+  return tax;
+}
 
 // ---------- นาฬิกาไทยจริง (ต้องมาก่อน state เพราะ defaultState() เรียก bangkokDateKey) ----------
 const dateFmt = new Intl.DateTimeFormat("th-TH", {
@@ -70,6 +97,18 @@ function defaultState() {
       customersToday: 0,
       salesHistory: [], // { t, profit } ล่าสุด 30 tick
       lastTickAt: now,
+      // ---- เฟส 4: การเงินและภาษี ----
+      currentMonth: bangkokDateKey(new Date(now)).slice(0, 7),
+      currentYear: bangkokDateKey(new Date(now)).slice(0, 4),
+      monthRevenue: 0,
+      monthCost: 0,
+      monthWage: 0,
+      annualRevenue: 0,
+      annualProfit: 0,
+      taxPaidThisYear: 0,
+      vatRegistered: false,
+      lastMonthSummary: null, // { revenue, cost, wage, ss, netProfit }
+      lastYearSummary: null, // { profit, tax, landTax }
     },
   };
 }
@@ -146,13 +185,47 @@ function simulateOneTick(atMs) {
   const dayKey = bangkokDateKey(d);
 
   if (dayKey !== biz.currentDay) {
-    // ข้ามวัน: หักค่าแรงพนักงานของวันก่อน แล้วรีเซ็ตยอดวันใหม่
+    // ข้ามวัน: หักค่าแรงพนักงานของวันก่อน พับยอดวันเข้าเดือน แล้วรีเซ็ตยอดวันใหม่
     const wageCost = biz.staff * biz.staffWage;
     state.cash -= wageCost;
+    biz.monthRevenue += biz.dailyRevenue;
+    biz.monthCost += biz.dailyCost;
+    biz.monthWage += wageCost;
     biz.dailyRevenue = 0;
     biz.dailyCost = 0;
     biz.customersToday = 0;
     biz.currentDay = dayKey;
+
+    const monthKey = dayKey.slice(0, 7);
+    if (monthKey !== biz.currentMonth) {
+      // ข้ามเดือน: หักประกันสังคมฝั่งนายจ้าง (5% ของค่าแรงเดือนนี้ เพดานคนละ 750) พับกำไรเข้ายอดปี
+      const ssCost = biz.staff > 0 ? Math.min(biz.monthWage * SS_RATE, biz.staff * SS_CAP_PER_STAFF) : 0;
+      state.cash -= ssCost;
+      const netProfit = biz.monthRevenue - biz.monthCost - biz.monthWage - ssCost;
+      biz.lastMonthSummary = { revenue: biz.monthRevenue, cost: biz.monthCost, wage: biz.monthWage, ss: ssCost, netProfit };
+      biz.annualProfit += netProfit;
+      biz.annualRevenue += biz.monthRevenue;
+      if (!biz.vatRegistered && biz.annualRevenue > VAT_THRESHOLD) {
+        biz.vatRegistered = true;
+        state.news.unshift(`${biz.name} มีรายได้เกิน ฿1.8 ล้าน/ปี — ต้องจดทะเบียน VAT แล้ว`);
+      }
+      biz.monthRevenue = 0;
+      biz.monthCost = 0;
+      biz.monthWage = 0;
+      biz.currentMonth = monthKey;
+
+      const yearKey = dayKey.slice(0, 4);
+      if (yearKey !== biz.currentYear) {
+        // ข้ามปี: ยื่นภาษีเงินได้บุคคลธรรมดาจริงจากกำไรสะสมทั้งปี หักส่วนที่จ่ายล่วงหน้าไปแล้ว + ภาษีที่ดิน/ป้าย
+        const taxOwed = Math.max(0, personalIncomeTax(biz.annualProfit) - biz.taxPaidThisYear);
+        state.cash -= taxOwed + LAND_TAX_FLAT;
+        biz.lastYearSummary = { profit: biz.annualProfit, tax: taxOwed, landTax: LAND_TAX_FLAT };
+        biz.annualProfit = 0;
+        biz.annualRevenue = 0;
+        biz.taxPaidThisYear = 0;
+        biz.currentYear = yearKey;
+      }
+    }
   }
 
   const hourFraction = bangkokHourFraction(d);
@@ -259,22 +332,34 @@ const panels = {
     <p class="placeholder">รายรับวันนี้ ${fmtMoney(biz.dailyRevenue)} · ต้นทุน ${fmtMoney(biz.dailyCost)} · ค่าแรงพนักงาน ${fmtMoney(biz.staff * biz.staffWage)}/วัน หักตอนขึ้นวันใหม่</p>
   `;
   },
-  finance: () => `
+  finance: () => {
+    const biz = state.business;
+    const runningProfit = biz.monthRevenue - biz.monthCost - biz.monthWage;
+    const margin = biz.monthRevenue > 0 ? ((runningProfit / biz.monthRevenue) * 100).toFixed(1) : "0.0";
+    const lm = biz.lastMonthSummary;
+    const accruedTax = Math.max(0, personalIncomeTax(biz.annualProfit) - biz.taxPaidThisYear);
+    const ssEstimate = biz.staff > 0 ? Math.min(biz.monthWage * SS_RATE, biz.staff * SS_CAP_PER_STAFF) : 0;
+    return `
     <div>
-      <h2>การเงิน · มีนาคม 2569</h2>
-      <p class="sub">กำไรสุทธิเดือนนี้ ฿538,800 · อัตรากำไร 21.7%</p>
+      <h2>การเงิน · เดือนนี้ (${biz.currentMonth})</h2>
+      <p class="sub">กำไรสะสมเดือนนี้ ${fmtMoney(runningProfit)} · อัตรากำไร ${margin}%</p>
     </div>
     <div class="kpi-row">
-      <div class="kpi"><span>รายได้รวม</span><b style="font-size:13px">฿2.48M</b></div>
-      <div class="kpi"><span>ภาษี+ค่าธรรมเนียม</span><b style="font-size:13px">฿221,800</b></div>
-      <div class="kpi"><span>เงินสดต่ำสุด</span><b style="font-size:13px">฿184,000</b></div>
+      <div class="kpi"><span>รายได้เดือนนี้</span><b style="font-size:13px">${fmtMoney(biz.monthRevenue)}</b></div>
+      <div class="kpi"><span>ต้นทุน+ค่าแรง</span><b style="font-size:13px">${fmtMoney(biz.monthCost + biz.monthWage)}</b></div>
+      <div class="kpi"><span>เงินสด</span><b style="font-size:13px">${fmtMoney(state.cash)}</b></div>
     </div>
-    <div class="warn-box">ภ.พ.30 · VAT 7% ฿173,600 ครบกำหนด 15 เม.ย.</div>
+    ${lm ? `<p class="placeholder">เดือนที่แล้ว: รายได้ ${fmtMoney(lm.revenue)} · กำไรสุทธิ ${fmtMoney(lm.netProfit)} (หลังหักประกันสังคม ${fmtMoney(lm.ss)})</p>`
+         : `<p class="placeholder">ยังไม่ครบเดือนแรก — ยอดจะสรุปตอนขึ้นเดือนใหม่</p>`}
+    <div class="warn-box">ภาษีเงินได้บุคคลธรรมดา (ขั้นบันได) สะสมปีนี้ราว ${fmtMoney(accruedTax)} · หักอัตโนมัติสิ้นปี</div>
+    ${biz.staff > 0 ? `<div class="warn-box">ประกันสังคม (นายจ้าง 5%) ประมาณ ${fmtMoney(ssEstimate)} · หักตอนขึ้นเดือนใหม่</div>` : ""}
+    <div class="warn-box">ภาษีที่ดิน+ป้าย ${fmtMoney(LAND_TAX_FLAT)}/ปี · หักพร้อมภาษีสิ้นปี</div>
+    <p class="placeholder">${biz.vatRegistered ? "จดทะเบียน VAT แล้ว (รายได้เกิน ฿1.8M/ปี)" : `ยังไม่ต้องจด VAT · รายได้สะสมปีนี้ ${fmtMoney(biz.annualRevenue + biz.monthRevenue)} จากเกณฑ์ ${fmtMoney(VAT_THRESHOLD)}`}</p>
     <div class="action-grid">
-      <button class="action-btn primary">ยื่นภาษี</button>
-      <button class="action-btn">ขอสินเชื่อเพิ่ม</button>
+      <button class="action-btn primary" data-biz="prepayTax" ${accruedTax <= 0 || state.cash < accruedTax ? "disabled" : ""}>จ่ายภาษีล่วงหน้า ${fmtMoney(accruedTax)}</button>
     </div>
-  `,
+  `;
+  },
   market: () => `
     <div>
       <h2>ส่วนแบ่งตลาด · ศรีราชา</h2>
@@ -379,6 +464,15 @@ const bizActions = {
   },
   priceDown() {
     state.business.price = clamp(state.business.price - 1, 8, 30);
+    afterBizAction();
+  },
+  prepayTax() {
+    const biz = state.business;
+    const owed = Math.max(0, personalIncomeTax(biz.annualProfit) - biz.taxPaidThisYear);
+    const pay = Math.min(owed, state.cash);
+    if (pay <= 0) return;
+    state.cash -= pay;
+    biz.taxPaidThisYear += pay;
     afterBizAction();
   },
 };
