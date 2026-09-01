@@ -319,11 +319,107 @@ function showLayer(el, show) {
   else el.setAttribute("hidden", "");
 }
 
+// ---------- ซูมเข้าออก + เลื่อนแผนที่ (viewBox pan/zoom) ----------
+const MIN_ZOOM = 1; // ซูมออกสุด = viewBox เดิม
+const MAX_ZOOM = 8;
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+function clampViewBox(svg) {
+  const vb = svg._vb, base = svg._base;
+  vb.x = clamp(vb.x, base.x, base.x + base.w - vb.w);
+  vb.y = clamp(vb.y, base.y, base.y + base.h - vb.h);
+}
+function applyViewBox(svg) {
+  const v = svg._vb;
+  svg.setAttribute("viewBox", `${v.x.toFixed(2)} ${v.y.toFixed(2)} ${v.w.toFixed(2)} ${v.h.toFixed(2)}`);
+}
+function resetViewBox(svg) {
+  if (!svg._base) return;
+  svg._vb = { ...svg._base };
+  applyViewBox(svg);
+}
+
+function attachPanZoom(svg) {
+  const [x, y, w, h] = svg.getAttribute("viewBox").split(" ").map(Number);
+  svg._base = { x, y, w, h };
+  svg._vb = { x, y, w, h };
+
+  svg.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      const fx = (e.clientX - rect.left) / rect.width;
+      const fy = (e.clientY - rect.top) / rect.height;
+      const vb = svg._vb;
+      const anchorX = vb.x + fx * vb.w;
+      const anchorY = vb.y + fy * vb.h;
+      const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85;
+      let newW = clamp(vb.w * factor, svg._base.w / MAX_ZOOM, svg._base.w / MIN_ZOOM);
+      let newH = (newW / vb.w) * vb.h;
+      vb.x = anchorX - fx * newW;
+      vb.y = anchorY - fy * newH;
+      vb.w = newW;
+      vb.h = newH;
+      clampViewBox(svg);
+      applyViewBox(svg);
+    },
+    { passive: false }
+  );
+
+  let dragging = false;
+  let dragMoved = false;
+  let lastX = 0;
+  let lastY = 0;
+  svg.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    dragMoved = false;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    // ไม่ใช้ setPointerCapture — มันทำให้ event `click` ที่ตามมาชี้ไปที่ svg แทน <path> ข้างใต้เสมอ
+    svg.classList.add("is-dragging");
+  });
+  svg.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    const rect = svg.getBoundingClientRect();
+    const vb = svg._vb;
+    vb.x -= dx * (vb.w / rect.width);
+    vb.y -= dy * (vb.h / rect.height);
+    clampViewBox(svg);
+    applyViewBox(svg);
+  });
+  const endDrag = () => {
+    dragging = false;
+    svg.classList.remove("is-dragging");
+  };
+  svg.addEventListener("pointerup", endDrag);
+  svg.addEventListener("pointerleave", endDrag);
+  svg.addEventListener(
+    "click",
+    (e) => {
+      if (dragMoved) { e.stopPropagation(); dragMoved = false; }
+    },
+    true
+  );
+  svg.addEventListener("dblclick", () => resetViewBox(svg));
+}
+
 function setMapLevel(level) {
   map.level = level;
-  showLayer($("mapCountry"), level === "country");
-  showLayer($("mapProvince"), level === "province");
-  showLayer($("mapDistrict"), level === "district");
+  [
+    [$("mapCountry"), "country"],
+    [$("mapProvince"), "province"],
+    [$("mapDistrict"), "district"],
+  ].forEach(([el, name]) => {
+    const show = level === name;
+    showLayer(el, show);
+    if (show) resetViewBox(el); // เข้าเลเวลใหม่ทุกครั้ง เริ่มมุมมองใหม่เสมอ
+  });
   $("mapBack").hidden = level === "country";
   if (level === "country") $("vpArea").textContent = "ประเทศไทย";
   if (level === "province") $("vpArea").textContent = "จ.ชลบุรี";
@@ -357,6 +453,7 @@ renderNews();
 tickClock();
 setInterval(tickClock, 1000);
 setInterval(renderNews, 6000);
+[$("mapCountry"), $("mapProvince"), $("mapDistrict")].forEach(attachPanZoom);
 setMapLevel("country");
 renderCountryMap();
 

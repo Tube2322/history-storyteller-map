@@ -137,9 +137,9 @@ button:focus-visible,.rail-btn:focus-visible{outline:2px solid var(--amber);outl
 }
 .map-back:hover{background:var(--line-soft)}
 
-.geo-map,.diorama{width:min(900px,92%);height:auto;transition:filter 1.2s ease}
+.geo-map,.diorama{width:min(900px,92%);height:auto;transition:filter 1.2s ease;touch-action:none;cursor:grab}
 .geo-map[hidden],.diorama[hidden],.map-back[hidden]{display:none}
-.geo-map{cursor:default}
+.geo-map.is-dragging,.diorama.is-dragging{cursor:grabbing;transition:none}
 .geo-shape{
   fill:var(--surface-2);stroke:var(--surface);stroke-width:1.2;
   transition:fill .15s ease;
