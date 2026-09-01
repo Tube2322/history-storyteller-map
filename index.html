@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ชีวิตไทย — Thailand Simulation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+
+      <!-- แถบบน -->
+      <header class="topbar">
+        <div class="stat">
+          <span class="stat-label">ทรัพย์สินสุทธิ</span>
+          <strong id="netWorth" class="stat-value money">฿0</strong>
+        </div>
+        <div class="divider"></div>
+        <div class="stat">
+          <span class="stat-label">เงินสด</span>
+          <strong id="cash" class="stat-value money sm">฿0</strong>
+          <span class="stat-sub">หนี้ <span id="debt">฿0</span></span>
+        </div>
+        <div class="divider"></div>
+        <div class="bar-stat">
+          <span class="stat-label">พลังงาน</span>
+          <div class="bar"><i id="energyBar"></i></div>
+        </div>
+        <div class="bar-stat">
+          <span class="stat-label">ชื่อเสียง</span>
+          <div class="bar"><i id="repBar"></i></div>
+        </div>
+        <div class="topbar-spacer"></div>
+        <button id="clockChip" class="clock-chip" type="button">
+          <span class="live-dot"></span>
+          <span id="clockDate">—</span>
+          <span id="clockTime" class="clock-time">--:--:--</span>
+        </button>
+      </header>
+
+      <!-- แถบซ้าย -->
+      <nav class="rail" aria-label="หมวดหลัก">
+        <button class="rail-btn is-active" data-panel="map" title="แผนที่">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Zm0 2.2 6 2v13.6l-6-2V5.2Z"/></svg>
+          <span>แผนที่</span>
+        </button>
+        <button class="rail-btn" data-panel="business" title="ธุรกิจ">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h16v11H4V9Zm2-5h12l2 5H4l2-5Zm4 8v5h4v-5H10Z"/></svg>
+          <span>ธุรกิจ</span>
+        </button>
+        <button class="rail-btn" data-panel="finance" title="การเงิน">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18v2H3v-2ZM5 18V9h3v9H5Zm6 0V4h3v14h-3Zm6 0v-7h3v7h-3Z"/></svg>
+          <span>การเงิน</span>
+        </button>
+        <button class="rail-btn" data-panel="market" title="ตลาด">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h2l2.4 12.2A2 2 0 0 0 9.4 17H18a2 2 0 0 0 1.94-1.5L21.5 9H6.2M9 21a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm9 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z"/></svg>
+          <span>ตลาด</span>
+        </button>
+        <button class="rail-btn" data-panel="people" title="ผู้คน">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0v1H5v-1Z"/></svg>
+          <span>ผู้คน</span>
+        </button>
+        <button class="rail-btn" data-panel="gov" title="ราชการ">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 2 8h20L12 2ZM4 10v9H2v2h20v-2h-2v-9h-2v9h-3v-9h-2v9h-2v-9H9v9H6v-9H4Z"/></svg>
+          <span>ราชการ</span>
+        </button>
+        <button class="rail-btn" data-panel="life" title="ชีวิต">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.35-9.5-8.5C.7 8.9 2.4 5 6 5c2 0 3.3 1 4.5 2.5C11.7 6 13 5 15 5c3.6 0 5.3 3.9 3.5 7.5C19 16.65 12 21 12 21Z"/></svg>
+          <span>ชีวิต</span>
+        </button>
+      </nav>
+
+      <!-- viewport -->
+      <section class="viewport" id="viewport" aria-label="แผนที่โลกจำลอง">
+        <div class="viewport-tag">
+          <strong id="vpArea">อ.ศรีราชา · โซนย่านการค้า</strong>
+          <span id="vpDayPhase">กลางวัน</span>
+        </div>
+        <svg class="diorama" viewBox="0 0 900 400" role="img" aria-label="แผนที่ไอโซเมตริกจำลองอำเภอศรีราชา">
+          <polygon points="460,90 760,240 460,390 160,240" class="tile-ground"/>
+          <g class="tile-grid">
+            <line x1="310" y1="165" x2="610" y2="315"/>
+            <line x1="610" y1="165" x2="310" y2="315"/>
+            <line x1="460" y1="90" x2="460" y2="390"/>
+            <line x1="160" y1="240" x2="760" y2="240"/>
+          </g>
+          <polygon points="460,230 500,250 460,270 420,250" class="tile-road"/>
+          <polygon points="500,250 540,270 500,290 460,270" class="tile-road"/>
+          <polygon points="420,250 460,270 420,290 380,270" class="tile-road"/>
+
+          <!-- คอนโด -->
+          <g class="bldg bldg-neutral">
+            <polygon points="500,90 540,110 500,130 460,110" class="face-top"/>
+            <polygon points="500,10 540,30 500,50 460,30" class="face-top"/>
+            <polygon points="460,110 460,30 500,50 500,130" class="face-left"/>
+            <polygon points="500,130 500,50 540,30 540,110" class="face-right"/>
+          </g>
+          <!-- ตลาดสด -->
+          <g class="bldg bldg-neutral">
+            <polygon points="340,210 380,230 340,250 300,230" class="face-top"/>
+            <polygon points="340,185 380,205 340,225 300,205" class="face-top"/>
+            <polygon points="300,230 300,205 340,225 340,250" class="face-left"/>
+            <polygon points="340,250 340,225 380,205 380,230" class="face-right"/>
+          </g>
+          <!-- คู่แข่ง -->
+          <g class="bldg bldg-rival">
+            <polygon points="540,230 580,250 540,270 500,250" class="face-top"/>
+            <polygon points="540,155 580,175 540,195 500,175" class="face-top"/>
+            <polygon points="500,250 500,175 540,195 540,270" class="face-left"/>
+            <polygon points="540,270 540,195 580,175 580,250" class="face-right"/>
+          </g>
+          <!-- ร้านผู้เล่น -->
+          <g class="bldg bldg-you">
+            <polygon points="420,210 460,230 420,250 380,230" class="face-base"/>
+            <polygon points="420,155 460,175 420,195 380,175" class="face-top"/>
+            <polygon points="380,230 380,175 420,195 420,250" class="face-left"/>
+            <polygon points="420,250 420,195 460,175 460,230" class="face-right"/>
+          </g>
+          <polygon points="500,290 540,310 500,330 460,310" class="tile-vacant"/>
+          <circle cx="270" cy="255" r="4" class="deco-green"/>
+          <circle cx="285" cy="265" r="3" class="deco-green"/>
+          <circle cx="640" cy="220" r="4" class="deco-green"/>
+        </svg>
+      </section>
+
+      <!-- แผงขวา -->
+      <aside class="panel" id="panel" aria-live="polite">
+        <!-- เนื้อหาแทรกด้วย JS -->
+      </aside>
+
+      <!-- แถบล่าง -->
+      <footer class="statusbar">
+        <div class="live-chip">
+          <span class="live-dot"></span>
+          <div>
+            <strong>LIVE · เที่ยงตรง</strong>
+            <small id="nextTick">tick ถัดไป —</small>
+          </div>
+        </div>
+        <div class="ticker">
+          <span class="ticker-label">ข่าววันนี้</span>
+          <p id="newsText"></p>
+        </div>
+        <button class="report-btn" id="reportBtn" type="button">รายงานสด</button>
+      </footer>
+
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
