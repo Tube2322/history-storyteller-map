@@ -1,44 +1,100 @@
-// ===== เฟส 1-2: Game Shell + แผนที่จริง =====
+// ===== เฟส 1-3: Game Shell + แผนที่จริง + ธุรกิจสายอาหารบนนาฬิกาจริง =====
 // เฟส 1: นาฬิกาไทยจริง (Asia/Bangkok) + สลับแผงขวาตามหมวดที่เลือก
 // เฟส 2: แผนที่ประเทศ/จังหวัดจากขอบเขตภูมิศาสตร์จริง (GeoJSON) — ระดับอำเภอยังเป็นไอโซเมตริกจำลอง (หมวด 05)
-// state ตอนนี้เป็น mock ล้วน ยังไม่ต่อ backend — โครงสร้างอิงคอนเซปต์ UX/UI หมวด 02–14
+// เฟส 3: ร้านหมูปิ้งครบลูป — สั่งของ/ตั้งราคา/จ้างคน ขายจริงทุก tick 15 นาที แม้ปิดแท็บ (หมวด 02, 06)
+// ยังไม่มี backend — เซฟลง localStorage เครื่องเดียว, คำนวณย้อนหลังสูงสุด 72 ชม.ตอนกลับมา (หมวด 02)
 
 const $ = (id) => document.getElementById(id);
 const fmtMoney = (n) => `฿${new Intl.NumberFormat("th-TH").format(Math.round(n))}`;
 const fmtNum = (n) => new Intl.NumberFormat("th-TH").format(Math.round(n));
 
-const state = {
-  netWorth: 12480900,
-  cash: 840200,
-  debt: 3100000,
-  energy: 68,
-  reputation: 34,
-  activePanel: "map",
-  news: [
-    "ราคาหมูขึ้น 6% ผลจากต้นทุนอาหารสัตว์",
-    "ธปท. คงอัตราดอกเบี้ยนโยบายที่ 2.25%",
-    "สงกรานต์เหลืออีก 30 วัน — เตรียมสต๊อกสายท่องเที่ยว",
-    "เงินเดือนออกสิ้นเดือนนี้ กำลังซื้อคาดขยับขึ้น 18%",
-  ],
-};
+const SAVE_KEY = "thailand-sim-save-v1";
+const TICK_MS = 15 * 60 * 1000;
+const MAX_CATCHUP_MS = 72 * 60 * 60 * 1000; // เพดานคำนวณย้อนหลัง 72 ชม. (หมวด 02)
 
-// ---------- นาฬิกาไทยจริง ----------
+// ---------- นาฬิกาไทยจริง (ต้องมาก่อน state เพราะ defaultState() เรียก bangkokDateKey) ----------
 const dateFmt = new Intl.DateTimeFormat("th-TH", {
   timeZone: "Asia/Bangkok", weekday: "short", day: "numeric", month: "short", year: "numeric",
 });
 const timeFmt = new Intl.DateTimeFormat("th-TH", {
   timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
 });
-const hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Bangkok", hour: "2-digit", hour12: false });
+const hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false });
+const dateKeyFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" });
 
 function bangkokNow() {
   return new Date();
 }
 
-function isDaytime(now) {
-  const h = parseInt(hourFmt.format(now), 10);
-  return h >= 6 && h < 18;
+function bangkokHourFraction(d) {
+  const [h, m] = hourFmt.format(d).split(":").map(Number);
+  return h + m / 60;
 }
+
+function bangkokDateKey(d) {
+  return dateKeyFmt.format(d);
+}
+
+function isDaytime(now) {
+  return bangkokHourFraction(now) >= 6 && bangkokHourFraction(now) < 18;
+}
+
+function defaultState() {
+  const now = Date.now();
+  return {
+    cash: 45000,
+    debt: 0,
+    energy: 68,
+    reputation: 34,
+    activePanel: "map",
+    news: [
+      "ราคาหมูขึ้น 6% ผลจากต้นทุนอาหารสัตว์",
+      "ธปท. คงอัตราดอกเบี้ยนโยบายที่ 2.25%",
+      "สงกรานต์เหลืออีก 30 วัน — เตรียมสต๊อกสายท่องเที่ยว",
+      "เงินเดือนออกสิ้นเดือนนี้ กำลังซื้อคาดขยับขึ้น 18%",
+    ],
+    business: {
+      name: "ร้านหมูปิ้งศรีราชา",
+      openedAt: now,
+      price: 15, // บาท/ไม้
+      costPerUnit: 7, // ต้นทุนวัตถุดิบ/ไม้
+      stock: 60, // ไม้พร้อมขาย
+      staff: 1,
+      staffWage: 350, // บาท/คน/วัน
+      reputation: 62,
+      adBoostUntil: 0,
+      permitExpiresAt: now + 14 * 24 * 60 * 60 * 1000,
+      currentDay: bangkokDateKey(new Date(now)),
+      dailyRevenue: 0,
+      dailyCost: 0,
+      customersToday: 0,
+      salesHistory: [], // { t, profit } ล่าสุด 30 tick
+      lastTickAt: now,
+    },
+  };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return defaultState();
+    const saved = JSON.parse(raw);
+    const base = defaultState();
+    return { ...base, ...saved, business: { ...base.business, ...saved.business } };
+  } catch {
+    return defaultState();
+  }
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  } catch {
+    /* localStorage ใช้ไม่ได้ (private mode ฯลฯ) — เล่นต่อได้แค่ไม่เซฟ */
+  }
+}
+
+const state = loadState();
 
 function tickClock() {
   const now = bangkokNow();
@@ -60,11 +116,93 @@ function tickClock() {
     next.setMinutes(nextQuarter, 0, 0);
   }
   $("nextTick").textContent = `tick ถัดไป ${timeFmt.format(next).slice(0, 5)} น.`;
+
+  // ข้าม tick 15 นาทีจริงเมื่อไหร่ ให้ธุรกิจขายจริงตาม hourFmt.format(now) เทียบกับ tick ล่าสุด
+  const bucket = Math.floor(now.getTime() / TICK_MS);
+  const lastBucket = Math.floor(state.business.lastTickAt / TICK_MS);
+  if (bucket > lastBucket) runBusinessTicks(now.getTime());
+}
+
+// ---------- เครื่องยนต์ธุรกิจ: ขายจริงทุก tick 15 นาที ----------
+// ช่วงพีคอิงตารางหมวด 02 ของคอนเซปต์ (ตลาดเช้า/พีคเช้า/เที่ยง/เย็น/กลางคืนแทบปิด)
+function demandMultiplier(hourFraction) {
+  if (hourFraction >= 6 && hourFraction < 9) return 1.5; // พีคเช้า
+  if (hourFraction >= 11 && hourFraction < 13.5) return 1.8; // พีคเที่ยง
+  if (hourFraction >= 17 && hourFraction < 20) return 2.0; // พีคเย็น
+  if (hourFraction >= 20 && hourFraction < 24) return 0.6; // กลางคืนต้น
+  if (hourFraction >= 0 && hourFraction < 4) return 0; // ปิดร้าน
+  return 0.9; // ช่วงเบา (สาย/บ่าย)
+}
+
+function priceElasticity(price) {
+  // ราคายิ่งสูง ดีมานด์ยิ่งลด เป็นเส้นตรงหยาบๆ ครอบ 8–30 บาท
+  return clamp(1.7 - price / 22, 0.25, 1.7);
+}
+
+// จำลอง 1 tick (15 นาที) ที่เวลา `atMs` — ใช้ทั้ง live tick และ catch-up ย้อนหลัง
+function simulateOneTick(atMs) {
+  const biz = state.business;
+  const d = new Date(atMs);
+  const dayKey = bangkokDateKey(d);
+
+  if (dayKey !== biz.currentDay) {
+    // ข้ามวัน: หักค่าแรงพนักงานของวันก่อน แล้วรีเซ็ตยอดวันใหม่
+    const wageCost = biz.staff * biz.staffWage;
+    state.cash -= wageCost;
+    biz.dailyRevenue = 0;
+    biz.dailyCost = 0;
+    biz.customersToday = 0;
+    biz.currentDay = dayKey;
+  }
+
+  const hourFraction = bangkokHourFraction(d);
+  const capacityPerTick = 6 * biz.staff; // ไม้/tick ต่อพนักงาน 1 คน
+  const adBoost = atMs < biz.adBoostUntil ? 1.4 : 1;
+  const demandUnits =
+    capacityPerTick * demandMultiplier(hourFraction) * priceElasticity(biz.price) * (biz.reputation / 100) * adBoost;
+  const unitsSold = Math.max(0, Math.min(Math.round(demandUnits), biz.stock));
+
+  if (unitsSold > 0) {
+    const revenue = unitsSold * biz.price;
+    const cost = unitsSold * biz.costPerUnit;
+    biz.stock -= unitsSold;
+    state.cash += revenue - cost;
+    biz.dailyRevenue += revenue;
+    biz.dailyCost += cost;
+    biz.customersToday += unitsSold;
+    biz.salesHistory.push({ t: atMs, profit: revenue - cost });
+    if (biz.salesHistory.length > 30) biz.salesHistory.shift();
+  }
+
+  biz.lastTickAt = atMs;
+}
+
+// รัน tick ทั้งหมดตั้งแต่ lastTickAt จนถึง untilMs (ใช้ทั้ง live และคำนวณย้อนหลังตอนกลับมา)
+function runBusinessTicks(untilMs) {
+  const biz = state.business;
+  const startMs = Math.max(biz.lastTickAt, untilMs - MAX_CATCHUP_MS); // เพดานย้อนหลัง 72 ชม.
+  let cursor = Math.floor(startMs / TICK_MS) * TICK_MS + TICK_MS;
+  let ticksRun = 0;
+  const before = { cash: state.cash, customers: biz.customersToday };
+  while (cursor <= untilMs && ticksRun < 288) {
+    simulateOneTick(cursor);
+    cursor += TICK_MS;
+    ticksRun++;
+  }
+  biz.lastTickAt = untilMs;
+  saveState();
+  if (state.activePanel === "business") renderPanel();
+  renderTopbar();
+  return { ticksRun, cashDelta: state.cash - before.cash, unitsDelta: biz.customersToday - before.customers };
+}
+
+function computeNetWorth() {
+  return state.cash - state.debt + state.business.stock * state.business.costPerUnit;
 }
 
 // ---------- แถบบน ----------
 function renderTopbar() {
-  $("netWorth").textContent = fmtMoney(state.netWorth);
+  $("netWorth").textContent = fmtMoney(computeNetWorth());
   $("cash").textContent = fmtMoney(state.cash);
   $("debt").textContent = fmtMoney(state.debt);
   $("energyBar").style.width = `${state.energy}%`;
@@ -89,24 +227,38 @@ const panels = {
     </div>
     <p class="placeholder">คลิกอาคารบนแผนที่เพื่อดูรายละเอียดทำเลอื่น — เฟสถัดไปจะเชื่อมกับข้อมูลจริงต่อแปลง</p>
   `,
-  business: () => `
+  business: () => {
+    const biz = state.business;
+    const daysOpen = Math.max(0, Math.floor((Date.now() - biz.openedAt) / 86400000));
+    const daysLeft = Math.ceil((biz.permitExpiresAt - Date.now()) / 86400000);
+    const profitToday = biz.dailyRevenue - biz.dailyCost;
+    const profitCls = profitToday >= 0 ? "" : `style="color:var(--red)"`;
+    const orderQty = 40;
+    const orderCost = orderQty * biz.costPerUnit;
+    const hireCost = 2000 + biz.staff * 1500;
+    const adCost = 300;
+    const adActive = Date.now() < biz.adBoostUntil;
+    return `
     <div>
-      <h2>ร้านหมูปิ้งศรีราชา</h2>
-      <p class="sub">SME · เปิดมา 148 วัน · พนักงาน 3</p>
+      <h2>${biz.name}</h2>
+      <p class="sub">เปิดมา ${fmtNum(daysOpen)} วัน · พนักงาน ${biz.staff} คน · ราคาไม้ละ ${fmtMoney(biz.price)}</p>
     </div>
     <div class="kpi-row">
-      <div class="kpi"><span>กำไรวันนี้</span><b>฿4,120</b></div>
-      <div class="kpi"><span>ลูกค้า</span><b>312</b></div>
-      <div class="kpi"><span>สต๊อก</span><b>2.1 วัน</b></div>
+      <div class="kpi"><span>กำไรวันนี้</span><b ${profitCls}>${profitToday >= 0 ? "" : "-"}${fmtMoney(Math.abs(profitToday))}</b></div>
+      <div class="kpi"><span>ลูกค้าวันนี้</span><b>${fmtNum(biz.customersToday)}</b></div>
+      <div class="kpi"><span>สต๊อก</span><b>${fmtNum(biz.stock)} ไม้</b></div>
     </div>
     <div class="action-grid">
-      <button class="action-btn primary">สั่งวัตถุดิบเพิ่ม</button>
-      <button class="action-btn">ปรับราคาขาย</button>
-      <button class="action-btn">จ้างพนักงาน</button>
-      <button class="action-btn">โฆษณาท้องถิ่น</button>
+      <button class="action-btn" data-biz="priceDown">ลดราคา −1 (฿${biz.price - 1})</button>
+      <button class="action-btn" data-biz="priceUp">ขึ้นราคา +1 (฿${biz.price + 1})</button>
+      <button class="action-btn primary" data-biz="order" ${state.cash < orderCost ? "disabled" : ""}>สั่งวัตถุดิบ +${orderQty} ไม้ · ${fmtMoney(orderCost)}</button>
+      <button class="action-btn" data-biz="hire" ${state.cash < hireCost ? "disabled" : ""}>จ้างพนักงาน +1 · ${fmtMoney(hireCost)}</button>
+      <button class="action-btn" data-biz="ad" ${adActive || state.cash < adCost ? "disabled" : ""}>${adActive ? "โฆษณากำลังทำงาน" : `โฆษณาท้องถิ่น 3 ชม. · ${fmtMoney(adCost)}`}</button>
     </div>
-    <div class="warn-box">เตือน · ใบอนุญาตจำหน่ายอาหารหมดอายุใน 12 วัน · ต่ออายุ ฿1,500</div>
-  `,
+    <div class="warn-box">${daysLeft > 0 ? `ใบอนุญาตจำหน่ายอาหาร เหลือ ${daysLeft} วัน` : "ใบอนุญาตหมดอายุแล้ว — ต้องต่ออายุก่อนขายต่อ"}</div>
+    <p class="placeholder">รายรับวันนี้ ${fmtMoney(biz.dailyRevenue)} · ต้นทุน ${fmtMoney(biz.dailyCost)} · ค่าแรงพนักงาน ${fmtMoney(biz.staff * biz.staffWage)}/วัน หักตอนขึ้นวันใหม่</p>
+  `;
+  },
   finance: () => `
     <div>
       <h2>การเงิน · มีนาคม 2569</h2>
@@ -192,6 +344,55 @@ document.querySelectorAll(".rail-btn").forEach((btn) => {
     renderPanel();
     document.querySelector(".panel").classList.add("is-open");
   });
+});
+
+// ---------- ปุ่มสั่งการในแผงธุรกิจ (event delegation เพราะ innerHTML ถูกวาดใหม่ทุกครั้ง) ----------
+const bizActions = {
+  order() {
+    const biz = state.business;
+    const qty = 40;
+    const cost = qty * biz.costPerUnit;
+    if (state.cash < cost) return;
+    state.cash -= cost;
+    biz.stock += qty;
+    afterBizAction();
+  },
+  hire() {
+    const biz = state.business;
+    const cost = 2000 + biz.staff * 1500;
+    if (state.cash < cost) return;
+    state.cash -= cost;
+    biz.staff += 1;
+    afterBizAction();
+  },
+  ad() {
+    const biz = state.business;
+    const cost = 300;
+    if (state.cash < cost || Date.now() < biz.adBoostUntil) return;
+    state.cash -= cost;
+    biz.adBoostUntil = Date.now() + 3 * 60 * 60 * 1000;
+    afterBizAction();
+  },
+  priceUp() {
+    state.business.price = clamp(state.business.price + 1, 8, 30);
+    afterBizAction();
+  },
+  priceDown() {
+    state.business.price = clamp(state.business.price - 1, 8, 30);
+    afterBizAction();
+  },
+};
+
+function afterBizAction() {
+  saveState();
+  renderTopbar();
+  renderPanel();
+}
+
+$("panel").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-biz]");
+  if (!btn || btn.disabled) return;
+  bizActions[btn.dataset.biz]?.();
 });
 
 // ---------- แผนที่จริง: ประเทศ → จังหวัด (GeoJSON) → อำเภอ (ไอโซเมตริก) ----------
@@ -447,6 +648,10 @@ function renderNews() {
 }
 
 // ---------- init ----------
+// คำนวณย้อนหลังตั้งแต่ครั้งก่อนที่ปิดแอปไป ก่อนวาดหน้าจอครั้งแรก (หมวด 02 · สรุปตอนคุณไม่อยู่)
+const awayMs = Date.now() - state.business.lastTickAt;
+const catchUp = runBusinessTicks(Date.now());
+
 renderTopbar();
 renderPanel();
 renderNews();
@@ -457,9 +662,21 @@ setInterval(renderNews, 6000);
 setMapLevel("country");
 renderCountryMap();
 
+if (awayMs > 30 * 60 * 1000 && catchUp.ticksRun > 0) {
+  const hrs = (awayMs / 3600000).toFixed(1);
+  const sign = catchUp.cashDelta >= 0 ? "+" : "-";
+  state.news.unshift(
+    `ระหว่างที่คุณไม่อยู่ ${hrs} ชม. — ร้านขายได้ ${fmtNum(catchUp.unitsDelta)} ไม้ กำไรสะสม ${sign}${fmtMoney(Math.abs(catchUp.cashDelta))}`
+  );
+  newsIndex = 0; // โชว์แบนเนอร์นี้ทันทีเป็นอันแรก ไม่ใช่รอคิวเดิม
+  renderNews();
+}
+
 $("reportBtn").addEventListener("click", () => {
+  const biz = state.business;
+  const profitToday = biz.dailyRevenue - biz.dailyCost;
   alert(
-    `รายงานสด\n\nทรัพย์สินสุทธิ ${fmtMoney(state.netWorth)}\nเงินสด ${fmtMoney(state.cash)}\nพลังงาน ${state.energy}/100 · ชื่อเสียง ${state.reputation}/100\n\n(mock — เฟสถัดไปจะดึงจากสถานะจริง)`
+    `รายงานสด\n\nทรัพย์สินสุทธิ ${fmtMoney(computeNetWorth())}\nเงินสด ${fmtMoney(state.cash)}\nพลังงาน ${state.energy}/100 · ชื่อเสียง ${state.reputation}/100\n\nร้าน: กำไรวันนี้ ${fmtMoney(profitToday)} · สต๊อก ${fmtNum(biz.stock)} ไม้ · ลูกค้า ${fmtNum(biz.customersToday)}`
   );
 });
 $("clockChip").addEventListener("click", () => $("reportBtn").click());

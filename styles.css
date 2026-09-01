@@ -191,6 +191,7 @@ button:focus-visible,.rail-btn:focus-visible{outline:2px solid var(--amber);outl
 }
 .action-btn:hover{background:var(--surface-2)}
 .action-btn.primary{background:var(--amber-soft);border-color:var(--amber);color:var(--amber);font-weight:600}
+.action-btn:disabled{opacity:.45;cursor:not-allowed;background:var(--surface)}
 .warn-box{
   background:var(--amber-soft);border-left:3px solid var(--amber);border-radius:0 4px 4px 0;
   padding:10px 14px;font-size:12.5px;line-height:1.6;
