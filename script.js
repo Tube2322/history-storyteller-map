@@ -221,6 +221,14 @@ function demandMultiplier(hourFraction) {
   return 0.9; // ช่วงเบา (สาย/บ่าย)
 }
 
+// เหตุการณ์จากเครื่องยนต์: ลง ticker ข่าวเสมอ แต่เด้ง toast เฉพาะตอนเล่นสด
+// (ระหว่าง catch-up ย้อนหลังจะเงียบไว้ ให้แบนเนอร์ "ตอนคุณไม่อยู่" สรุปแทน)
+let isCatchUp = false;
+function pushEvent(title, body, opts = {}) {
+  state.news.unshift(`${title} — ${body}`);
+  if (!isCatchUp) showToast(title, body, opts);
+}
+
 // พลังงานต่ำกว่า 30 = ประสิทธิภาพลด (หมวด 09) — ต่ำสุดเหลือ 55%
 function energyEfficiency() {
   return state.energy >= 30 ? 1 : clamp(0.55 + (state.energy / 30) * 0.45, 0.55, 1);
@@ -269,7 +277,7 @@ function simulateOneTick(atMs) {
       biz.annualRevenue += biz.monthRevenue;
       if (!biz.vatRegistered && biz.annualRevenue > VAT_THRESHOLD) {
         biz.vatRegistered = true;
-        state.news.unshift(`${biz.name} มีรายได้เกิน ฿1.8 ล้าน/ปี — ต้องจดทะเบียน VAT แล้ว`);
+        pushEvent("ต้องจดทะเบียน VAT", `${biz.name} มีรายได้เกิน ฿1.8 ล้าน/ปี`, { critical: true });
       }
       biz.monthRevenue = 0;
       biz.monthCost = 0;
@@ -348,7 +356,7 @@ function runNpcDailyUpkeep(biz, atMs) {
     if (n.cash <= 0 && !n.closed) {
       n.closed = true;
       n.closedAt = atMs;
-      state.news.unshift(`${n.name} ปิดกิจการแล้ว — เงินทุนหมด`);
+      pushEvent("คู่แข่งปิดกิจการ", `${n.name} เงินทุนหมด`);
     }
   });
 }
@@ -755,7 +763,7 @@ async function renderCountryMap() {
     path.appendChild(title);
     path.addEventListener("click", () => {
       if (isPlayable) zoomToProvince();
-      else alert(`${f.properties.pro_th}\n\nเดโมนี้เปิดใช้งานเต็มเฉพาะจังหวัดชลบุรี จังหวัดอื่นจะทยอยเพิ่มข้อมูลตามเฟส 6 ของคอนเซปต์`);
+      else showToast(f.properties.pro_th, "ยังไม่เปิดให้เล่น — เดโมนี้เปิดเฉพาะจังหวัดชลบุรี");
     });
     svg.appendChild(path);
   });
@@ -778,7 +786,7 @@ async function renderProvinceMap() {
     path.appendChild(title);
     path.addEventListener("click", () => {
       if (isPlayable) zoomToDistrict();
-      else alert(`อ.${f.properties.amp_th}\n\nเดโมนี้เปิดใช้งานเต็มเฉพาะอำเภอศรีราชา อำเภออื่นในชลบุรีจะทยอยเพิ่มทีหลัง`);
+      else showToast(`อ.${f.properties.amp_th}`, "ยังไม่เปิดให้เล่น — เดโมนี้เปิดเฉพาะอำเภอศรีราชา");
     });
     svg.appendChild(path);
 
@@ -923,10 +931,63 @@ function renderNews() {
   newsIndex++;
 }
 
+// ---------- Toast (หมวด 10): สูงสุด 3 ชิ้น อยู่ 8 วินาที · ชนิดวิกฤตต้องกดรับทราบเอง ----------
+const TOAST_LIMIT = 3;
+const TOAST_MS = 8000;
+function showToast(title, body, { critical = false } = {}) {
+  const stack = $("toastStack");
+  const el = document.createElement("div");
+  el.className = `toast${critical ? " is-critical" : ""}`;
+  el.innerHTML = `<strong></strong><span></span>${critical ? '<button class="toast-dismiss" type="button">รับทราบ</button>' : ""}`;
+  el.querySelector("strong").textContent = title;
+  el.querySelector("span").textContent = body;
+  stack.appendChild(el);
+
+  while (stack.children.length > TOAST_LIMIT) stack.firstElementChild.remove();
+
+  if (critical) {
+    el.querySelector(".toast-dismiss").addEventListener("click", () => el.remove());
+  } else {
+    setTimeout(() => el.remove(), TOAST_MS);
+  }
+}
+
+// ---------- ปิดแผงบนจอแคบ ----------
+function closePanel() {
+  document.querySelector(".panel").classList.remove("is-open");
+}
+$("panelClose").addEventListener("click", closePanel);
+
+// ---------- คีย์ลัด (หมวด 11) ----------
+const PANEL_KEYS = { m: "map", b: "business", f: "finance", k: "market", p: "people", g: "gov", l: "life" };
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = e.target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
+
+  if (e.key === "Escape") {
+    if (document.querySelector(".panel").classList.contains("is-open")) closePanel();
+    else if (map.level !== "country") mapBack();
+    return;
+  }
+  if (e.code === "Space") {
+    e.preventDefault();
+    showLiveReport();
+    return;
+  }
+  const panelName = PANEL_KEYS[e.key.toLowerCase()];
+  if (panelName) {
+    const btn = document.querySelector(`.rail-btn[data-panel="${panelName}"]`);
+    btn?.click();
+  }
+});
+
 // ---------- init ----------
 // คำนวณย้อนหลังตั้งแต่ครั้งก่อนที่ปิดแอปไป ก่อนวาดหน้าจอครั้งแรก (หมวด 02 · สรุปตอนคุณไม่อยู่)
 const awayMs = Date.now() - state.business.lastTickAt;
+isCatchUp = true;
 const catchUp = runBusinessTicks(Date.now());
+isCatchUp = false;
 
 renderTopbar();
 renderPanel();
@@ -948,11 +1009,14 @@ if (awayMs > 30 * 60 * 1000 && catchUp.ticksRun > 0) {
   renderNews();
 }
 
-$("reportBtn").addEventListener("click", () => {
+// รายงานสด = การ์ดเช็คด่วน (หมวด 14 · QUICK CHECK) ไม่ใช่ alert ที่บล็อกทั้งหน้า
+function showLiveReport() {
   const biz = state.business;
   const profitToday = biz.dailyRevenue - biz.dailyCost;
-  alert(
-    `รายงานสด\n\nทรัพย์สินสุทธิ ${fmtMoney(computeNetWorth())}\nเงินสด ${fmtMoney(state.cash)}\nพลังงาน ${state.energy}/100 · ชื่อเสียง ${state.reputation}/100\n\nร้าน: กำไรวันนี้ ${fmtMoney(profitToday)} · สต๊อก ${fmtNum(biz.stock)} ไม้ · ลูกค้า ${fmtNum(biz.customersToday)}`
+  showToast(
+    `รายงานสด · ${fmtMoney(computeNetWorth())}`,
+    `เงินสด ${fmtMoney(state.cash)} · กำไรวันนี้ ${fmtMoney(profitToday)} · สต๊อก ${fmtNum(biz.stock)} ไม้ · ลูกค้า ${fmtNum(biz.customersToday)} · พลังงาน ${Math.round(state.energy)}/100`
   );
-});
-$("clockChip").addEventListener("click", () => $("reportBtn").click());
+}
+$("reportBtn").addEventListener("click", showLiveReport);
+$("clockChip").addEventListener("click", showLiveReport);
