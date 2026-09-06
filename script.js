@@ -91,9 +91,6 @@ const el = {
   autosaveHint: document.getElementById("autosaveHint"),
   fileUploadImage: document.getElementById("fileUploadImage"),
   uploadList: document.getElementById("uploadList"),
-  searchPlaceInput: document.getElementById("searchPlaceInput"),
-  btnSearchPlace: document.getElementById("btnSearchPlace"),
-  searchResultList: document.getElementById("searchResultList"),
   bgmPlayer: document.getElementById("bgmPlayer"),
   subtitleWrap: document.getElementById("subtitleWrap"),
   subtitleScrim: document.getElementById("subtitleScrim"),
@@ -2120,13 +2117,6 @@ function wireSearchWidget(inputEl, btnEl, resultsEl, onPick) {
   btnEl.addEventListener("click", run);
   inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
 }
-
-wireSearchWidget(el.searchPlaceInput, el.btnSearchPlace, el.searchResultList, (pick) => {
-  const row = `place=${pick.name} | latlng=${pick.lat.toFixed(4)},${pick.lng.toFixed(4)} | cam=establishing | script=... | sec=5`;
-  el.importText.value = (el.importText.value ? el.importText.value.replace(/\n?$/, "\n") : "") + row + "\n";
-  el.importText.scrollTop = el.importText.scrollHeight;
-  el.searchPlaceInput.value = "";
-});
 
 // ---------- สร้างฉากง่ายๆ (จากจุด A ไป B) — UX แบบฟอร์ม ไม่ต้องพิมพ์ tag เอง ----------
 
