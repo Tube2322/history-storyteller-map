@@ -40,8 +40,10 @@
             <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด">▶</button>
             <button id="btnNext" class="tbtn" title="ฉากถัดไป">⏭</button>
           </div>
+          <button id="btnExport" class="import-btn" type="button" title="อัดหน้าจอเป็นวิดีโอระหว่างเล่น">บันทึกวิดีโอ</button>
           <button id="btnImport" class="import-btn" type="button">นำเข้าสคริปต์</button>
         </header>
+        <audio id="ttsPlayer" hidden></audio>
 
         <!-- คำบรรยาย/ซับไตเติล -->
         <div class="subtitle-wrap">
@@ -66,6 +68,7 @@
             <br>ไอคอน: <code>city / castle / ship / battle / flag / mountain / camp</code> (ไม่ใส่ = 📍)
             <br>เอฟเฟกต์: <code>storm / fire / battle / none</code> — สติ๊กเกอร์อนิเมชันปักบนพิกัด
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay — คอลัมน์ท้ายๆ ไม่บังคับ
+            <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code> เพราะชนกับตัวคั่นคอลัมน์) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>
           <div class="import-actions">
             <button id="btnDownloadTemplate" class="ghost-btn" type="button">ดาวน์โหลดเทมเพลต Excel</button>
@@ -75,7 +78,7 @@
             </label>
           </div>
           <textarea id="importText" class="import-textarea" placeholder="สุโขทัย | 17.0175,99.7016 | establishing | ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | 5 | castle | none |
-สุโขทัย → ศรีสัชนาลัย | 17.4270,99.8210 | fly-to | จากนั้นกองคาราวานเดินทางขึ้นเหนือสู่เมืองพันธมิตร | 6 | flag | none |
+สุโขทัย → ศรีสัชนาลัย | 17.4270,99.8210 | fly-to | จากนั้นกองคาราวานเดินทางขึ้นเหนือ ;; มุ่งสู่เมืองพันธมิตรทางเหนือ | 6 | flag | none |
 ศรีสัชนาลัย | 17.4270,99.8210 | insert-overlay | ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | 4 | battle | fire | ภาพจำลองการโจมตี
 ศรีสัชนาลัย | 17.4270,99.8210 | cut-to-insert | แต่สิ่งที่เกิดขึ้นต่อจากนี้ ไม่มีใครคาดคิดมาก่อน | 3 | battle | none | หลักฐานภาพเหตุการณ์"></textarea>
           <div class="import-actions">

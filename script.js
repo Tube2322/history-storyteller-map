@@ -22,6 +22,8 @@ const CAM_STAGE_CLASS = {
 };
 const DEFAULT_DURATION = 5;
 const FALLBACK_COORD = { lat: 13.7563, lng: 100.5018 }; // กรุงเทพฯ (ใช้เมื่อไม่ระบุ lat,lng)
+const DEFAULT_VOICE = "th-TH-PremwadeeNeural";
+const SEGMENT_DELIM = ";;";
 
 const ICON_GLYPHS = {
   city: "🏙️",
@@ -65,12 +67,17 @@ const el = {
   btnDownloadTemplate: document.getElementById("btnDownloadTemplate"),
   fileImportXlsx: document.getElementById("fileImportXlsx"),
   mapStage: document.getElementById("mapStage"),
+  ttsPlayer: document.getElementById("ttsPlayer"),
+  btnExport: document.getElementById("btnExport"),
 };
 
 let scenes = [];
 let activeIndex = -1;
 let isPlaying = false;
-let playTimer = null;
+let playToken = 0;
+let isExporting = false;
+let recorder = null;
+let recordedChunks = [];
 
 // ---------- แผนที่จริง (MapLibre GL + ภาพถ่ายดาวเทียม Esri) ----------
 
@@ -169,8 +176,9 @@ function curvedLine(a, b) {
   return [a, bow, b];
 }
 
-function moveCamera(scene) {
+function moveCamera(scene, durationSecOverride) {
   const center = [scene.lng, scene.lat];
+  const durationSec = durationSecOverride || scene.duration;
   if (scene.cam === "cut-to-insert" || scene.cam === "insert-overlay") {
     stopOrbit();
     map.easeTo({ center, duration: 600, bearing: map.getBearing() });
@@ -178,12 +186,12 @@ function moveCamera(scene) {
   }
   if (scene.cam === "orbit") {
     map.easeTo({ center, zoom: 8, duration: 800, pitch: 0 });
-    startOrbit(scene.duration);
+    startOrbit(durationSec);
     return;
   }
   stopOrbit();
   if (scene.cam === "fly-to") {
-    map.flyTo({ center, zoom: 6.2, duration: scene.duration * 1000, curve: 1.4, bearing: 0, pitch: 0 });
+    map.flyTo({ center, zoom: 6.2, duration: durationSec * 1000, curve: 1.4, bearing: 0, pitch: 0 });
   } else if (scene.cam === "push-in") {
     map.easeTo({ center, zoom: 10, duration: 1200, bearing: 0, pitch: 0 });
   } else if (scene.cam === "zoom-out") {
@@ -274,11 +282,16 @@ function renderTimeline() {
     )
     .join("");
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn) => {
-    btn.addEventListener("click", () => goToScene(Number(btn.dataset.index)));
+    btn.addEventListener("click", () => goToSceneManual(Number(btn.dataset.index)));
   });
 }
 
-function goToScene(index) {
+function splitSegments(script) {
+  const parts = script.split(SEGMENT_DELIM).map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts : [script.trim()];
+}
+
+function goToScene(index, durationOverride) {
   if (!scenes.length) return;
   activeIndex = Math.max(0, Math.min(scenes.length - 1, index));
   const scene = scenes[activeIndex];
@@ -287,7 +300,7 @@ function goToScene(index) {
   el.sceneCounter.textContent = `ฉาก ${activeIndex + 1}/${scenes.length}`;
   el.camLabel.textContent = CAM_LABELS[scene.cam];
   el.camBadge.querySelector(".cam-dot").style.background = CAM_DOT_VAR[scene.cam];
-  el.subtitleText.textContent = scene.script;
+  el.subtitleText.textContent = splitSegments(scene.script).join(" ");
 
   el.mapStage.className = `map-stage ${CAM_STAGE_CLASS[scene.cam] || ""}`.trim();
 
@@ -324,38 +337,131 @@ function goToScene(index) {
     if (lineSource) lineSource.setData(emptyFC());
   }
 
-  moveCamera(scene);
+  moveCamera(scene, durationOverride);
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
     btn.classList.toggle("is-active", i === activeIndex);
   });
   const activeChip = el.timelineTrack.children[activeIndex];
   if (activeChip) activeChip.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" });
-
-  if (isPlaying) scheduleNext();
 }
 
-function scheduleNext() {
-  clearTimeout(playTimer);
-  const scene = scenes[activeIndex];
-  playTimer = setTimeout(() => {
-    if (activeIndex < scenes.length - 1) {
-      goToScene(activeIndex + 1);
+function goToSceneManual(index) {
+  setPlaying(false);
+  goToScene(index);
+}
+
+function updateChipDuration(idx) {
+  const chip = el.timelineTrack.children[idx];
+  if (chip) chip.querySelector(".chip-cam").textContent = `${CAM_LABELS[scenes[idx].cam]} · ${scenes[idx].duration}s`;
+}
+
+// ---------- พากย์เสียงจริงด้วย edge-tts (ผ่าน server.py /api/tts) ----------
+
+const ttsCache = new Map();
+
+async function fetchTts(text) {
+  const key = `${DEFAULT_VOICE}::${text}`;
+  if (ttsCache.has(key)) return ttsCache.get(key);
+  const res = await fetch("/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, voice: DEFAULT_VOICE }),
+  });
+  if (!res.ok) throw new Error(`TTS server error (${res.status}) — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const duration = await new Promise((resolve) => {
+    const probe = new Audio(url);
+    probe.addEventListener("loadedmetadata", () => resolve(probe.duration || DEFAULT_DURATION));
+    probe.addEventListener("error", () => resolve(DEFAULT_DURATION));
+  });
+  const result = { url, duration };
+  ttsCache.set(key, result);
+  return result;
+}
+
+function playAudioClip(url, myToken) {
+  return new Promise((resolve) => {
+    const player = el.ttsPlayer;
+    const cleanup = () => {
+      player.removeEventListener("ended", onEnded);
+      player.removeEventListener("error", onEnded);
+    };
+    const onEnded = () => { cleanup(); resolve(); };
+    player.addEventListener("ended", onEnded);
+    player.addEventListener("error", onEnded);
+    player.src = url;
+    player.play().catch(onEnded);
+    const poll = setInterval(() => {
+      if (myToken !== playToken) { clearInterval(poll); cleanup(); resolve(); }
+    }, 200);
+    player.addEventListener("ended", () => clearInterval(poll), { once: true });
+  });
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function narrationLoop() {
+  const myToken = ++playToken;
+  isPlaying = true;
+  el.btnPlay.textContent = "⏸";
+  if (activeIndex === -1) activeIndex = 0;
+
+  while (isPlaying && myToken === playToken && activeIndex < scenes.length) {
+    const idx = activeIndex;
+    const scene = scenes[idx];
+    const segments = splitSegments(scene.script);
+
+    el.subtitleText.textContent = "กำลังสร้างเสียง…";
+    const clips = [];
+    for (const seg of segments) {
+      if (myToken !== playToken) return;
+      try {
+        clips.push({ text: seg, ...(await fetchTts(seg)) });
+      } catch (e) {
+        console.warn(e);
+        clips.push({ text: seg, url: null, duration: scene.duration / segments.length });
+      }
+    }
+    if (myToken !== playToken) return;
+
+    const totalDuration = clips.reduce((a, c) => a + c.duration, 0);
+    if (totalDuration > 0) {
+      scene.duration = Math.round(totalDuration * 10) / 10;
+      updateChipDuration(idx);
+    }
+    goToScene(idx, scene.duration);
+
+    for (const clip of clips) {
+      if (myToken !== playToken) return;
+      el.subtitleText.textContent = clip.text;
+      if (clip.url) await playAudioClip(clip.url, myToken);
+      else await wait(clip.duration * 1000);
+    }
+    if (myToken !== playToken) return;
+
+    if (idx < scenes.length - 1) {
+      activeIndex = idx + 1;
     } else {
       setPlaying(false);
+      return;
     }
-  }, scene.duration * 1000);
+  }
 }
 
 function setPlaying(next) {
-  isPlaying = next;
-  el.btnPlay.textContent = isPlaying ? "⏸" : "▶";
-  if (isPlaying) {
-    if (activeIndex === -1) goToScene(0);
-    else scheduleNext();
-  } else {
-    clearTimeout(playTimer);
+  if (next) {
+    narrationLoop();
+    return;
   }
+  isPlaying = false;
+  playToken++; // ตัดลูปพากย์เสียงปัจจุบันทิ้ง
+  el.ttsPlayer.pause();
+  el.btnPlay.textContent = "▶";
+  if (isExporting) stopExport();
 }
 
 function escapeHtml(str) {
@@ -401,9 +507,52 @@ function importXlsxFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
-el.btnPrev.addEventListener("click", () => goToScene(activeIndex - 1));
-el.btnNext.addEventListener("click", () => goToScene(activeIndex + 1));
+el.btnPrev.addEventListener("click", () => goToSceneManual(activeIndex - 1));
+el.btnNext.addEventListener("click", () => goToSceneManual(activeIndex + 1));
 el.btnPlay.addEventListener("click", () => setPlaying(!isPlaying));
+
+// ---------- บันทึกเป็นวิดีโอ (อัดหน้าจอผ่าน getDisplayMedia — ต้องเลือก "แท็บนี้" ตอนเบราว์เซอร์ถาม) ----------
+
+async function startExport() {
+  if (!scenes.length) { alert("ยังไม่มีฉาก นำเข้าสคริปต์ก่อน"); return; }
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: "browser" },
+      audio: true,
+      preferCurrentTab: true,
+    });
+    recordedChunks = [];
+    recorder = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp9,opus" });
+    recorder.ondataavailable = (e) => { if (e.data.size) recordedChunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: "video/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "history-map-export.webm";
+      a.click();
+      stream.getTracks().forEach((t) => t.stop());
+    };
+    isExporting = true;
+    el.btnExport.textContent = "กำลังอัด… (หยุด)";
+    recorder.start();
+    goToSceneManual(0);
+    setPlaying(true);
+  } catch (e) {
+    console.warn(e);
+    alert("เปิดการอัดหน้าจอไม่สำเร็จ — ต้องอนุญาตแชร์แท็บนี้ตอนเบราว์เซอร์ถาม");
+  }
+}
+
+function stopExport() {
+  isExporting = false;
+  el.btnExport.textContent = "บันทึกวิดีโอ";
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+}
+
+el.btnExport.addEventListener("click", () => {
+  if (isExporting) { setPlaying(false); } else { startExport(); }
+});
 
 el.btnImport.addEventListener("click", () => {
   el.importPanel.classList.add("is-open");
