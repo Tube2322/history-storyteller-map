@@ -212,6 +212,30 @@ function clearBoundary() {
   el.regionLabel.classList.remove("is-visible");
 }
 
+// คำนวณกรอบพิกัด (bounds) ของ polygon/multipolygon จริง ใช้ปรับ zoom ให้พอดีขนาดพื้นที่
+// (ประเทศ = ซูมออกเห็นทั่วประเทศ, ตำบล = ซูมเข้าเห็นทั่วตำบล — ไม่ใช่ zoom ตายตัวอีกต่อไป)
+function boundsFromGeojson(geojson) {
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  function walk(coords) {
+    if (typeof coords[0] === "number") {
+      const [lng, lat] = coords;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    } else {
+      coords.forEach(walk);
+    }
+  }
+  walk(geojson.coordinates);
+  if (!Number.isFinite(minLng)) return null;
+  return new maplibregl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
+}
+
+// ช็อตที่ตั้งใจให้ "เข้าใกล้จุดสนใจ" (orbit/cut-to-insert/insert-overlay) จะไม่ปรับ zoom ตามขอบเขต
+// เพราะจุดประสงค์ของช็อตพวกนี้คือโฟกัสจุดเดียวใกล้ๆ ไม่ใช่เผยพื้นที่กว้าง
+const AUTO_FRAME_CAMS = new Set(["establishing", "fly-to", "push-in", "zoom-out"]);
+
 function showBoundary(scene) {
   const mySeq = ++boundaryRequestSeq;
   el.regionLabel.classList.remove("is-visible");
@@ -222,6 +246,14 @@ function showBoundary(scene) {
       animateBoundaryOpacity(0.18, 0.85);
       el.regionLabel.textContent = data.name || scene.place;
       el.regionLabel.classList.add("is-visible");
+
+      if (!AUTO_FRAME_CAMS.has(scene.cam)) return;
+      const bounds = boundsFromGeojson(data.geojson);
+      if (!bounds) return;
+      const cam = map.cameraForBounds(bounds, { padding: 60 });
+      if (cam) {
+        map.easeTo({ center: cam.center, zoom: cam.zoom, bearing: scene.bearing || 0, pitch: scene.tilt || 0, duration: 900 });
+      }
     })
     .catch((e) => console.warn(e));
 }
