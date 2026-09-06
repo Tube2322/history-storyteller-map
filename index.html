@@ -17,6 +17,7 @@
         <!-- เวทีแผนที่: MapLibre GL จริง (ภาพถ่ายดาวเทียม Esri) -->
         <section id="mapStage" class="map-stage">
           <div id="map" class="map-canvas"></div>
+          <div class="cinematic-vignette"></div>
           <div id="shadeOverlay" class="shade-overlay"></div>
           <div id="regionLabel" class="region-label"></div>
           <div id="captionOverlay" class="caption-overlay"></div>
@@ -61,6 +62,7 @@
         <audio id="bgmPlayer" loop hidden></audio>
 
         <!-- คำบรรยาย/ซับไตเติล -->
+        <div class="subtitle-scrim" id="subtitleScrim"></div>
         <div class="subtitle-wrap" id="subtitleWrap">
           <p id="subtitleText" class="subtitle-text">วางสคริปต์ฉากของคุณ แล้วกด "นำเข้าสคริปต์" เพื่อเริ่มดูตัวอย่าง</p>
         </div>
@@ -124,6 +126,13 @@
                 วิ่งตามถนนจริง
               </label>
             </div>
+            <div class="brand-row">
+              <label class="check-row" style="flex:1">
+                <input id="builderFollow" type="checkbox" />
+                กล้องตามไอคอนพาหนะ
+              </label>
+              <input id="builderSpeed" class="brand-input" type="number" min="1" placeholder="ความเร็วจริง กม./ชม. (ไม่ใส่ = ใช้ความยาวฉากคำนวณเอง)" style="flex:1" />
+            </div>
             <textarea id="builderScript" class="import-textarea" style="flex:0 0 80px" placeholder="บทพากย์/คำบรรยายฉากนี้"></textarea>
             <div class="import-actions">
               <input id="builderDur" class="brand-input" type="number" min="1" placeholder="วินาที (ปล่อยว่าง = 5)" style="flex:1" />
@@ -173,6 +182,8 @@
             <br><strong>badge</strong>: <code>badge=flag:us:lat,lng:สหรัฐอเมริกา</code> หรือ <code>badge=icon:🏛️:lat,lng:ป้ายชื่อ</code> — ไอคอนวงกลม(ธงชาติ/อีโมจิ)+ป้ายชื่อปักตามพิกัด
             <br><strong>callout</strong>: <code>callout=url:lat,lng:ป้ายชื่อ</code> — วงแหวนชี้จุดพิกัดจริง พร้อมเส้นโยงไปกล่องรูปแทรกมุมขวาบน (ใช้ url รูปที่อัปโหลดไว้)
             <br><strong>route</strong>: <code>route=road</code> — เส้นทางระหว่างฉากนี้กับฉากก่อนหน้าวิ่งตามถนนจริง (ผ่าน OSRM) แทนเส้นโค้งจำลอง เหมาะกับฉากท่องเที่ยว/เดินทางในพื้นที่เดียวกัน
+            <br><strong>follow</strong>: <code>follow=on</code> — กล้องติดตามไอคอนพาหนะไปตลอดเส้นทาง (ใช้กับ cam=fly-to) แทนการซูมเห็นเส้นทางทั้งหมดนิ่งๆ
+            <br><strong>speed</strong>: <code>speed=80</code> — ความเร็วเดินทางจริง (กม./ชม.) เอนจิ้นคำนวณเวลาที่ไอคอนใช้วิ่งจากระยะทางจริง/ความเร็วแทนการเดาความยาวฉากเอง (ใช้กับ cam=fly-to)
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>

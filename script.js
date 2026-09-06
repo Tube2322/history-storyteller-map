@@ -96,6 +96,7 @@ const el = {
   searchResultList: document.getElementById("searchResultList"),
   bgmPlayer: document.getElementById("bgmPlayer"),
   subtitleWrap: document.getElementById("subtitleWrap"),
+  subtitleScrim: document.getElementById("subtitleScrim"),
   voiceSelect: document.getElementById("voiceSelect"),
   voiceRate: document.getElementById("voiceRate"),
   voiceRateOut: document.getElementById("voiceRateOut"),
@@ -128,6 +129,8 @@ const el = {
   builderHighlight: document.getElementById("builderHighlight"),
   builderTransport: document.getElementById("builderTransport"),
   builderRoadRoute: document.getElementById("builderRoadRoute"),
+  builderFollow: document.getElementById("builderFollow"),
+  builderSpeed: document.getElementById("builderSpeed"),
   builderScript: document.getElementById("builderScript"),
   builderDur: document.getElementById("builderDur"),
   btnBuilderAdd: document.getElementById("btnBuilderAdd"),
@@ -149,7 +152,9 @@ let sceneGapSec = 0;
 let subtitleStyle = { pos: "bottom", color: "", size: 0, weight: "" };
 
 function applySubtitleStyle() {
-  el.subtitleWrap.classList.toggle("pos-top", subtitleStyle.pos === "top");
+  const isTop = subtitleStyle.pos === "top";
+  el.subtitleWrap.classList.toggle("pos-top", isTop);
+  el.subtitleScrim.classList.toggle("pos-top", isTop);
   el.subtitleText.style.color = subtitleStyle.color || "";
   el.subtitleText.style.fontSize = subtitleStyle.size ? `${subtitleStyle.size}px` : "";
   el.subtitleText.style.fontWeight = subtitleStyle.weight || "";
@@ -296,7 +301,28 @@ map.on("load", () => {
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0 },
   });
+
+  startDashFlowAnimation(); // เส้นประวิ่งบนเส้นทางเดินทาง (scene-line-layer) ไม่ต้องรอฉากไหนก็เริ่มได้เลย ไม่มีข้อมูลก็ไม่เห็นผลอะไร
 });
+
+// เส้นประ "วิ่ง" (marching ants) บนเส้นทางเดินทางระหว่างฉาก — MapLibre ไม่มี line-dashoffset ให้ตรงๆ
+// เลยไล่สลับ line-dasharray เป็นชุดที่เฟสขยับทีละนิดแทน ได้ผลลัพธ์แบบเดียวกัน
+const DASH_FLOW_SEQUENCE = [
+  [0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5], [2, 4, 1], [2.5, 4, 0.5], [3, 4, 0],
+  [0, 0.5, 3, 3.5], [0, 1, 3, 3], [0, 1.5, 3, 2.5], [0, 2, 3, 2], [0, 2.5, 3, 1.5], [0, 3, 3, 1], [0, 3.5, 3, 0.5],
+];
+let dashFlowStep = -1;
+function startDashFlowAnimation() {
+  function tick(timestamp) {
+    const step = Math.floor((timestamp / 60) % DASH_FLOW_SEQUENCE.length);
+    if (step !== dashFlowStep) {
+      dashFlowStep = step;
+      map.setPaintProperty("scene-line-layer", "line-dasharray", DASH_FLOW_SEQUENCE[step]);
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
 
 function emptyFC() {
   return { type: "FeatureCollection", features: [] };
@@ -848,7 +874,19 @@ function pointAtFraction(coords, t) {
   return coords[coords.length - 1];
 }
 
-function startPathIcon(coords, durationMs, glyph) {
+// ระยะทางจริงรวมของเส้น (กม.) — ใช้คำนวณเวลาเดินทางจาก speed=กม./ชม. ที่ตั้งไว้
+function pathDistanceKm(coords) {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) total += haversine(coords[i - 1], coords[i]);
+  return total / 1000;
+}
+
+const FOLLOW_CAM_ZOOM = 12; // ซูมคงที่ตอนกล้องไล่ตามไอคอนพาหนะ (follow=on) — ต้องตรงกับค่าที่ตั้งกล้องไว้ตอนเริ่มฉากใน moveCamera()
+
+// followZoom: ใส่เลขซูม (เช่น FOLLOW_CAM_ZOOM) ถ้าอยากให้กล้องไล่ตามไอคอนไปด้วยทุกเฟรม, ไม่ใส่/false = ไม่ตาม
+// ต้องระบุ zoom ชัดเจนทุกครั้งที่ jumpTo ไม่งั้น jumpTo จะไปขัดจังหวะ easeTo เดิมที่ตั้งกล้องไปซูมนี้อยู่ตั้งแต่ต้นฉาก
+// ทำให้ซูมค้างที่ค่ากลางๆตอนโดนขัดจังหวะ ไม่ถึงซูมเป้าหมายที่ตั้งใจไว้เลย
+function startPathIcon(coords, durationMs, glyph, followZoom) {
   stopPathIcon();
   transportWrapEl.querySelector(".transport-icon").textContent = glyph;
   markerTransport.setLngLat(coords[0]).addTo(map);
@@ -856,7 +894,9 @@ function startPathIcon(coords, durationMs, glyph) {
   function step(now) {
     const raw = Math.min(1, (now - start) / durationMs);
     const t = easeInOutCubic(raw);
-    markerTransport.setLngLat(pointAtFraction(coords, t));
+    const pos = pointAtFraction(coords, t);
+    markerTransport.setLngLat(pos);
+    if (followZoom) map.jumpTo({ center: pos, zoom: followZoom });
     if (raw < 1) pathIconRAF = requestAnimationFrame(step);
     else markerTransport.remove();
   }
@@ -1024,7 +1064,12 @@ function moveCamera(scene, durationSecOverride, frameOverride) {
     map.easeTo({ center, zoom, duration: 1000, bearing, pitch: pitch || 35 });
   } else if (scene.cam === "fly-to") {
     const zoom = frameOverride ? frameOverride.zoom : 6.2;
-    map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch });
+    if (scene.follow) {
+      // follow=on: กล้องแค่ขยับไปตั้งต้นที่จุดเริ่มเร็วๆ แล้วปล่อยให้ startPathIcon() เป็นคนลากกล้องตามไอคอนเองทุกเฟรม
+      map.easeTo({ center, zoom, duration: 700, bearing, pitch: pitch || 30 });
+    } else {
+      map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch });
+    }
   } else if (scene.cam === "push-in") {
     map.easeTo({ center, zoom: 10, duration: 1200, bearing, pitch });
   } else if (scene.cam === "zoom-out") {
@@ -1127,7 +1172,7 @@ function finalizeScene(raw) {
     reveal, trace, warmorph, mainland,
     labelfont, labelsize, labelweight,
     caption, captionpos, geophoto, draw, drawcolor, persist,
-    focus, highlightcolor, badge, callout, route,
+    focus, highlightcolor, badge, callout, route, follow, speed,
   } = raw;
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
@@ -1184,6 +1229,8 @@ function finalizeScene(raw) {
     badge: parseBadge(badge),
     callout: parseCallout(callout),
     routeRoad: route === "road",
+    follow: follow === "on" || follow === "true",
+    speedKmh: Number(speed) > 0 ? Number(speed) : 0,
   };
 }
 
@@ -1218,6 +1265,8 @@ const TAG_KEY_ALIASES = {
   badge: "badge", ป้ายกลม: "badge",
   callout: "callout", กล่องแทรก: "callout",
   route: "route", เส้นทาง: "route",
+  follow: "follow", ตามกล้อง: "follow",
+  speed: "speed", ความเร็ว: "speed",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1408,23 +1457,31 @@ function goToScene(index, durationOverride) {
     if (lineSource) lineSource.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
     const bearing = compassBearing(coords[1], coords[2]);
     markerArrow.setRotation(bearing - 90).setLngLat(coords[1]).addTo(map);
+    // speed=กม./ชม. ตั้งไว้: ให้ฟีลความเร็วสมจริง (ทางไกล+ความเร็วต่ำ = ไอคอนขยับช้ากว่าทางใกล้+ความเร็วสูง)
+    // แต่ห้ามยาวเกินความยาวฉากที่มีจริง (เสียงพากย์เป็นตัวกำหนดเวลาฉากเสมอ) ไม่งั้นทางไกลๆจะกลายเป็นรอเป็นนาทีจริงบนจอ
+    const baseDurMs = (durationOverride || scene.duration) * 1000;
+    const travelDurMs = scene.speedKmh > 0 ? Math.min((pathDistanceKm(coords) / scene.speedKmh) * 3600 * 1000, baseDurMs) : baseDurMs;
     if (scene.cam === "fly-to" && scene.transport !== "none") {
-      startPathIcon(coords, (durationOverride || scene.duration) * 1000, TRANSPORT_GLYPHS[scene.transport]);
+      startPathIcon(coords, travelDurMs, TRANSPORT_GLYPHS[scene.transport], scene.follow ? FOLLOW_CAM_ZOOM : null);
     } else {
       stopPathIcon();
     }
     // fly-to ไม่มี highlight: ซูมให้พอดีระยะทางจริงระหว่าง 2 จุด ไม่ใช่ค่าคงที่ตายตัว
     // (เดิม zoom 6.2 เสมอ ทำให้จุดใกล้กันมากๆ กล้องยังถอยไกลเกินพื้นที่จริง)
+    // follow=on: เริ่มกล้องที่จุดต้นทางในซูมแบบ "ติดตาม" แทน เพราะ startPathIcon จะเป็นคนขยับกล้องตามไอคอนเองทุกเฟรม
     if (scene.cam === "fly-to" && scene.highlight === "none") {
-      const routeBounds = new maplibregl.LngLatBounds(a, a).extend(b);
-      const cam = map.cameraForBounds(routeBounds, { padding: 90 });
-      if (cam) flyFrame = { center: cam.center, zoom: Math.min(Math.max(cam.zoom, 3), 10) };
+      if (scene.follow) {
+        flyFrame = { center: a, zoom: FOLLOW_CAM_ZOOM };
+      } else {
+        const routeBounds = new maplibregl.LngLatBounds(a, a).extend(b);
+        const cam = map.cameraForBounds(routeBounds, { padding: 90 });
+        if (cam) flyFrame = { center: cam.center, zoom: Math.min(Math.max(cam.zoom, 3), 10) };
+      }
     }
 
     // route=road: ดึงเส้นทางจริงตามถนนมาแทนเส้นโค้งจำลอง (โหลดช้ากว่าเล็กน้อย จึงวาดเส้นโค้งไปก่อนแล้วสลับทีหลัง)
     if (scene.routeRoad) {
       const mySeq = ++routeRequestSeq;
-      const durMs = (durationOverride || scene.duration) * 1000;
       fetchRoadRoute(a, b)
         .then((roadCoords) => {
           if (mySeq !== routeRequestSeq || !roadCoords) return;
@@ -1433,7 +1490,8 @@ function goToScene(index, durationOverride) {
           const midBearing = compassBearing(roadCoords[Math.max(0, Math.floor(roadCoords.length / 2) - 1)], mid);
           markerArrow.setRotation(midBearing - 90).setLngLat(mid).addTo(map);
           if (scene.cam === "fly-to" && scene.transport !== "none") {
-            startPathIcon(roadCoords, durMs, TRANSPORT_GLYPHS[scene.transport]);
+            const roadDurMs = scene.speedKmh > 0 ? Math.min((pathDistanceKm(roadCoords) / scene.speedKmh) * 3600 * 1000, baseDurMs) : baseDurMs;
+            startPathIcon(roadCoords, roadDurMs, TRANSPORT_GLYPHS[scene.transport], scene.follow ? FOLLOW_CAM_ZOOM : null);
           }
         })
         .catch((e) => console.warn("หาเส้นทางถนนไม่สำเร็จ", e));
@@ -2027,7 +2085,7 @@ function sanitizeTagValue(str) {
   return (str || "").replace(/\|/g, "/");
 }
 
-function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transport, routeRoad }) {
+function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transport, routeRoad, follow, speed }) {
   const parts = [
     `place=${sanitizeTagValue(place)}`,
     `latlng=${lat.toFixed(4)},${lng.toFixed(4)}`,
@@ -2038,6 +2096,8 @@ function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transp
   if (highlight && highlight !== "none") parts.push(`highlight=${highlight}`);
   if (transport && transport !== "none") parts.push(`transport=${transport}`);
   if (routeRoad) parts.push("route=road");
+  if (follow) parts.push("follow=on");
+  if (speed) parts.push(`speed=${speed}`);
   return parts.join(" | ");
 }
 
@@ -2058,6 +2118,8 @@ el.btnBuilderAdd.addEventListener("click", () => {
     highlight: el.builderHighlight.value,
     transport: el.builderTransport.value,
     routeRoad: el.builderRoadRoute.checked,
+    follow: el.builderFollow.checked,
+    speed: el.builderSpeed.value.trim(),
   }));
   el.importText.value = (el.importText.value ? el.importText.value.replace(/\n?$/, "\n") : "") + rows.join("\n") + "\n";
   parseImportText();
@@ -2071,6 +2133,9 @@ el.btnBuilderAdd.addEventListener("click", () => {
   el.builderToResults.innerHTML = "";
   el.builderScript.value = "";
   el.builderDur.value = "";
+  el.builderRoadRoute.checked = false;
+  el.builderFollow.checked = false;
+  el.builderSpeed.value = "";
 });
 
 // กู้สคริปต์ล่าสุดจาก localStorage อัตโนมัติ (ถ้ามีและยังไม่ได้มาจากโหมดเรนเดอร์)
