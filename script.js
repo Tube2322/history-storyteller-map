@@ -75,6 +75,8 @@ const el = {
   btnSaveProject: document.getElementById("btnSaveProject"),
   fileLoadProject: document.getElementById("fileLoadProject"),
   autosaveHint: document.getElementById("autosaveHint"),
+  fileUploadImage: document.getElementById("fileUploadImage"),
+  uploadList: document.getElementById("uploadList"),
 };
 
 let scenes = [];
@@ -673,6 +675,50 @@ el.btnSaveProject.addEventListener("click", saveProject);
 el.fileLoadProject.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (file) loadProjectFile(file);
+  e.target.value = "";
+});
+
+// ---------- อัพโหลดภาพของตัวเองไว้ใช้ในคอลัมน์ insert ----------
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function addUploadListItem(url, previewSrc) {
+  const item = document.createElement("div");
+  item.className = "upload-item";
+  item.innerHTML = `<img src="${previewSrc}" alt="" /><span class="up-path">${url}</span>`;
+  item.addEventListener("click", () => {
+    navigator.clipboard.writeText(url).catch(() => {});
+    const old = item.innerHTML;
+    item.innerHTML += `<span class="up-copied">คัดลอกแล้ว</span>`;
+    setTimeout(() => { item.innerHTML = old; }, 1200);
+  });
+  el.uploadList.prepend(item);
+}
+
+el.fileUploadImage.addEventListener("change", async (e) => {
+  const files = [...e.target.files];
+  for (const file of files) {
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, data: dataUrl }),
+      });
+      if (!res.ok) throw new Error(`อัพโหลดไม่สำเร็จ (${res.status})`);
+      const { url } = await res.json();
+      addUploadListItem(url, dataUrl);
+    } catch (err) {
+      alert(`อัพโหลด ${file.name} ไม่สำเร็จ: ${err.message} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`);
+    }
+  }
   e.target.value = "";
 });
 

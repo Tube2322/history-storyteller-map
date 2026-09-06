@@ -6,15 +6,21 @@ Microsoft Edge) เบราว์เซอร์เรียกตรงไม�
 """
 
 import asyncio
+import base64
 import http.server
 import json
+import re
 import socketserver
 import sys
+import uuid
+from pathlib import Path
 
 import edge_tts
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
 DEFAULT_VOICE = "th-TH-PremwadeeNeural"
+ASSETS_DIR = Path("assets")
+SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 async def synthesize(text: str, voice: str) -> bytes:
@@ -28,6 +34,9 @@ async def synthesize(text: str, voice: str) -> bytes:
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
+        if self.path == "/api/upload":
+            self.handle_upload()
+            return
         if self.path != "/api/tts":
             self.send_error(404, "not found")
             return
@@ -47,6 +56,37 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(audio_bytes)
         except Exception as exc:  # ส่ง error กลับเป็นข้อความ ให้ฝั่งเว็บ fallback ได้
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
+
+    def handle_upload(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            filename = (body.get("filename") or "image").strip()
+            data_url = body.get("data") or ""
+            if "," in data_url:
+                data_url = data_url.split(",", 1)[1]  # ตัด "data:image/png;base64," ทิ้ง
+            raw = base64.b64decode(data_url)
+
+            ASSETS_DIR.mkdir(exist_ok=True)
+            stem = Path(filename).stem or "image"
+            ext = Path(filename).suffix or ".png"
+            safe_stem = SAFE_NAME_RE.sub("-", stem)[:60] or "image"
+            safe_name = f"{safe_stem}-{uuid.uuid4().hex[:8]}{ext}"
+            (ASSETS_DIR / safe_name).write_bytes(raw)
+
+            result = json.dumps({"url": f"assets/{safe_name}"}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(result)))
+            self.end_headers()
+            self.wfile.write(result)
+        except Exception as exc:
             message = json.dumps({"error": str(exc)}).encode("utf-8")
             self.send_response(500)
             self.send_header("Content-Type", "application/json")

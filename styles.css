@@ -487,3 +487,22 @@ body.is-render-mode .import-panel {
 }
 .brand-input { flex: 1; min-width: 0; }
 .brand-input:focus, .brand-select:focus { outline: 1px solid var(--accent); }
+
+.upload-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.upload-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  transition: background .15s ease, color .15s ease;
+}
+.upload-item:hover { background: rgba(255,255,255,0.08); color: var(--ink); }
+.upload-item img { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; flex: none; }
+.upload-item .up-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.upload-item .up-copied { color: var(--accent); font-weight: 600; flex: none; }
