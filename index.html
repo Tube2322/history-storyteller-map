@@ -10,70 +10,92 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="stage">
+    <div class="viewport">
+      <main class="stage">
 
-      <!-- เวทีแผนที่ (placeholder ก่อนต่อ MapLibre จริง) -->
-      <section id="mapStage" class="map-stage cam-establishing">
-        <div class="map-grid"></div>
-        <svg class="map-path" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <path id="pathLine" d="M15,80 Q50,20 85,35" />
-        </svg>
-        <div id="pinFrom" class="map-pin pin-from"><span></span></div>
-        <div id="pinTo" class="map-pin pin-to"><span></span></div>
-        <div id="insertLayer" class="insert-layer"></div>
-      </section>
+        <!-- เวทีแผนที่ (placeholder ก่อนต่อ MapLibre จริง) -->
+        <section id="mapStage" class="map-stage cam-establishing">
+          <div class="map-grid"></div>
+          <svg class="map-path" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path id="pathLine" d="M15,80 Q50,20 85,35" />
+          </svg>
+          <div id="pinFrom" class="map-pin pin-from is-hidden"><span class="pin-dot"></span></div>
+          <div id="pinTo" class="map-pin pin-to is-hidden" style="left:50%;top:50%">
+            <span class="pin-dot"><i id="pinIcon" class="pin-icon"></i></span>
+            <em id="pinLabel" class="pin-label"></em>
+          </div>
+          <div id="insertLayer" class="insert-layer"></div>
+        </section>
 
-      <!-- แถบบน: ชื่อตอน / ลำดับฉาก / แผนกล้อง / ปุ่มควบคุม -->
-      <header class="topbar">
-        <div class="ep-info">
-          <span class="ep-title" id="epTitle">ยังไม่มีตอน</span>
-          <span class="ep-sub" id="sceneCounter">ฉาก 0/0</span>
+        <!-- ป้ายแบรนด์/โลโก้ -->
+        <div id="brandChip" class="brand-chip brand-tl"><span id="brandText">HS</span></div>
+
+        <!-- แถบบน: ชื่อตอน / ลำดับฉาก / แผนกล้อง / ปุ่มควบคุม -->
+        <header class="topbar">
+          <div class="ep-info">
+            <span class="ep-title" id="epTitle">ยังไม่มีตอน</span>
+            <span class="ep-sub" id="sceneCounter">ฉาก 0/0</span>
+          </div>
+          <div class="cam-badge" id="camBadge">
+            <span class="cam-dot"></span>
+            <span id="camLabel">ไม่มีแผนกล้อง</span>
+          </div>
+          <div class="topbar-spacer"></div>
+          <div class="transport">
+            <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า">⏮</button>
+            <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด">▶</button>
+            <button id="btnNext" class="tbtn" title="ฉากถัดไป">⏭</button>
+          </div>
+          <button id="btnImport" class="import-btn" type="button">นำเข้าสคริปต์</button>
+        </header>
+
+        <!-- คำบรรยาย/ซับไตเติล -->
+        <div class="subtitle-wrap">
+          <p id="subtitleText" class="subtitle-text">วางสคริปต์ฉากของคุณ แล้วกด "นำเข้าสคริปต์" เพื่อเริ่มดูตัวอย่าง</p>
         </div>
-        <div class="cam-badge" id="camBadge">
-          <span class="cam-dot"></span>
-          <span id="camLabel">ไม่มีแผนกล้อง</span>
-        </div>
-        <div class="topbar-spacer"></div>
-        <div class="transport">
-          <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า">⏮</button>
-          <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด">▶</button>
-          <button id="btnNext" class="tbtn" title="ฉากถัดไป">⏭</button>
-        </div>
-        <button id="btnImport" class="import-btn" type="button">นำเข้าสคริปต์</button>
-      </header>
 
-      <!-- คำบรรยาย/ซับไตเติล -->
-      <div class="subtitle-wrap">
-        <p id="subtitleText" class="subtitle-text">วางสคริปต์ฉากของคุณ แล้วกด "นำเข้าสคริปต์" เพื่อเริ่มดูตัวอย่าง</p>
-      </div>
+        <!-- เส้นเวลาฉาก -->
+        <footer class="timeline" id="timeline" aria-label="ลำดับฉาก">
+          <div class="timeline-track" id="timelineTrack"></div>
+        </footer>
 
-      <!-- เส้นเวลาฉาก -->
-      <footer class="timeline" id="timeline" aria-label="ลำดับฉาก">
-        <div class="timeline-track" id="timelineTrack"></div>
-      </footer>
+        <!-- แผงนำเข้าสคริปต์ -->
+        <aside id="importPanel" class="import-panel" aria-hidden="true">
+          <div class="import-head">
+            <h2>นำเข้าสคริปต์ซีน</h2>
+            <button id="btnCloseImport" class="icon-btn" title="ปิด">✕</button>
+          </div>
+          <p class="import-hint">
+            วางข้อมูลทีละแถว คั่นแต่ละคอลัมน์ด้วย tab หรือ <code>|</code> เรียงลำดับ:
+            <br><code>สถานที่ | แผนกล้อง | คำบรรยาย/สคริปต์เสียง | วินาที | ไอคอน | x,y%</code>
+            <br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert</code>
+            <br>ไอคอน: <code>city / castle / ship / battle / flag / mountain / camp</code> (ไม่ใส่ = 📍) — วินาที/ไอคอน/x,y ไม่บังคับ
+          </p>
+          <textarea id="importText" class="import-textarea" placeholder="สุโขทัย | establishing | ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | 5 | castle | 20,70
+สุโขทัย → ศรีสัชนาลัย | fly-to | จากนั้นกองคาราวานเดินทางขึ้นเหนือสู่เมืองพันธมิตร | 6 | flag | 55,35
+ศรีสัชนาลัย | push-in | ที่นี่คือจุดที่สงครามกำลังจะเริ่มต้น | 4 | battle | 80,25"></textarea>
+          <div class="import-actions">
+            <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
+            <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
+          </div>
+          <div class="import-preview" id="importPreview"></div>
 
-      <!-- แผงนำเข้าสคริปต์ -->
-      <aside id="importPanel" class="import-panel" aria-hidden="true">
-        <div class="import-head">
-          <h2>นำเข้าสคริปต์ซีน</h2>
-          <button id="btnCloseImport" class="icon-btn" title="ปิด">✕</button>
-        </div>
-        <p class="import-hint">
-          วางข้อมูลทีละแถว คั่นแต่ละคอลัมน์ด้วย tab หรือ <code>|</code> เรียงลำดับ:
-          <br><code>สถานที่ | แผนกล้อง | คำบรรยาย/สคริปต์เสียง | วินาที(ไม่บังคับ)</code>
-          <br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert</code>
-        </p>
-        <textarea id="importText" class="import-textarea" placeholder="สุโขทัย | establishing | ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | 5
-สุโขทัย → ศรีสัชนาลัย | fly-to | จากนั้นกองคาราวานเดินทางขึ้นเหนือสู่เมืองพันธมิตร | 6
-ศรีสัชนาลัย | push-in | ที่นี่คือจุดที่สงครามกำลังจะเริ่มต้น | 4"></textarea>
-        <div class="import-actions">
-          <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
-          <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
-        </div>
-        <div class="import-preview" id="importPreview"></div>
-      </aside>
+          <div class="brand-settings">
+            <h3>แบรนด์/วอเตอร์มาร์ก</h3>
+            <div class="brand-row">
+              <input id="brandInput" class="brand-input" type="text" maxlength="12" placeholder="ชื่อย่อช่อง เช่น HS" value="HS" />
+              <select id="brandCorner" class="brand-select">
+                <option value="tl">บนซ้าย</option>
+                <option value="tr">บนขวา</option>
+                <option value="bl">ล่างซ้าย</option>
+                <option value="br">ล่างขวา</option>
+              </select>
+            </div>
+          </div>
+        </aside>
 
-    </main>
+      </main>
+    </div>
     <script src="script.js"></script>
   </body>
 </html>

@@ -24,8 +24,33 @@ const CAM_DOT_VAR = {
 };
 const DEFAULT_DURATION = 5;
 
+const ICON_GLYPHS = {
+  city: "🏙️",
+  castle: "🏯",
+  ship: "⛵",
+  battle: "⚔️",
+  flag: "🚩",
+  mountain: "⛰️",
+  camp: "⛺",
+  default: "📍",
+};
+
+// จุดสำรองเมื่อไม่ระบุ x,y — กระจายจากซ้ายล่างไปขวาบนเป็นขั้นบันได
+const FALLBACK_POINTS = [
+  [18, 78], [38, 60], [58, 45], [78, 30], [30, 25], [65, 68], [50, 15],
+];
+
 const el = {
   mapStage: document.getElementById("mapStage"),
+  pathLine: document.getElementById("pathLine"),
+  pinFrom: document.getElementById("pinFrom"),
+  pinTo: document.getElementById("pinTo"),
+  pinIcon: document.getElementById("pinIcon"),
+  pinLabel: document.getElementById("pinLabel"),
+  brandChip: document.getElementById("brandChip"),
+  brandText: document.getElementById("brandText"),
+  brandInput: document.getElementById("brandInput"),
+  brandCorner: document.getElementById("brandCorner"),
   epTitle: document.getElementById("epTitle"),
   sceneCounter: document.getElementById("sceneCounter"),
   camBadge: document.getElementById("camBadge"),
@@ -49,16 +74,31 @@ let activeIndex = -1;
 let isPlaying = false;
 let playTimer = null;
 
-function parseRow(line) {
+function parseRow(line, index) {
   const parts = line.includes("|") ? line.split("|") : line.split("\t");
-  const [place, cam, script, dur] = parts.map((p) => (p || "").trim());
+  const [place, cam, script, dur, iconRaw, xyRaw] = parts.map((p) => (p || "").trim());
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
+  const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
+
+  let x, y;
+  if (xyRaw && xyRaw.includes(",")) {
+    const [xr, yr] = xyRaw.split(",").map((n) => Number(n.trim()));
+    if (!Number.isNaN(xr) && !Number.isNaN(yr)) { x = xr; y = yr; }
+  }
+  if (x === undefined) {
+    const fp = FALLBACK_POINTS[index % FALLBACK_POINTS.length];
+    [x, y] = fp;
+  }
+
   return {
     place,
     cam: camKey,
     script,
     duration: Number(dur) > 0 ? Number(dur) : DEFAULT_DURATION,
+    icon,
+    x,
+    y,
   };
 }
 
@@ -112,6 +152,24 @@ function goToScene(index) {
   el.subtitleText.textContent = scene.script;
 
   el.mapStage.className = `map-stage ${CAM_CLASS[scene.cam]}`;
+
+  el.pinTo.style.left = `${scene.x}%`;
+  el.pinTo.style.top = `${scene.y}%`;
+  el.pinIcon.setAttribute("data-glyph", ICON_GLYPHS[scene.icon]);
+  el.pinLabel.textContent = scene.place;
+  el.pinTo.classList.remove("is-hidden");
+
+  const prevScene = scenes[activeIndex - 1];
+  if (prevScene) {
+    el.pinFrom.style.left = `${prevScene.x}%`;
+    el.pinFrom.style.top = `${prevScene.y}%`;
+    el.pinFrom.classList.remove("is-hidden");
+    el.pathLine.setAttribute("d", `M${prevScene.x},${prevScene.y} Q${(prevScene.x + scene.x) / 2},${Math.min(prevScene.y, scene.y) - 15} ${scene.x},${scene.y}`);
+    el.pathLine.style.opacity = "1";
+  } else {
+    el.pinFrom.classList.add("is-hidden");
+    el.pathLine.style.opacity = "0";
+  }
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
     btn.classList.toggle("is-active", i === activeIndex);
@@ -167,4 +225,11 @@ el.btnParse.addEventListener("click", parseImportText);
 el.btnClear.addEventListener("click", () => {
   el.importText.value = "";
   el.importPreview.innerHTML = "";
+});
+
+el.brandInput.addEventListener("input", () => {
+  el.brandText.textContent = el.brandInput.value.trim().slice(0, 4) || "HS";
+});
+el.brandCorner.addEventListener("change", () => {
+  el.brandChip.className = `brand-chip brand-${el.brandCorner.value}`;
 });
