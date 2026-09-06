@@ -12,7 +12,7 @@
   </head>
   <body>
     <div class="viewport">
-      <main class="stage">
+      <main id="stageEl" class="stage">
 
         <!-- เวทีแผนที่: MapLibre GL จริง (ภาพถ่ายดาวเทียม Esri) -->
         <section id="mapStage" class="map-stage">
@@ -35,6 +35,10 @@
             <span id="camLabel">ไม่มีแผนกล้อง</span>
           </div>
           <div class="topbar-spacer"></div>
+          <div class="aspect-toggle" id="aspectToggle" role="group" aria-label="สัดส่วนวิดีโอ">
+            <button class="aspect-btn is-active" data-aspect="916" type="button" title="แนวตั้ง — มือถือ/TikTok/Shorts">9:16</button>
+            <button class="aspect-btn" data-aspect="169" type="button" title="แนวนอน — YouTube/คอม">16:9</button>
+          </div>
           <div class="transport">
             <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า">⏮</button>
             <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด">▶</button>

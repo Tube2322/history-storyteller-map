@@ -30,7 +30,8 @@ html, body {
   overflow: hidden;
 }
 
-/* ---------- เวทีแนวตั้ง 9:16 (จำลองฟอร์แมตวิดีโอสั้น) ---------- */
+/* ---------- เวที: สัดส่วนวิดีโอ (9:16 แนวตั้ง / 16:9 แนวนอน) ---------- */
+/* ขนาดจริง (px) คำนวณและเซ็ตด้วย JS (fitStage ใน script.js) เพื่อให้พอดีทั้งสองสัดส่วนบนจอทุกขนาด */
 
 .viewport {
   width: 100vw;
@@ -44,19 +45,8 @@ html, body {
 .stage {
   position: relative;
   overflow: hidden;
-  aspect-ratio: 9 / 16;
-  height: 100vh;
-  max-width: 100vw;
-  width: calc(100vh * 9 / 16);
   background: var(--bg);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 30px 80px rgba(0,0,0,0.6);
-}
-
-@media (max-aspect-ratio: 9/16) {
-  .stage {
-    width: 100vw;
-    height: calc(100vw * 16 / 9);
-  }
 }
 
 /* ---------- แผนที่จริง (MapLibre GL) ---------- */
@@ -252,6 +242,28 @@ html, body {
 .cam-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cam-establishing); transition: background .3s ease; flex: none; }
 
 .topbar-spacer { flex-basis: 100%; height: 0; }
+
+.aspect-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+}
+.aspect-btn {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.aspect-btn:hover { color: var(--ink); }
+.aspect-btn.is-active { background: var(--accent); color: #241a05; font-weight: 600; }
 
 .transport { display: flex; gap: 6px; }
 .tbtn {

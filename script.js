@@ -69,6 +69,8 @@ const el = {
   mapStage: document.getElementById("mapStage"),
   ttsPlayer: document.getElementById("ttsPlayer"),
   btnExport: document.getElementById("btnExport"),
+  stageEl: document.getElementById("stageEl"),
+  aspectToggle: document.getElementById("aspectToggle"),
 };
 
 let scenes = [];
@@ -78,10 +80,31 @@ let playToken = 0;
 let isExporting = false;
 let recorder = null;
 let recordedChunks = [];
+let map; // ประกาศไว้ก่อน เพราะ fitStage() ต้องเรียกได้ตั้งแต่ก่อนสร้างแผนที่จริง (เพื่อเซ็ตขนาด container ก่อน)
+
+// ---------- สัดส่วนเวที: 9:16 (มือถือ/TikTok/Shorts) หรือ 16:9 (YouTube/คอม) ----------
+// ตัวเอดิเตอร์ปรับได้ทั้งสองแบบ ตอนอัดวิดีโอ (บันทึกวิดีโอ) จะได้ไฟล์ตามสัดส่วนที่เลือกอยู่ตอนนั้นเป๊ะๆ
+// เพราะการอัดคือ capture หน้าจอ ณ ขณะนั้นตรงๆ
+
+let currentAspect = "916";
+
+function fitStage() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const ratio = currentAspect === "169" ? 16 / 9 : 9 / 16;
+  let w = vh * ratio;
+  let h = vh;
+  if (w > vw) { w = vw; h = vw / ratio; }
+  el.stageEl.style.width = `${Math.round(w)}px`;
+  el.stageEl.style.height = `${Math.round(h)}px`;
+  if (map) map.resize();
+}
+window.addEventListener("resize", fitStage);
+fitStage(); // เซ็ตขนาดเวทีก่อนสร้างแผนที่ ให้ container มีขนาดถูกต้องตั้งแต่แรก
 
 // ---------- แผนที่จริง (MapLibre GL + ภาพถ่ายดาวเทียม Esri) ----------
 
-const map = new maplibregl.Map({
+map = new maplibregl.Map({
   container: "map",
   style: {
     version: 8,
@@ -552,6 +575,14 @@ function stopExport() {
 
 el.btnExport.addEventListener("click", () => {
   if (isExporting) { setPlaying(false); } else { startExport(); }
+});
+
+el.aspectToggle.querySelectorAll(".aspect-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    currentAspect = btn.dataset.aspect;
+    el.aspectToggle.querySelectorAll(".aspect-btn").forEach((b) => b.classList.toggle("is-active", b === btn));
+    fitStage();
+  });
 });
 
 el.btnImport.addEventListener("click", () => {
