@@ -193,6 +193,26 @@ def fetch_geocode(query: str) -> list:
     return result
 
 
+# ---------- เส้นทางจริงตามถนน (route=road) ----------
+# OSRM demo server สาธารณะ ฟรี ไม่ต้องมีคีย์ (เหมาะกับเครื่องมือส่วนตัว/dev — ปริมาณเยอะจริงจังควรเปลี่ยนไปโฮสต์เอง)
+_route_cache = {}
+
+
+def fetch_route(lat1: float, lng1: float, lat2: float, lng2: float) -> list:
+    key = (round(lat1, 4), round(lng1, 4), round(lat2, 4), round(lng2, 4))
+    if key in _route_cache:
+        return _route_cache[key]
+    qs = urllib.parse.urlencode({"geometries": "geojson", "overview": "full"})
+    url = f"https://router.project-osrm.org/route/v1/driving/{lng1},{lat1};{lng2},{lat2}?{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool)"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    routes = data.get("routes") or []
+    coords = routes[0]["geometry"]["coordinates"] if routes else []  # [[lng,lat], ...]
+    _route_cache[key] = coords
+    return coords
+
+
 _RATE_RE = re.compile(r"^[+-]\d{1,3}%$")
 _PITCH_RE = re.compile(r"^[+-]\d{1,3}Hz$")
 
@@ -244,6 +264,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith("/api/geocode"):
             self.handle_geocode()
             return
+        if self.path.startswith("/api/route"):
+            self.handle_route()
+            return
         path_only = self.path.split("?", 1)[0]
         if path_only in ("/", "/index.html"):
             self.handle_index()
@@ -277,6 +300,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             results = fetch_geocode(query)
             body = json.dumps({"results": results}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
+
+    def handle_route(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            lat1 = float(qs.get("lat1", [""])[0])
+            lng1 = float(qs.get("lng1", [""])[0])
+            lat2 = float(qs.get("lat2", [""])[0])
+            lng2 = float(qs.get("lng2", [""])[0])
+            coords = fetch_route(lat1, lng1, lat2, lng2)
+            body = json.dumps({"coords": coords}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

@@ -76,6 +76,62 @@
             <h2>นำเข้าสคริปต์ซีน</h2>
             <button id="btnCloseImport" class="icon-btn" title="ปิด">✕</button>
           </div>
+          <details class="import-details" open>
+          <summary>🧭 สร้างฉากง่ายๆ (จากจุด A ไป B) — ไม่ต้องพิมพ์ tag เอง</summary>
+          <div class="builder-form">
+            <div class="builder-field">
+              <label>จาก (เว้นว่างได้ถ้าไม่ต้องการฉากเปิดที่จุดเริ่ม)</label>
+              <div class="import-actions">
+                <input id="builderFromInput" class="brand-input" type="text" placeholder="เช่น กรุงเทพฯ" style="flex:1" />
+                <button id="btnBuilderFromSearch" class="ghost-btn" type="button">ค้นหา</button>
+              </div>
+              <div class="upload-list" id="builderFromResults"></div>
+            </div>
+            <div class="builder-field">
+              <label>ไป (จุดหมายของฉากนี้)</label>
+              <div class="import-actions">
+                <input id="builderToInput" class="brand-input" type="text" placeholder="เช่น เชียงใหม่" style="flex:1" />
+                <button id="btnBuilderToSearch" class="ghost-btn" type="button">ค้นหา</button>
+              </div>
+              <div class="upload-list" id="builderToResults"></div>
+            </div>
+            <div class="brand-row">
+              <select id="builderCam" class="brand-select" style="flex:1">
+                <option value="fly-to">บินข้ามพื้นที่ (fly-to) — ฟีลเดินทาง</option>
+                <option value="establishing">เปิดภาพกว้าง (establishing)</option>
+                <option value="push-in">ซูมเข้าจุดหมาย (push-in)</option>
+                <option value="zoom-out">ซูมออกเผยภาพรวม (zoom-out)</option>
+                <option value="orbit">หมุนรอบจุดสนใจ (orbit)</option>
+              </select>
+              <select id="builderHighlight" class="brand-select" style="flex:1">
+                <option value="none">ไม่ไฮไลต์เขตแดน</option>
+                <option value="country">ไฮไลต์ระดับประเทศ</option>
+                <option value="province">ไฮไลต์ระดับจังหวัด</option>
+                <option value="place">ไฮไลต์ระดับสถานที่/อำเภอ</option>
+              </select>
+            </div>
+            <div class="brand-row">
+              <select id="builderTransport" class="brand-select" style="flex:1">
+                <option value="none">ไม่มีไอคอนพาหนะ</option>
+                <option value="car">รถยนต์</option>
+                <option value="plane">เครื่องบิน</option>
+                <option value="train">รถไฟ</option>
+                <option value="ship">เรือ</option>
+                <option value="walk">เดินเท้า</option>
+              </select>
+              <label class="check-row" style="flex:1">
+                <input id="builderRoadRoute" type="checkbox" />
+                วิ่งตามถนนจริง
+              </label>
+            </div>
+            <textarea id="builderScript" class="import-textarea" style="flex:0 0 80px" placeholder="บทพากย์/คำบรรยายฉากนี้"></textarea>
+            <div class="import-actions">
+              <input id="builderDur" class="brand-input" type="number" min="1" placeholder="วินาที (ปล่อยว่าง = 5)" style="flex:1" />
+              <button id="btnBuilderAdd" class="primary-btn" type="button">+ เพิ่มฉากนี้</button>
+            </div>
+          </div>
+          </details>
+
           <details class="import-details">
           <summary>วิธีเขียนสคริปต์ + รายการ tag ทั้งหมด (แตะเพื่อดู)</summary>
           <p class="import-hint">
@@ -116,6 +172,7 @@
             <br><strong>highlightcolor</strong>: <code>highlightcolor=RRGGBB</code> — เปลี่ยนสีไฮไลต์เขตแดนจากเหลืองทองดีฟอลต์ (ใช้คู่กับ highlight)
             <br><strong>badge</strong>: <code>badge=flag:us:lat,lng:สหรัฐอเมริกา</code> หรือ <code>badge=icon:🏛️:lat,lng:ป้ายชื่อ</code> — ไอคอนวงกลม(ธงชาติ/อีโมจิ)+ป้ายชื่อปักตามพิกัด
             <br><strong>callout</strong>: <code>callout=url:lat,lng:ป้ายชื่อ</code> — วงแหวนชี้จุดพิกัดจริง พร้อมเส้นโยงไปกล่องรูปแทรกมุมขวาบน (ใช้ url รูปที่อัปโหลดไว้)
+            <br><strong>route</strong>: <code>route=road</code> — เส้นทางระหว่างฉากนี้กับฉากก่อนหน้าวิ่งตามถนนจริง (ผ่าน OSRM) แทนเส้นโค้งจำลอง เหมาะกับฉากท่องเที่ยว/เดินทางในพื้นที่เดียวกัน
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>

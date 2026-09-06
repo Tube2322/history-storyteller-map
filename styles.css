@@ -735,6 +735,10 @@ body.is-render-mode .import-panel {
 .check-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .check-row input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 
+/* สร้างฉากง่ายๆ (จาก A ไป B) */
+.builder-form { display: flex; flex-direction: column; gap: 12px; }
+.builder-field label { display: block; font-size: 12px; color: var(--ink-dim); margin-bottom: 6px; font-family: var(--thai); }
+
 .upload-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .upload-item {
   display: flex;

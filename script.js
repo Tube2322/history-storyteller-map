@@ -118,6 +118,19 @@ const el = {
   calloutBox: document.getElementById("calloutBox"),
   calloutImg: document.getElementById("calloutImg"),
   calloutLabel: document.getElementById("calloutLabel"),
+  builderFromInput: document.getElementById("builderFromInput"),
+  btnBuilderFromSearch: document.getElementById("btnBuilderFromSearch"),
+  builderFromResults: document.getElementById("builderFromResults"),
+  builderToInput: document.getElementById("builderToInput"),
+  btnBuilderToSearch: document.getElementById("btnBuilderToSearch"),
+  builderToResults: document.getElementById("builderToResults"),
+  builderCam: document.getElementById("builderCam"),
+  builderHighlight: document.getElementById("builderHighlight"),
+  builderTransport: document.getElementById("builderTransport"),
+  builderRoadRoute: document.getElementById("builderRoadRoute"),
+  builderScript: document.getElementById("builderScript"),
+  builderDur: document.getElementById("builderDur"),
+  btnBuilderAdd: document.getElementById("btnBuilderAdd"),
 };
 
 let scenes = [];
@@ -813,12 +826,26 @@ const transportWrapEl = makeMarkerEl("transport-marker-wrap", `<span class="tran
 const markerTransport = new maplibregl.Marker({ element: transportWrapEl, anchor: "center" });
 let pathIconRAF = null;
 
-function quadBezierPoint(p0, p1, p2, t) {
-  const mt = 1 - t;
-  return [
-    mt * mt * p0[0] + 2 * mt * t * p1[0] + t * t * p2[0],
-    mt * mt * p0[1] + 2 * mt * t * p1[1] + t * t * p2[1],
-  ];
+// จุดตามสัดส่วนระยะทางจริงบนเส้นที่มีกี่จุดก็ได้ (ใช้ได้ทั้งเส้นโค้ง 3 จุดเดิม และเส้นถนนจริงที่มีเป็นร้อยจุด)
+function pointAtFraction(coords, t) {
+  if (coords.length < 2) return coords[0];
+  if (t >= 1) return coords[coords.length - 1];
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) total += haversine(coords[i - 1], coords[i]);
+  const target = total * t;
+  let acc = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const d = haversine(coords[i - 1], coords[i]);
+    if (acc + d >= target || i === coords.length - 1) {
+      const segT = d > 0 ? Math.min(1, (target - acc) / d) : 0;
+      return [
+        coords[i - 1][0] + (coords[i][0] - coords[i - 1][0]) * segT,
+        coords[i - 1][1] + (coords[i][1] - coords[i - 1][1]) * segT,
+      ];
+    }
+    acc += d;
+  }
+  return coords[coords.length - 1];
 }
 
 function startPathIcon(coords, durationMs, glyph) {
@@ -829,7 +856,7 @@ function startPathIcon(coords, durationMs, glyph) {
   function step(now) {
     const raw = Math.min(1, (now - start) / durationMs);
     const t = easeInOutCubic(raw);
-    markerTransport.setLngLat(quadBezierPoint(coords[0], coords[1], coords[2], t));
+    markerTransport.setLngLat(pointAtFraction(coords, t));
     if (raw < 1) pathIconRAF = requestAnimationFrame(step);
     else markerTransport.remove();
   }
@@ -840,6 +867,20 @@ function stopPathIcon() {
   if (pathIconRAF) cancelAnimationFrame(pathIconRAF);
   pathIconRAF = null;
   markerTransport.remove();
+}
+
+// route=road — ดึงเส้นทางจริงตามถนน (OSRM ผ่าน /api/route) แทนเส้นโค้งจำลอง
+const routeCache = new Map();
+let routeRequestSeq = 0;
+async function fetchRoadRoute(a, b) {
+  const key = `${a[1].toFixed(4)},${a[0].toFixed(4)}:${b[1].toFixed(4)},${b[0].toFixed(4)}`;
+  if (routeCache.has(key)) return routeCache.get(key);
+  const res = await fetch(`/api/route?lat1=${a[1]}&lng1=${a[0]}&lat2=${b[1]}&lng2=${b[0]}`);
+  if (!res.ok) throw new Error(`หาเส้นทางถนนไม่สำเร็จ (${res.status})`);
+  const { coords } = await res.json();
+  const result = coords && coords.length >= 2 ? coords : null;
+  routeCache.set(key, result);
+  return result;
 }
 
 // ---------- shade / spotlight: มืดรอบข้าง เหลือจุดสนใจสว่าง ----------
@@ -1086,7 +1127,7 @@ function finalizeScene(raw) {
     reveal, trace, warmorph, mainland,
     labelfont, labelsize, labelweight,
     caption, captionpos, geophoto, draw, drawcolor, persist,
-    focus, highlightcolor, badge, callout,
+    focus, highlightcolor, badge, callout, route,
   } = raw;
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
@@ -1142,6 +1183,7 @@ function finalizeScene(raw) {
     highlightColor: /^[0-9a-fA-F]{6}$/.test(highlightcolor || "") ? `#${highlightcolor}` : "",
     badge: parseBadge(badge),
     callout: parseCallout(callout),
+    routeRoad: route === "road",
   };
 }
 
@@ -1175,6 +1217,7 @@ const TAG_KEY_ALIASES = {
   highlightcolor: "highlightcolor", สีไฮไลต์: "highlightcolor",
   badge: "badge", ป้ายกลม: "badge",
   callout: "callout", กล่องแทรก: "callout",
+  route: "route", เส้นทาง: "route",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1376,6 +1419,24 @@ function goToScene(index, durationOverride) {
       const routeBounds = new maplibregl.LngLatBounds(a, a).extend(b);
       const cam = map.cameraForBounds(routeBounds, { padding: 90 });
       if (cam) flyFrame = { center: cam.center, zoom: Math.min(Math.max(cam.zoom, 3), 10) };
+    }
+
+    // route=road: ดึงเส้นทางจริงตามถนนมาแทนเส้นโค้งจำลอง (โหลดช้ากว่าเล็กน้อย จึงวาดเส้นโค้งไปก่อนแล้วสลับทีหลัง)
+    if (scene.routeRoad) {
+      const mySeq = ++routeRequestSeq;
+      const durMs = (durationOverride || scene.duration) * 1000;
+      fetchRoadRoute(a, b)
+        .then((roadCoords) => {
+          if (mySeq !== routeRequestSeq || !roadCoords) return;
+          if (lineSource) lineSource.setData({ type: "Feature", geometry: { type: "LineString", coordinates: roadCoords } });
+          const mid = roadCoords[Math.floor(roadCoords.length / 2)];
+          const midBearing = compassBearing(roadCoords[Math.max(0, Math.floor(roadCoords.length / 2) - 1)], mid);
+          markerArrow.setRotation(midBearing - 90).setLngLat(mid).addTo(map);
+          if (scene.cam === "fly-to" && scene.transport !== "none") {
+            startPathIcon(roadCoords, durMs, TRANSPORT_GLYPHS[scene.transport]);
+          }
+        })
+        .catch((e) => console.warn("หาเส้นทางถนนไม่สำเร็จ", e));
     }
   } else {
     markerFrom.remove();
@@ -1909,38 +1970,108 @@ el.fileUploadImage.addEventListener("change", async (e) => {
   e.target.value = "";
 });
 
-// ---------- ค้นหาสถานที่ (Nominatim forward geocode) แล้วแทรกแถวตัวอย่างลงสคริปต์ ----------
+// ---------- ค้นหาสถานที่ (Nominatim forward geocode) — ใช้ร่วมกันทั้งช่องค้นหาเดิมและ "สร้างฉากง่ายๆ" ----------
 
-async function searchPlace() {
-  const q = el.searchPlaceInput.value.trim();
-  if (!q) return;
-  el.searchResultList.innerHTML = `<div class="upload-item">กำลังค้นหา...</div>`;
-  try {
-    const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
-    if (!res.ok) throw new Error(`ค้นหาไม่สำเร็จ (${res.status})`);
-    const { results } = await res.json();
-    if (!results.length) { el.searchResultList.innerHTML = `<div class="upload-item">ไม่พบสถานที่นี้</div>`; return; }
-    el.searchResultList.innerHTML = "";
-    results.forEach((r) => {
-      const item = document.createElement("div");
-      item.className = "upload-item";
-      item.innerHTML = `<span class="up-path">${escapeHtml(r.name)} (${r.lat.toFixed(4)},${r.lng.toFixed(4)})</span>`;
-      item.addEventListener("click", () => {
-        const row = `place=${q} | latlng=${r.lat.toFixed(4)},${r.lng.toFixed(4)} | cam=establishing | script=... | sec=5`;
-        el.importText.value = (el.importText.value ? el.importText.value.replace(/\n?$/, "\n") : "") + row + "\n";
-        el.importText.scrollTop = el.importText.scrollHeight;
-        el.searchResultList.innerHTML = "";
-        el.searchPlaceInput.value = "";
-      });
-      el.searchResultList.appendChild(item);
-    });
-  } catch (err) {
-    el.searchResultList.innerHTML = `<div class="upload-item">ผิดพลาด: ${escapeHtml(err.message)} — ต้องรัน server.py</div>`;
-  }
+async function geocodeSearch(q) {
+  const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error(`ค้นหาไม่สำเร็จ (${res.status})`);
+  const { results } = await res.json();
+  return results;
 }
 
-el.btnSearchPlace.addEventListener("click", searchPlace);
-el.searchPlaceInput.addEventListener("keydown", (e) => { if (e.key === "Enter") searchPlace(); });
+// ผูกช่องพิมพ์+ปุ่มค้นหา+รายการผลลัพธ์เข้าด้วยกัน คลิกผลลัพธ์แล้วเรียก onPick({name, lat, lng})
+// (name = ข้อความที่ผู้ใช้พิมพ์ค้นหา ไม่ใช่ display_name เต็มของ Nominatim ที่มักยาวเกินไปจะใช้เป็นชื่อฉาก)
+function wireSearchWidget(inputEl, btnEl, resultsEl, onPick) {
+  async function run() {
+    const q = inputEl.value.trim();
+    if (!q) return;
+    resultsEl.innerHTML = `<div class="upload-item">กำลังค้นหา...</div>`;
+    try {
+      const results = await geocodeSearch(q);
+      if (!results.length) { resultsEl.innerHTML = `<div class="upload-item">ไม่พบสถานที่นี้</div>`; return; }
+      resultsEl.innerHTML = "";
+      results.forEach((r) => {
+        const item = document.createElement("div");
+        item.className = "upload-item";
+        item.innerHTML = `<span class="up-path">${escapeHtml(r.name)} (${r.lat.toFixed(4)},${r.lng.toFixed(4)})</span>`;
+        item.addEventListener("click", () => {
+          onPick({ name: q, lat: r.lat, lng: r.lng });
+          resultsEl.innerHTML = `<div class="upload-item">✓ เลือก: ${escapeHtml(q)} (${r.lat.toFixed(4)},${r.lng.toFixed(4)})</div>`;
+        });
+        resultsEl.appendChild(item);
+      });
+    } catch (err) {
+      resultsEl.innerHTML = `<div class="upload-item">ผิดพลาด: ${escapeHtml(err.message)} — ต้องรัน server.py</div>`;
+    }
+  }
+  btnEl.addEventListener("click", run);
+  inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+}
+
+wireSearchWidget(el.searchPlaceInput, el.btnSearchPlace, el.searchResultList, (pick) => {
+  const row = `place=${pick.name} | latlng=${pick.lat.toFixed(4)},${pick.lng.toFixed(4)} | cam=establishing | script=... | sec=5`;
+  el.importText.value = (el.importText.value ? el.importText.value.replace(/\n?$/, "\n") : "") + row + "\n";
+  el.importText.scrollTop = el.importText.scrollHeight;
+  el.searchPlaceInput.value = "";
+});
+
+// ---------- สร้างฉากง่ายๆ (จากจุด A ไป B) — UX แบบฟอร์ม ไม่ต้องพิมพ์ tag เอง ----------
+
+let builderFromPick = null;
+let builderToPick = null;
+wireSearchWidget(el.builderFromInput, el.btnBuilderFromSearch, el.builderFromResults, (pick) => { builderFromPick = pick; });
+wireSearchWidget(el.builderToInput, el.btnBuilderToSearch, el.builderToResults, (pick) => { builderToPick = pick; });
+
+// | คือตัวคั่น tag ในฟอร์แมตสคริปต์ — ถ้าผู้ใช้พิมพ์ | ปนมาในชื่อสถานที่/บทพากย์ต้องกันไว้ ไม่งั้นแถวที่สร้างจะพังตอน parse
+function sanitizeTagValue(str) {
+  return (str || "").replace(/\|/g, "/");
+}
+
+function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transport, routeRoad }) {
+  const parts = [
+    `place=${sanitizeTagValue(place)}`,
+    `latlng=${lat.toFixed(4)},${lng.toFixed(4)}`,
+    `cam=${cam}`,
+    `script=${sanitizeTagValue(script) || "..."}`,
+  ];
+  if (dur) parts.push(`sec=${dur}`);
+  if (highlight && highlight !== "none") parts.push(`highlight=${highlight}`);
+  if (transport && transport !== "none") parts.push(`transport=${transport}`);
+  if (routeRoad) parts.push("route=road");
+  return parts.join(" | ");
+}
+
+el.btnBuilderAdd.addEventListener("click", () => {
+  if (!builderToPick) { alert("ค้นหาแล้วเลือกจุดหมาย (ไป) ก่อน"); return; }
+  const rows = [];
+  // มี "จาก" ที่เลือกไว้ → แทรกฉากเปิดที่จุดนั้นก่อนเสมอ (ให้เห็นจุดเริ่มต้นจริงบนแผนที่ ไม่ใช่แค่กระโดดไปจุดหมายเฉยๆ)
+  if (builderFromPick) {
+    rows.push(buildSceneTagRow({ place: builderFromPick.name, lat: builderFromPick.lat, lng: builderFromPick.lng, cam: "establishing", script: "..." }));
+  }
+  rows.push(buildSceneTagRow({
+    place: builderToPick.name,
+    lat: builderToPick.lat,
+    lng: builderToPick.lng,
+    cam: el.builderCam.value,
+    script: el.builderScript.value.trim(),
+    dur: el.builderDur.value.trim(),
+    highlight: el.builderHighlight.value,
+    transport: el.builderTransport.value,
+    routeRoad: el.builderRoadRoute.checked,
+  }));
+  el.importText.value = (el.importText.value ? el.importText.value.replace(/\n?$/, "\n") : "") + rows.join("\n") + "\n";
+  parseImportText();
+  el.importText.scrollTop = el.importText.scrollHeight;
+  // ล้างฟอร์มเตรียมสร้างฉากถัดไป (ไม่ล้าง "จาก" ถ้าจะเดินทางต่อจากจุดเดิมก็พิมพ์ "ไป" ใหม่ได้เลย — แต่ล้างทั้งคู่ให้ชัดเจนกว่า กันสับสนว่าเชื่อมจากไหน)
+  builderFromPick = null;
+  builderToPick = null;
+  el.builderFromInput.value = "";
+  el.builderToInput.value = "";
+  el.builderFromResults.innerHTML = "";
+  el.builderToResults.innerHTML = "";
+  el.builderScript.value = "";
+  el.builderDur.value = "";
+});
 
 // กู้สคริปต์ล่าสุดจาก localStorage อัตโนมัติ (ถ้ามีและยังไม่ได้มาจากโหมดเรนเดอร์)
 try {
