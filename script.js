@@ -94,6 +94,24 @@ const el = {
   searchPlaceInput: document.getElementById("searchPlaceInput"),
   btnSearchPlace: document.getElementById("btnSearchPlace"),
   searchResultList: document.getElementById("searchResultList"),
+  bgmPlayer: document.getElementById("bgmPlayer"),
+  subtitleWrap: document.getElementById("subtitleWrap"),
+  voiceSelect: document.getElementById("voiceSelect"),
+  voiceRate: document.getElementById("voiceRate"),
+  voiceRateOut: document.getElementById("voiceRateOut"),
+  voicePitch: document.getElementById("voicePitch"),
+  voicePitchOut: document.getElementById("voicePitchOut"),
+  fileUploadBgm: document.getElementById("fileUploadBgm"),
+  btnClearBgm: document.getElementById("btnClearBgm"),
+  bgmFileName: document.getElementById("bgmFileName"),
+  bgmVolume: document.getElementById("bgmVolume"),
+  bgmVolumeOut: document.getElementById("bgmVolumeOut"),
+  sceneGap: document.getElementById("sceneGap"),
+  sceneGapOut: document.getElementById("sceneGapOut"),
+  subtitlePos: document.getElementById("subtitlePos"),
+  subtitleColor: document.getElementById("subtitleColor"),
+  subtitleSize: document.getElementById("subtitleSize"),
+  subtitleWeight: document.getElementById("subtitleWeight"),
 };
 
 let scenes = [];
@@ -102,6 +120,20 @@ let isPlaying = false;
 let highlightPersistLeft = 0; // persist=N — จำนวนฉากถัดไปที่ยังคงให้เขตแดนที่ไฮไลต์ค้างอยู่ ไม่เคลียร์ทันที
 let playToken = 0;
 let isExporting = false;
+
+// ---------- ตั้งค่าการอัด: เสียงพากย์ / เพลงพื้นหลัง / จังหวะฉาก / สไตล์ซับไตเติล ----------
+let voiceSettings = { voice: DEFAULT_VOICE, rate: "+0%", pitch: "+0Hz" };
+let bgmUrl = "";
+let bgmVolumeLevel = 0.25;
+let sceneGapSec = 0;
+let subtitleStyle = { pos: "bottom", color: "", size: 0, weight: "" };
+
+function applySubtitleStyle() {
+  el.subtitleWrap.classList.toggle("pos-top", subtitleStyle.pos === "top");
+  el.subtitleText.style.color = subtitleStyle.color || "";
+  el.subtitleText.style.fontSize = subtitleStyle.size ? `${subtitleStyle.size}px` : "";
+  el.subtitleText.style.fontWeight = subtitleStyle.weight || "";
+}
 let recorder = null;
 let recordedChunks = [];
 let map; // ประกาศไว้ก่อน เพราะ fitStage() ต้องเรียกได้ตั้งแต่ก่อนสร้างแผนที่จริง (เพื่อเซ็ตขนาด container ก่อน)
@@ -1246,12 +1278,12 @@ function updateChipDuration(idx) {
 const ttsCache = new Map();
 
 async function fetchTts(text) {
-  const key = `${DEFAULT_VOICE}::${text}`;
+  const key = `${voiceSettings.voice}::${voiceSettings.rate}::${voiceSettings.pitch}::${text}`;
   if (ttsCache.has(key)) return ttsCache.get(key);
   const res = await fetch("/api/tts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, voice: DEFAULT_VOICE }),
+    body: JSON.stringify({ text, voice: voiceSettings.voice, rate: voiceSettings.rate, pitch: voiceSettings.pitch }),
   });
   if (!res.ok) throw new Error(`TTS server error (${res.status}) — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`);
   const blob = await res.blob();
@@ -1334,6 +1366,8 @@ async function narrationLoop() {
     if (myToken !== playToken) return;
 
     if (idx < scenes.length - 1) {
+      if (sceneGapSec > 0) await wait(sceneGapSec * 1000); // จังหวะฉาก — พักเงียบก่อนตัดไปฉากถัดไป
+      if (myToken !== playToken) return;
       activeIndex = idx + 1;
     } else {
       setPlaying(false);
@@ -1345,10 +1379,17 @@ async function narrationLoop() {
 
 function setPlaying(next) {
   if (next) {
+    if (bgmUrl) {
+      if (el.bgmPlayer.src !== bgmUrl) el.bgmPlayer.src = bgmUrl;
+      el.bgmPlayer.volume = bgmVolumeLevel;
+      el.bgmPlayer.currentTime = 0;
+      el.bgmPlayer.play().catch(() => {});
+    }
     narrationLoop();
     return;
   }
   isPlaying = false;
+  el.bgmPlayer.pause();
   playToken++; // ตัดลูปพากย์เสียงปัจจุบันทิ้ง
   el.ttsPlayer.pause();
   el.btnPlay.textContent = "▶";
@@ -1490,6 +1531,61 @@ el.brandCorner.addEventListener("change", () => {
   el.brandChip.className = `brand-chip brand-${el.brandCorner.value}`;
 });
 
+// ---------- เสียงพากย์ / เพลงพื้นหลัง / จังหวะฉาก / สไตล์ซับไตเติล ----------
+
+el.voiceSelect.addEventListener("change", () => { voiceSettings.voice = el.voiceSelect.value; });
+el.voiceRate.addEventListener("input", () => {
+  const n = Number(el.voiceRate.value);
+  voiceSettings.rate = `${n >= 0 ? "+" : ""}${n}%`;
+  el.voiceRateOut.textContent = voiceSettings.rate;
+});
+el.voicePitch.addEventListener("input", () => {
+  const n = Number(el.voicePitch.value);
+  voiceSettings.pitch = `${n >= 0 ? "+" : ""}${n}Hz`;
+  el.voicePitchOut.textContent = voiceSettings.pitch;
+});
+
+el.fileUploadBgm.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, data: dataUrl }),
+    });
+    if (!res.ok) throw new Error(`อัพโหลดไม่สำเร็จ (${res.status})`);
+    const { url } = await res.json();
+    bgmUrl = url;
+    el.bgmFileName.textContent = `เพลง: ${file.name}`;
+  } catch (err) {
+    alert(`อัพโหลดเพลงไม่สำเร็จ: ${err.message} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`);
+  }
+});
+el.btnClearBgm.addEventListener("click", () => {
+  bgmUrl = "";
+  el.bgmPlayer.pause();
+  el.bgmPlayer.removeAttribute("src");
+  el.bgmFileName.textContent = "ยังไม่ได้เลือกเพลง";
+});
+el.bgmVolume.addEventListener("input", () => {
+  bgmVolumeLevel = Number(el.bgmVolume.value) / 100;
+  el.bgmVolumeOut.textContent = `${el.bgmVolume.value}%`;
+  el.bgmPlayer.volume = bgmVolumeLevel;
+});
+
+el.sceneGap.addEventListener("input", () => {
+  sceneGapSec = Number(el.sceneGap.value) / 10;
+  el.sceneGapOut.textContent = `${sceneGapSec.toFixed(1)} วิ`;
+});
+
+el.subtitlePos.addEventListener("change", () => { subtitleStyle.pos = el.subtitlePos.value; applySubtitleStyle(); });
+el.subtitleColor.addEventListener("input", () => { subtitleStyle.color = el.subtitleColor.value; applySubtitleStyle(); });
+el.subtitleSize.addEventListener("input", () => { subtitleStyle.size = Number(el.subtitleSize.value) || 0; applySubtitleStyle(); });
+el.subtitleWeight.addEventListener("change", () => { subtitleStyle.weight = el.subtitleWeight.value; applySubtitleStyle(); });
+
 // ---------- บันทึก/โหลดโปรเจกต์เป็นไฟล์ .json ----------
 
 function saveProject() {
@@ -1498,6 +1594,10 @@ function saveProject() {
     script: el.importText.value,
     brand: { text: el.brandInput.value, corner: el.brandCorner.value },
     lastExportAspect,
+    voice: voiceSettings,
+    bgm: { url: bgmUrl, volume: bgmVolumeLevel },
+    sceneGapSec,
+    subtitleStyle,
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -1519,6 +1619,34 @@ function applyProjectData(data) {
   }
   if (data.lastExportAspect === "169" || data.lastExportAspect === "916") {
     lastExportAspect = data.lastExportAspect; // แค่จำไว้เป็นค่าที่เคยเลือกส่งออกล่าสุด ไม่ยุ่งกับหน้าจอแก้ไข
+  }
+  if (data.voice) {
+    voiceSettings = { voice: data.voice.voice || DEFAULT_VOICE, rate: data.voice.rate || "+0%", pitch: data.voice.pitch || "+0Hz" };
+    el.voiceSelect.value = voiceSettings.voice;
+    el.voiceRate.value = parseInt(voiceSettings.rate, 10) || 0;
+    el.voiceRateOut.textContent = voiceSettings.rate;
+    el.voicePitch.value = parseInt(voiceSettings.pitch, 10) || 0;
+    el.voicePitchOut.textContent = voiceSettings.pitch;
+  }
+  if (data.bgm && data.bgm.url) {
+    bgmUrl = data.bgm.url;
+    bgmVolumeLevel = Number(data.bgm.volume) || 0.25;
+    el.bgmFileName.textContent = "เพลง: (โหลดจากโปรเจกต์)";
+    el.bgmVolume.value = Math.round(bgmVolumeLevel * 100);
+    el.bgmVolumeOut.textContent = `${el.bgmVolume.value}%`;
+  }
+  if (Number(data.sceneGapSec) >= 0) {
+    sceneGapSec = Number(data.sceneGapSec);
+    el.sceneGap.value = Math.round(sceneGapSec * 10);
+    el.sceneGapOut.textContent = `${sceneGapSec.toFixed(1)} วิ`;
+  }
+  if (data.subtitleStyle) {
+    subtitleStyle = { pos: "bottom", color: "", size: 0, weight: "", ...data.subtitleStyle };
+    el.subtitlePos.value = subtitleStyle.pos;
+    el.subtitleColor.value = subtitleStyle.color || "#ffffff";
+    el.subtitleSize.value = subtitleStyle.size || "";
+    el.subtitleWeight.value = subtitleStyle.weight || "";
+    applySubtitleStyle();
   }
   parseImportText();
 }
@@ -1653,6 +1781,23 @@ function b64UrlDecode(str) {
     try { renderDurations = JSON.parse(b64UrlDecode(durationsParam)); } catch (e) { console.warn("อ่าน durations ไม่ได้", e); }
   }
 
-  parseImportText();
-  setTimeout(() => setPlaying(true), 300); // เผื่อแผนที่/ไทล์เริ่มโหลด
+  const gapParam = params.get("gap");
+  if (gapParam) sceneGapSec = Number(gapParam) || 0;
+
+  subtitleStyle = {
+    pos: params.get("subpos") === "top" ? "top" : "bottom",
+    color: params.get("subcolor") ? `#${params.get("subcolor")}` : "",
+    size: Number(params.get("subsize")) || 0,
+    weight: params.get("subweight") || "",
+  };
+  applySubtitleStyle();
+
+  // ต้องรอ map style โหลดเสร็จจริงก่อนแปลง/เล่นสคริปต์ (parseImportText เรียก goToScene ทันที
+  // ซึ่งอ่าน map.getPaintProperty) — ดีเลย์คงที่แบบเดิมพลาดได้เวลาโหลดช้ากว่าที่คาด ทำให้ map ยังไม่พร้อมแล้วพัง
+  function startWhenMapReady() {
+    parseImportText();
+    setTimeout(() => setPlaying(true), 100);
+  }
+  if (map.loaded()) startWhenMapReady();
+  else map.once("load", startWhenMapReady);
 })();

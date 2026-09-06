@@ -452,6 +452,7 @@ body.is-render-mode .import-panel {
   line-height: 1.6;
   font-weight: 500;
 }
+.subtitle-wrap.pos-top { bottom: auto; top: 92px; }
 
 /* ---------- เส้นเวลาฉาก ---------- */
 
@@ -580,7 +581,31 @@ body.is-render-mode .import-panel {
   flex-direction: column;
   gap: 8px;
   font-size: 12px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
+
+/* พับ/กางส่วนที่ไม่จำเป็นต้องเห็นตลอด กันสคริปต์ยาวๆแล้วต้องเลื่อนหาปุ่มไกล */
+.import-details {
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 0 10px;
+}
+.import-details summary {
+  padding: 9px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.import-details summary:hover { color: var(--ink); }
+.import-details[open] summary { border-bottom: 1px solid var(--panel-border); margin-bottom: 10px; }
+.import-details[open] { padding-bottom: 10px; }
+
+/* ปุ่มแปลง/ล้าง ให้เด่นเห็นชัดติดกับกล่องข้อความเสมอ ไม่ต้องเลื่อนหา */
+.import-actions-sticky { position: sticky; bottom: 0; background: var(--panel); padding: 4px 0 2px; z-index: 1; }
 .preview-row {
   padding: 8px 10px;
   border-radius: 8px;
@@ -615,6 +640,9 @@ body.is-render-mode .import-panel {
 }
 .brand-input { flex: 1; min-width: 0; }
 .brand-input:focus, .brand-select:focus { outline: 1px solid var(--accent); }
+.brand-settings label { display: block; font-size: 12px; color: var(--ink-dim); font-family: var(--thai); margin-top: 8px; }
+.brand-settings label:first-child { margin-top: 0; }
+.brand-settings input[type="range"] { display: block; margin-top: 4px; accent-color: var(--accent); }
 
 .upload-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .upload-item {

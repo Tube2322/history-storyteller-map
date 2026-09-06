@@ -53,9 +53,10 @@
           <button id="btnImport" class="import-btn" type="button">นำเข้าสคริปต์</button>
         </header>
         <audio id="ttsPlayer" hidden></audio>
+        <audio id="bgmPlayer" loop hidden></audio>
 
         <!-- คำบรรยาย/ซับไตเติล -->
-        <div class="subtitle-wrap">
+        <div class="subtitle-wrap" id="subtitleWrap">
           <p id="subtitleText" class="subtitle-text">วางสคริปต์ฉากของคุณ แล้วกด "นำเข้าสคริปต์" เพื่อเริ่มดูตัวอย่าง</p>
         </div>
 
@@ -70,6 +71,8 @@
             <h2>นำเข้าสคริปต์ซีน</h2>
             <button id="btnCloseImport" class="icon-btn" title="ปิด">✕</button>
           </div>
+          <details class="import-details">
+          <summary>วิธีเขียนสคริปต์ + รายการ tag ทั้งหมด (แตะเพื่อดู)</summary>
           <p class="import-hint">
             <strong style="color:#f2b544">ข้อกำหนดของสคริปต์ (อ่านก่อนพิมพ์):</strong>
             <br>• <strong>ต้องมี 3 อย่างเสมอ</strong>: <code>place</code> (ชื่อสถานที่) + <code>cam</code> (แผนกล้อง ต้องสะกดตรงตามรายการด้านล่าง) + <code>script</code> (บทพากย์) — ขาดอันใดอันหนึ่ง ฉากนั้นจะถูกข้ามเงียบๆ ไม่มีสถานที่ก็จบ (ไม่ error ให้เห็น ต้องเช็กเองว่าจำนวนฉากในเส้นเวลาตรงกับที่พิมพ์)
@@ -107,6 +110,20 @@
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>
+          </details>
+
+          <textarea id="importText" class="import-textarea" placeholder="place=สุโขทัย | latlng=17.0175,99.7016 | cam=establishing | script=ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | sec=5 | icon=castle | highlight=province
+place=สุโขทัย → ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=fly-to | script=จากนั้นกองคาราวานเดินทางขึ้นเหนือ ;; มุ่งสู่เมืองพันธมิตรทางเหนือ | sec=6 | icon=flag | tilt=45 | bearing=200
+place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=insert-overlay | script=ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | sec=4 | icon=battle | effect=fire | insert=ภาพจำลองการโจมตี
+place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=cut-to-insert | script=แต่สิ่งที่เกิดขึ้นต่อจากนี้ ไม่มีใครคาดคิดมาก่อน | sec=3 | icon=battle | insert=หลักฐานภาพเหตุการณ์"></textarea>
+          <div class="import-actions import-actions-sticky">
+            <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
+            <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
+          </div>
+          <div class="import-preview" id="importPreview"></div>
+
+          <details class="import-details">
+          <summary>ค้นหาพิกัด / Excel / บันทึกโปรเจกต์</summary>
           <div class="import-actions">
             <input id="searchPlaceInput" class="brand-input" type="text" placeholder="ค้นหาสถานที่ เช่น เสียมราฐ กัมพูชา" style="flex:1" />
             <button id="btnSearchPlace" class="ghost-btn" type="button">ค้นหาพิกัด</button>
@@ -127,15 +144,69 @@
             </label>
           </div>
           <p class="import-hint" id="autosaveHint" hidden>กู้สคริปต์ล่าสุดที่เคยกรอกไว้อัตโนมัติ (เก็บในเบราว์เซอร์เครื่องนี้)</p>
-          <textarea id="importText" class="import-textarea" placeholder="place=สุโขทัย | latlng=17.0175,99.7016 | cam=establishing | script=ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | sec=5 | icon=castle | highlight=province
-place=สุโขทัย → ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=fly-to | script=จากนั้นกองคาราวานเดินทางขึ้นเหนือ ;; มุ่งสู่เมืองพันธมิตรทางเหนือ | sec=6 | icon=flag | tilt=45 | bearing=200
-place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=insert-overlay | script=ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | sec=4 | icon=battle | effect=fire | insert=ภาพจำลองการโจมตี
-place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=cut-to-insert | script=แต่สิ่งที่เกิดขึ้นต่อจากนี้ ไม่มีใครคาดคิดมาก่อน | sec=3 | icon=battle | insert=หลักฐานภาพเหตุการณ์"></textarea>
-          <div class="import-actions">
-            <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
-            <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
+          </details>
+
+          <details class="import-details">
+          <summary>ตั้งค่าเพิ่มเติม (เสียงพากย์ / เพลง / จังหวะ / สไตล์ / รูป / แบรนด์)</summary>
+          <div class="brand-settings">
+            <h3>เสียงพากย์</h3>
+            <div class="brand-row">
+              <select id="voiceSelect" class="brand-select" style="flex:1">
+                <option value="th-TH-PremwadeeNeural">หญิง — Premwadee</option>
+                <option value="th-TH-NiwatNeural">ชาย — Niwat</option>
+              </select>
+            </div>
+            <div class="brand-row">
+              <label style="flex:1">ความเร็ว <span id="voiceRateOut">+0%</span>
+                <input id="voiceRate" type="range" min="-50" max="50" value="0" style="width:100%" />
+              </label>
+              <label style="flex:1">โทนเสียง <span id="voicePitchOut">+0Hz</span>
+                <input id="voicePitch" type="range" min="-50" max="50" value="0" style="width:100%" />
+              </label>
+            </div>
           </div>
-          <div class="import-preview" id="importPreview"></div>
+
+          <div class="brand-settings">
+            <h3>เพลงพื้นหลัง (BGM)</h3>
+            <div class="import-actions">
+              <label class="ghost-btn file-btn">
+                เลือกไฟล์เพลง
+                <input id="fileUploadBgm" type="file" accept="audio/*" hidden />
+              </label>
+              <button id="btnClearBgm" class="ghost-btn" type="button">เอาเพลงออก</button>
+            </div>
+            <p class="import-hint" id="bgmFileName">ยังไม่ได้เลือกเพลง</p>
+            <label>ระดับเสียงเพลง <span id="bgmVolumeOut">25%</span>
+              <input id="bgmVolume" type="range" min="0" max="100" value="25" style="width:100%" />
+            </label>
+          </div>
+
+          <div class="brand-settings">
+            <h3>จังหวะฉาก</h3>
+            <label>ระยะพักเงียบระหว่างฉาก <span id="sceneGapOut">0.0 วิ</span>
+              <input id="sceneGap" type="range" min="0" max="30" value="0" style="width:100%" />
+            </label>
+          </div>
+
+          <div class="brand-settings">
+            <h3>สไตล์ซับไตเติล</h3>
+            <div class="brand-row">
+              <select id="subtitlePos" class="brand-select" style="flex:1">
+                <option value="bottom">ล่าง (ดีฟอลต์)</option>
+                <option value="top">บน</option>
+              </select>
+              <input id="subtitleColor" class="brand-input" type="color" value="#ffffff" style="flex:none; width:44px; padding:2px;" />
+            </div>
+            <div class="brand-row">
+              <input id="subtitleSize" class="brand-input" type="number" min="10" max="48" placeholder="ขนาด px (ดีฟอลต์ 17)" style="flex:1" />
+              <select id="subtitleWeight" class="brand-select" style="flex:1">
+                <option value="">น้ำหนักดีฟอลต์</option>
+                <option value="400">ปกติ 400</option>
+                <option value="600">กึ่งหนา 600</option>
+                <option value="800">หนา 800</option>
+              </select>
+            </div>
+          </div>
 
           <div class="brand-settings">
             <h3>อัพโหลดภาพของตัวเอง (ไว้ใช้กับ cut-to-insert / insert-overlay)</h3>
@@ -159,6 +230,7 @@ place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=cut-to-in
               </select>
             </div>
           </div>
+          </details>
         </aside>
 
       </main>

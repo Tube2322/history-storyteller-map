@@ -134,8 +134,15 @@ def fetch_geocode(query: str) -> list:
     return result
 
 
-async def synthesize(text: str, voice: str) -> bytes:
-    communicate = edge_tts.Communicate(text, voice)
+_RATE_RE = re.compile(r"^[+-]\d{1,3}%$")
+_PITCH_RE = re.compile(r"^[+-]\d{1,3}Hz$")
+
+
+async def synthesize(text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> bytes:
+    # ตรวจรูปแบบก่อนส่งต่อให้ edge-tts เสมอ (รับค่าจากฝั่งเว็บ ป้องกันค่าผิดรูปแบบหลุดเข้า Communicate)
+    rate = rate if _RATE_RE.match(rate or "") else "+0%"
+    pitch = pitch if _PITCH_RE.match(pitch or "") else "+0Hz"
+    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
     audio = bytearray()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -247,10 +254,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(length) or b"{}")
             text = (body.get("text") or "").strip()
             voice = (body.get("voice") or DEFAULT_VOICE).strip()
+            rate = (body.get("rate") or "+0%").strip()
+            pitch = (body.get("pitch") or "+0Hz").strip()
             if not text:
                 self.send_error(400, "missing text")
                 return
-            audio_bytes = asyncio.run(synthesize(text, voice))
+            audio_bytes = asyncio.run(synthesize(text, voice, rate, pitch))
             self.send_response(200)
             self.send_header("Content-Type", "audio/mpeg")
             self.send_header("Content-Length", str(len(audio_bytes)))

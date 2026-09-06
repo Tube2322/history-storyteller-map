@@ -82,15 +82,23 @@ def parse_rows(text: str):
     return rows
 
 
-def fetch_tts_bytes(text: str) -> bytes:
+def fetch_tts_bytes(text: str, voice: str, rate: str, pitch: str) -> bytes:
     req = urllib.request.Request(
         f"{SERVER_URL}/api/tts",
-        data=json.dumps({"text": text, "voice": DEFAULT_VOICE}).encode("utf-8"),
+        data=json.dumps({"text": text, "voice": voice, "rate": rate, "pitch": pitch}).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
         return resp.read()
+
+
+def make_silence(path: Path, seconds: float):
+    subprocess.run(
+        [FFMPEG, "-y", "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo", "-t", str(seconds),
+         "-q:a", "9", str(path)],
+        check=True, capture_output=True,
+    )
 
 
 def probe_duration(path: Path) -> float:
@@ -108,44 +116,77 @@ def probe_duration(path: Path) -> float:
     return 0.0
 
 
-def build_audio_track(rows, workdir: Path):
+def build_audio_track(rows, workdir: Path, voice: str, rate: str, pitch: str, gap: float):
     clip_paths = []
-    durations = []  # [[seg1, seg2, ...], ...] ต่อฉาก
+    durations = []  # [[seg1, seg2, ...], ...] ต่อฉาก — ไม่รวมช่วงเงียบคั่นฉาก (กล้อง/ซับไตเติลไม่ต้องรู้เรื่องนี้)
+    silence_path = None
+    if gap > 0:
+        silence_path = workdir / "silence.mp3"
+        make_silence(silence_path, gap)
+
     for i, row in enumerate(rows):
         segments = [s.strip() for s in row["script"].split(SEGMENT_DELIM) if s.strip()] or [row["script"]]
         seg_durations = []
         for j, seg in enumerate(segments):
             print(f"[tts] ฉาก {i+1}/{len(rows)} ท่อน {j+1}/{len(segments)}: {seg[:30]}...")
-            audio_bytes = fetch_tts_bytes(seg)
+            audio_bytes = fetch_tts_bytes(seg, voice, rate, pitch)
             clip_path = workdir / f"clip_{i:03d}_{j:02d}.mp3"
             clip_path.write_bytes(audio_bytes)
             dur = probe_duration(clip_path)
             clip_paths.append(clip_path)
             seg_durations.append(round(dur, 2))
         durations.append(seg_durations)
+        if silence_path and i < len(rows) - 1:
+            clip_paths.append(silence_path)  # จังหวะฉาก — พักเงียบก่อนตัดไปฉากถัดไป (เหมือนพากย์สด)
 
     concat_list = workdir / "concat.txt"
     concat_list.write_text(
         "\n".join(f"file '{p.name}'" for p in clip_paths), encoding="utf-8"
     )
-    audio_out = workdir / "audio.mp3"
+    narration_out = workdir / "narration.mp3"
     subprocess.run(
-        [FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(audio_out)],
+        [FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(narration_out)],
         cwd=workdir, check=True, capture_output=True,
     )
-    return audio_out, durations
+    return narration_out, durations
+
+
+def mix_bgm(narration_path: Path, bgm_path: Path, bgm_volume: float, workdir: Path) -> Path:
+    # bgm วนซ้ำ (-stream_loop -1) แล้วตัดให้พอดีความยาวพากย์เสียงจริง (-shortest), ลดวอลุ่มแยกจากเสียงพากย์
+    mixed = workdir / "mixed.mp3"
+    subprocess.run(
+        [
+            FFMPEG, "-y",
+            "-i", str(narration_path),
+            "-stream_loop", "-1", "-i", str(bgm_path),
+            "-filter_complex", f"[1:a]volume={bgm_volume}[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=0[a]",
+            "-map", "[a]",
+            str(mixed),
+        ],
+        check=True, capture_output=True,
+    )
+    return mixed
 
 
 def b64url(data: str) -> str:
     return base64.urlsafe_b64encode(data.encode("utf-8")).decode("ascii")
 
 
-def record_video(script_text: str, durations, aspect: str, workdir: Path) -> Path:
+def record_video(script_text: str, durations, aspect: str, workdir: Path, gap: float, subtitle: dict) -> Path:
     width, height = (1280, 720) if aspect == "169" else (720, 1280)
     url = (
         f"{SERVER_URL}/index.html?autoplay=1&aspect={aspect}"
         f"&script={b64url(script_text)}&durations={b64url(json.dumps(durations))}"
+        f"&gap={gap}"
     )
+    if subtitle.get("pos"):
+        url += f"&subpos={subtitle['pos']}"
+    if subtitle.get("color"):
+        url += f"&subcolor={subtitle['color'].lstrip('#')}"
+    if subtitle.get("size"):
+        url += f"&subsize={subtitle['size']}"
+    if subtitle.get("weight"):
+        url += f"&subweight={subtitle['weight']}"
     video_dir = workdir / "video"
     video_dir.mkdir(exist_ok=True)
 
@@ -190,6 +231,16 @@ def main():
     ap.add_argument("script_file", help="ไฟล์ข้อความสคริปต์ซีน (ฟอร์แมตเดียวกับกล่องนำเข้าบนเว็บ)")
     ap.add_argument("--aspect", choices=["916", "169"], default="916", help="9:16 แนวตั้ง (ดีฟอลต์) หรือ 16:9 แนวนอน")
     ap.add_argument("--out", default="render-out.mp4", help="ชื่อไฟล์วิดีโอผลลัพธ์")
+    ap.add_argument("--voice", default=DEFAULT_VOICE, help="ชื่อเสียง edge-tts เช่น th-TH-PremwadeeNeural (หญิง) หรือ th-TH-NiwatNeural (ชาย)")
+    ap.add_argument("--rate", default="+0%", help="ปรับความเร็วเสียงพากย์ เช่น +20%% / -10%%")
+    ap.add_argument("--pitch", default="+0Hz", help="ปรับโทนเสียงพากย์ เช่น +10Hz / -10Hz")
+    ap.add_argument("--gap", type=float, default=0.0, help="ระยะพักเงียบระหว่างฉาก (วินาที)")
+    ap.add_argument("--bgm", default=None, help="ไฟล์เพลงพื้นหลัง (mp3/wav ในเครื่อง) ถ้าต้องการ mix เข้ากับเสียงพากย์")
+    ap.add_argument("--bgm-volume", type=float, default=0.25, help="ระดับเสียงเพลงพื้นหลัง 0.0-1.0 (ดีฟอลต์ 0.25)")
+    ap.add_argument("--subpos", choices=["top", "bottom"], default=None, help="ตำแหน่งซับไตเติล")
+    ap.add_argument("--subcolor", default=None, help="สีซับไตเติล เป็น hex 6 หลัก ไม่ต้องใส่ #")
+    ap.add_argument("--subsize", type=int, default=None, help="ขนาดฟอนต์ซับไตเติล (px)")
+    ap.add_argument("--subweight", default=None, help="น้ำหนักฟอนต์ซับไตเติล เช่น 400/600/800")
     args = ap.parse_args()
 
     script_text = Path(args.script_file).read_text(encoding="utf-8")
@@ -197,13 +248,18 @@ def main():
     if not rows:
         sys.exit("ไม่พบฉากในไฟล์สคริปต์ — เช็กฟอร์แมตอีกที")
 
+    subtitle = {"pos": args.subpos, "color": args.subcolor, "size": args.subsize, "weight": args.subweight}
+
     with tempfile.TemporaryDirectory(prefix="hsm_render_") as tmp:
         workdir = Path(tmp)
         print(f"[1/3] พากย์เสียงจริง {len(rows)} ฉาก...")
-        audio_path, durations = build_audio_track(rows, workdir)
+        audio_path, durations = build_audio_track(rows, workdir, args.voice, args.rate, args.pitch, args.gap)
+        if args.bgm:
+            print("[1b/3] ผสมเพลงพื้นหลัง...")
+            audio_path = mix_bgm(audio_path, Path(args.bgm).resolve(), args.bgm_volume, workdir)
 
         print("[2/3] อัดภาพผ่านเบราว์เซอร์ headless...")
-        video_path = record_video(script_text, durations, args.aspect, workdir)
+        video_path = record_video(script_text, durations, args.aspect, workdir, args.gap, subtitle)
 
         print("[3/3] รวมภาพ+เสียงเป็น mp4...")
         out_path = Path(args.out).resolve()
