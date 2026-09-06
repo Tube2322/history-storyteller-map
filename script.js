@@ -1250,8 +1250,11 @@ function goToScene(index, durationOverride) {
   if (hideSet.has("pin")) markerTo.remove();
   if (hideSet.has("boundary")) clearBoundary();
   if (hideSet.has("arrow")) { markerArrow.remove(); markerFrom.remove(); stopPathIcon(); if (lineSource) lineSource.setData(emptyFC()); }
-  el.topbar.classList.toggle("hs-hidden", hideSet.has("topbar"));
-  el.timeline.classList.toggle("hs-hidden", hideSet.has("timeline"));
+  // topbar/timeline คุมปุ่มเล่น/เลื่อนฉากเพียงจุดเดียว — ซ่อนจริงเฉพาะตอนอัด/เรนเดอร์จริงเท่านั้น
+  // ไม่งั้นตอนแก้ไข ถ้าฉากแรกตั้ง hide=topbar จะกดเล่นไม่ได้อีกเลยเพราะปุ่มหายไปหมด
+  const isCapturing = isExporting || isRenderMode;
+  el.topbar.classList.toggle("hs-hidden", isCapturing && hideSet.has("topbar"));
+  el.timeline.classList.toggle("hs-hidden", isCapturing && hideSet.has("timeline"));
   el.brandChip.classList.toggle("hs-hidden", hideSet.has("brand"));
 
   moveCamera(scene, durationOverride, battleFrame);

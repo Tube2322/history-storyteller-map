@@ -506,7 +506,7 @@ body.is-render-mode .import-panel {
 .import-panel {
   position: absolute;
   top: 0; right: 0; bottom: 0;
-  width: min(340px, 88%);
+  width: min(480px, 92%);
   background: var(--panel);
   border-left: 1px solid var(--panel-border);
   padding: 20px;
@@ -548,7 +548,7 @@ body.is-render-mode .import-panel {
 }
 
 .import-textarea {
-  flex: 0 0 160px;
+  flex: 0 0 min(280px, 40vh);
   resize: vertical;
   background: #05070a;
   border: 1px solid var(--panel-border);
@@ -581,7 +581,7 @@ body.is-render-mode .import-panel {
   flex-direction: column;
   gap: 8px;
   font-size: 12px;
-  max-height: 240px;
+  max-height: min(320px, 32vh);
   overflow-y: auto;
   padding-right: 2px;
 }
