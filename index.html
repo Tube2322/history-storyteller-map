@@ -78,8 +78,8 @@
             <h2>นำเข้าสคริปต์ซีน</h2>
             <button id="btnCloseImport" class="icon-btn" title="ปิด">✕</button>
           </div>
-          <details class="import-details" open>
-          <summary>🧭 สร้างฉากง่ายๆ (จากจุด A ไป B) — ไม่ต้องพิมพ์ tag เอง</summary>
+          <details class="import-details" id="builderDetails" open>
+          <summary>🧭 สร้างฉากง่ายๆ (จากจุด A ไป B) — ไม่ต้องพิมพ์ tag เอง (กด "แก้ไข" ที่การ์ดฉากด้านล่างเพื่อแก้ฉากที่สร้างไว้ก่อนหน้าได้)</summary>
           <div class="builder-form">
             <div class="builder-field">
               <label>จาก (เว้นว่างได้ถ้าไม่ต้องการฉากเปิดที่จุดเริ่ม)</label>
@@ -137,6 +137,7 @@
             <div class="import-actions">
               <input id="builderDur" class="brand-input" type="number" min="1" placeholder="วินาที (ปล่อยว่าง = 5)" style="flex:1" />
               <button id="btnBuilderAdd" class="primary-btn" type="button">+ เพิ่มฉากนี้</button>
+              <button id="btnBuilderCancelEdit" class="ghost-btn" type="button" hidden>ยกเลิก</button>
             </div>
           </div>
           </details>

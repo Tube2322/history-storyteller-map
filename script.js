@@ -134,9 +134,12 @@ const el = {
   builderScript: document.getElementById("builderScript"),
   builderDur: document.getElementById("builderDur"),
   btnBuilderAdd: document.getElementById("btnBuilderAdd"),
+  btnBuilderCancelEdit: document.getElementById("btnBuilderCancelEdit"),
+  builderDetails: document.getElementById("builderDetails"),
 };
 
 let scenes = [];
+let sceneRawLines = []; // บรรทัดดิบต้นฉบับของแต่ละฉาก ตำแหน่งตรงกับ scenes[] เป๊ะ — ใช้ตอนแก้ไขฉากทีหลังผ่านแผงสร้างฉาก
 let activeIndex = -1;
 let isPlaying = false;
 let highlightPersistLeft = 0; // persist=N — จำนวนฉากถัดไปที่ยังคงให้เขตแดนที่ไฮไลต์ค้างอยู่ ไม่เคลียร์ทันที
@@ -1314,9 +1317,12 @@ function renderInsertContent(container, text) {
 
 function parseImportText() {
   const raw = el.importText.value.split("\n").map((l) => l.trim()).filter(Boolean);
-  const parsed = raw.map(parseRow).filter(Boolean);
-  if (!parsed.length) return;
-  scenes = parsed;
+  // เก็บบรรทัดดิบคู่กับฉากที่ parse ได้ ให้ sceneRawLines[i] ตรงกับ scenes[i] เป๊ะเสมอ
+  // (บรรทัดที่ parse ไม่ผ่านจะถูกข้ามทั้งคู่ ไม่งั้น index จะเพี้ยนตอนแก้ไขฉากทีหลัง)
+  const pairs = raw.map((line) => ({ line, scene: parseRow(line) })).filter((p) => p.scene);
+  if (!pairs.length) return;
+  scenes = pairs.map((p) => p.scene);
+  sceneRawLines = pairs.map((p) => p.line);
   renderTimeline();
   renderPreview();
   goToScene(0);
@@ -1357,13 +1363,62 @@ function renderPreview() {
         : "";
       return `
       <div class="preview-row" style="border-left-color:${CAM_DOT_VAR[s.cam]}">
-        <div class="pr-place">${i + 1}. ${escapeHtml(s.place)}</div>
+        <div class="pr-head">
+          <div class="pr-place">${i + 1}. ${escapeHtml(s.place)}</div>
+          <button class="pr-edit-btn" type="button" data-edit-index="${i}">แก้ไข</button>
+        </div>
         <div class="pr-script">${escapeHtml(s.script)}</div>
         <div class="pr-meta">${CAM_LABELS[s.cam]} · ${s.duration}s · ${s.lat.toFixed(3)},${s.lng.toFixed(3)}</div>
         ${tagsHtml}
       </div>`;
     })
     .join("");
+}
+
+// คลิก "แก้ไข" บนการ์ดฉากไหน → โหลดค่าฉากนั้นกลับเข้าแผงสร้างฉาก แก้ไขเสร็จกด "บันทึกการแก้ไข" อัปเดตแทนที่แถวเดิม (ไม่เพิ่มแถวใหม่)
+let editingSceneIndex = null;
+el.importPreview.addEventListener("click", (e) => {
+  const btn = e.target.closest(".pr-edit-btn");
+  if (!btn) return;
+  const idx = Number(btn.dataset.editIndex);
+  const s = scenes[idx];
+  if (!s) return;
+  editingSceneIndex = idx;
+  el.builderDetails.open = true;
+  builderFromPick = null;
+  el.builderFromInput.value = "";
+  el.builderFromResults.innerHTML = "";
+  builderToPick = { name: s.place, lat: s.lat, lng: s.lng };
+  el.builderToInput.value = s.place;
+  el.builderToResults.innerHTML = `<div class="upload-item">✓ เลือก: ${escapeHtml(s.place)} (${s.lat.toFixed(4)},${s.lng.toFixed(4)})</div>`;
+  el.builderCam.value = CAM_LABELS[s.cam] ? s.cam : "fly-to";
+  el.builderHighlight.value = s.highlight;
+  el.builderTransport.value = s.transport;
+  el.builderRoadRoute.checked = s.routeRoad;
+  el.builderFollow.checked = s.follow;
+  el.builderSpeed.value = s.speedKmh || "";
+  el.builderScript.value = s.script;
+  el.builderDur.value = s.duration || "";
+  el.btnBuilderAdd.textContent = `บันทึกการแก้ไขฉากที่ ${idx + 1}`;
+  el.btnBuilderCancelEdit.hidden = false;
+  el.builderDetails.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+function cancelBuilderEdit() {
+  editingSceneIndex = null;
+  el.btnBuilderAdd.textContent = "+ เพิ่มฉากนี้";
+  el.btnBuilderCancelEdit.hidden = true;
+  builderFromPick = null;
+  builderToPick = null;
+  el.builderFromInput.value = "";
+  el.builderToInput.value = "";
+  el.builderFromResults.innerHTML = "";
+  el.builderToResults.innerHTML = "";
+  el.builderScript.value = "";
+  el.builderDur.value = "";
+  el.builderRoadRoute.checked = false;
+  el.builderFollow.checked = false;
+  el.builderSpeed.value = "";
 }
 
 function renderTimeline() {
@@ -2103,12 +2158,7 @@ function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transp
 
 el.btnBuilderAdd.addEventListener("click", () => {
   if (!builderToPick) { alert("ค้นหาแล้วเลือกจุดหมาย (ไป) ก่อน"); return; }
-  const rows = [];
-  // มี "จาก" ที่เลือกไว้ → แทรกฉากเปิดที่จุดนั้นก่อนเสมอ (ให้เห็นจุดเริ่มต้นจริงบนแผนที่ ไม่ใช่แค่กระโดดไปจุดหมายเฉยๆ)
-  if (builderFromPick) {
-    rows.push(buildSceneTagRow({ place: builderFromPick.name, lat: builderFromPick.lat, lng: builderFromPick.lng, cam: "establishing", script: "..." }));
-  }
-  rows.push(buildSceneTagRow({
+  const newRow = buildSceneTagRow({
     place: builderToPick.name,
     lat: builderToPick.lat,
     lng: builderToPick.lng,
@@ -2120,23 +2170,27 @@ el.btnBuilderAdd.addEventListener("click", () => {
     routeRoad: el.builderRoadRoute.checked,
     follow: el.builderFollow.checked,
     speed: el.builderSpeed.value.trim(),
-  }));
-  el.importText.value = (el.importText.value ? el.importText.value.replace(/\n?$/, "\n") : "") + rows.join("\n") + "\n";
+  });
+
+  if (editingSceneIndex !== null) {
+    // แก้ไขฉากเดิม: แทนที่บรรทัดเดิมของฉากนั้น ไม่เพิ่มแถวใหม่ (เหมือนตัดต่อวิดีโอ แก้คลิปเดิมในไทม์ไลน์ ไม่ใช่เพิ่มคลิปใหม่)
+    sceneRawLines[editingSceneIndex] = newRow;
+    el.importText.value = sceneRawLines.join("\n") + "\n";
+  } else {
+    const rows = [];
+    // มี "จาก" ที่เลือกไว้ → แทรกฉากเปิดที่จุดนั้นก่อนเสมอ (ให้เห็นจุดเริ่มต้นจริงบนแผนที่ ไม่ใช่แค่กระโดดไปจุดหมายเฉยๆ)
+    if (builderFromPick) {
+      rows.push(buildSceneTagRow({ place: builderFromPick.name, lat: builderFromPick.lat, lng: builderFromPick.lng, cam: "establishing", script: "..." }));
+    }
+    rows.push(newRow);
+    el.importText.value = (el.importText.value ? el.importText.value.replace(/\n?$/, "\n") : "") + rows.join("\n") + "\n";
+  }
   parseImportText();
   el.importText.scrollTop = el.importText.scrollHeight;
-  // ล้างฟอร์มเตรียมสร้างฉากถัดไป (ไม่ล้าง "จาก" ถ้าจะเดินทางต่อจากจุดเดิมก็พิมพ์ "ไป" ใหม่ได้เลย — แต่ล้างทั้งคู่ให้ชัดเจนกว่า กันสับสนว่าเชื่อมจากไหน)
-  builderFromPick = null;
-  builderToPick = null;
-  el.builderFromInput.value = "";
-  el.builderToInput.value = "";
-  el.builderFromResults.innerHTML = "";
-  el.builderToResults.innerHTML = "";
-  el.builderScript.value = "";
-  el.builderDur.value = "";
-  el.builderRoadRoute.checked = false;
-  el.builderFollow.checked = false;
-  el.builderSpeed.value = "";
+  cancelBuilderEdit(); // ล้างฟอร์ม + คืนปุ่มเป็น "+ เพิ่มฉากนี้" เตรียมสร้าง/แก้ไขฉากถัดไป
 });
+
+el.btnBuilderCancelEdit.addEventListener("click", cancelBuilderEdit);
 
 // กู้สคริปต์ล่าสุดจาก localStorage อัตโนมัติ (ถ้ามีและยังไม่ได้มาจากโหมดเรนเดอร์)
 try {

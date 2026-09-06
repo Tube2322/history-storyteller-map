@@ -718,6 +718,19 @@ body.is-render-mode .import-panel {
   border-left: 3px solid var(--cam-establishing);
 }
 .preview-row .pr-place { font-weight: 600; }
+.pr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pr-edit-btn {
+  flex: none;
+  font-family: var(--thai);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.pr-edit-btn:hover { background: rgba(255,255,255,0.08); color: var(--ink); }
 .preview-row .pr-script { color: var(--ink-dim); margin-top: 3px; }
 .preview-row .pr-meta { font-family: var(--mono); color: var(--ink-dim); font-size: 10px; margin-top: 4px; }
 .pr-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
