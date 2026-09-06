@@ -6,6 +6,7 @@ const CAM_LABELS = {
   "orbit": "กล้องหมุนรอบจุดสนใจ",
   "cut-to-insert": "ตัดเข้าภาพเต็มจอ",
   "insert-overlay": "แทรกภาพลอย (PiP)",
+  "battle-map": "แผนที่สนามรบ (RTS)",
 };
 const CAM_DOT_VAR = {
   "establishing": "var(--cam-establishing)",
@@ -15,6 +16,7 @@ const CAM_DOT_VAR = {
   "orbit": "var(--cam-orbit)",
   "cut-to-insert": "var(--cam-cutinsert)",
   "insert-overlay": "var(--cam-insertoverlay)",
+  "battle-map": "var(--cam-battlemap)",
 };
 const CAM_STAGE_CLASS = {
   "cut-to-insert": "mapstage-cutinsert",
@@ -170,6 +172,20 @@ map.on("load", () => {
     source: "region-boundary",
     paint: { "line-color": "#f2b544", "line-width": 2.5, "line-opacity": 0 },
   });
+
+  // แผนที่สนามรบ (RTS): ลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย
+  map.addSource("battle-arrows", { type: "geojson", data: emptyFC() });
+  map.addLayer({
+    id: "battle-arrows-layer",
+    type: "line",
+    source: "battle-arrows",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": 3.5,
+      "line-opacity": 0.92,
+    },
+  });
 });
 
 function emptyFC() {
@@ -258,6 +274,50 @@ function showBoundary(scene) {
     .catch((e) => console.warn(e));
 }
 
+// วาดลูกศรเดินทัพหลายเส้นพร้อมกัน (แผนที่สนามรบ) แล้วคืนกรอบกล้องที่ครอบทุกจุดพอดี
+function renderBattleArrows(scene) {
+  const features = scene.arrows.map((a) => ({
+    type: "Feature",
+    properties: { color: a.color },
+    geometry: { type: "LineString", coordinates: [a.from, a.to] },
+  }));
+  const src = map.getSource("battle-arrows");
+  if (src) src.setData({ type: "FeatureCollection", features });
+
+  scene.arrows.forEach((a, i) => {
+    const arrowMarker = getBattleArrowMarker(i);
+    const bearing = compassBearing(a.from, a.to);
+    const el2 = arrowMarker.getElement().querySelector(".battle-arrow-head");
+    el2.style.color = a.color;
+    arrowMarker.setRotation(bearing - 90).setLngLat(a.to).addTo(map);
+
+    const labelMarker = getBattleLabelMarker(i);
+    const labelEl = labelMarker.getElement();
+    labelEl.innerHTML = `<span style="background:${a.color}">${escapeHtml(a.label)}</span>`;
+    labelMarker.setLngLat(a.from).addTo(map);
+  });
+  clearBattleMarkers(scene.arrows.length);
+
+  const points = scene.arrows.flatMap((a) => [a.from, a.to]);
+  points.push([scene.lng, scene.lat]);
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  points.forEach(([lng, lat]) => {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  });
+  const bounds = new maplibregl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
+  const cam = map.cameraForBounds(bounds, { padding: 70 });
+  return cam ? { center: cam.center, zoom: cam.zoom } : null;
+}
+
+function clearBattleArrows() {
+  const src = map.getSource("battle-arrows");
+  if (src) src.setData(emptyFC());
+  clearBattleMarkers(0);
+}
+
 function makeMarkerEl(className, innerHTML) {
   const div = document.createElement("div");
   div.className = className;
@@ -279,6 +339,31 @@ const markerTo = new maplibregl.Marker({ element: pinToEl, anchor: "center" });
 const markerFrom = new maplibregl.Marker({ element: pinFromEl, anchor: "center" });
 const markerArrow = new maplibregl.Marker({ element: arrowWrapEl, anchor: "center", rotationAlignment: "map" });
 const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "bottom" });
+
+// pool ลูกศรหัวธง + ป้ายชื่อฝ่ายต้นทาง สำหรับแผนที่สนามรบ (จำนวนไม่แน่นอนต่อฉาก จึงสร้าง/รียูสตามจำนวนจริง)
+let battleArrowMarkers = [];
+let battleLabelMarkers = [];
+
+function getBattleArrowMarker(i) {
+  if (!battleArrowMarkers[i]) {
+    const wrap = makeMarkerEl("arrow-marker-wrap", `<span class="arrow-marker battle-arrow-head">➤</span>`);
+    battleArrowMarkers[i] = new maplibregl.Marker({ element: wrap, anchor: "center", rotationAlignment: "map" });
+  }
+  return battleArrowMarkers[i];
+}
+function getBattleLabelMarker(i) {
+  if (!battleLabelMarkers[i]) {
+    const wrap = makeMarkerEl("battle-label", "");
+    battleLabelMarkers[i] = new maplibregl.Marker({ element: wrap, anchor: "bottom" });
+  }
+  return battleLabelMarkers[i];
+}
+function clearBattleMarkers(fromIndex) {
+  for (let i = fromIndex; i < battleArrowMarkers.length; i++) {
+    if (battleArrowMarkers[i]) battleArrowMarkers[i].remove();
+    if (battleLabelMarkers[i]) battleLabelMarkers[i].remove();
+  }
+}
 
 let orbitRAF = null;
 function stopOrbit() {
@@ -312,11 +397,11 @@ function curvedLine(a, b) {
   return [a, bow, b];
 }
 
-function moveCamera(scene, durationSecOverride) {
-  const center = [scene.lng, scene.lat];
+function moveCamera(scene, durationSecOverride, frameOverride) {
+  const center = frameOverride ? frameOverride.center : [scene.lng, scene.lat];
   const durationSec = durationSecOverride || scene.duration;
   const pitch = scene.tilt || 0; // tilt=องศา ในสคริปต์ (0-60) ให้มุมกล้อง 3D
-  const bearing = scene.bearing || 0; // bearing=องศา ในสคริปต์ ตั้งทิศเริ่มต้นของช็อต
+  const bearing = scene.bearing || 0; // bearing=องศา ในสคริปต์ ตั้งทิศเริ่มต้นของช็อต (ไม่หมุนต่อเนื่อง ยกเว้น orbit)
 
   if (scene.cam === "cut-to-insert" || scene.cam === "insert-overlay") {
     stopOrbit();
@@ -329,7 +414,11 @@ function moveCamera(scene, durationSecOverride) {
     return;
   }
   stopOrbit();
-  if (scene.cam === "fly-to") {
+  if (scene.cam === "battle-map") {
+    // มุมมองแบบเกม RTS: เอียงเล็กน้อยพอเห็นมิติ ไม่หมุน (เว้นแต่ผู้ใช้ตั้ง bearing เอง)
+    const zoom = frameOverride ? frameOverride.zoom : 6;
+    map.easeTo({ center, zoom, duration: 1000, bearing, pitch: pitch || 35 });
+  } else if (scene.cam === "fly-to") {
     map.flyTo({ center, zoom: 6.2, duration: durationSec * 1000, curve: 1.4, bearing, pitch });
   } else if (scene.cam === "push-in") {
     map.easeTo({ center, zoom: 10, duration: 1200, bearing, pitch });
@@ -343,8 +432,29 @@ function moveCamera(scene, durationSecOverride) {
 // ---------- แปลงข้อมูลดิบ → ฉาก ----------
 
 // รับ raw fields (จาก tag-mode หรือ column-mode ก็ได้) มาตรวจ/เติมค่า default ให้เป็นฉากที่ใช้งานได้จริง
+// arrows=ไทย:ff4d4d:14.0,102.0:13.5,103.0;กัมพูชา:ffd23f:12.5,104.5:13.5,103.0
+// แต่ละลูกศรคั่นด้วย ; ภายในลูกศรคั่นด้วย : เป็น label:สีฮ็กซ์:lat,lng ต้นทาง:lat,lng ปลายทาง
+function parseArrows(str) {
+  if (!str) return [];
+  return str
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const parts = entry.split(":").map((p) => p.trim());
+      if (parts.length !== 4) return null;
+      const [label, colorRaw, fromRaw, toRaw] = parts;
+      const color = /^[0-9a-fA-F]{6}$/.test(colorRaw) ? `#${colorRaw}` : "#f2b544";
+      const from = fromRaw.split(",").map((n) => Number(n.trim()));
+      const to = toRaw.split(",").map((n) => Number(n.trim()));
+      if (from.length !== 2 || to.length !== 2 || from.some(Number.isNaN) || to.some(Number.isNaN)) return null;
+      return { label, color, from: [from[1], from[0]], to: [to[1], to[0]] }; // เก็บเป็น [lng,lat] ให้ตรงกับ MapLibre
+    })
+    .filter(Boolean);
+}
+
 function finalizeScene(raw) {
-  const { place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert, tilt, bearing, highlight } = raw;
+  const { place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert, tilt, bearing, highlight, arrows } = raw;
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
   const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
@@ -371,6 +481,7 @@ function finalizeScene(raw) {
     tilt: Number(tilt) >= 0 && Number(tilt) <= 60 ? Number(tilt) : 0,
     bearing: Number.isFinite(Number(bearing)) ? ((Number(bearing) % 360) + 360) % 360 : 0,
     highlight: highlightKey,
+    arrows: parseArrows(arrows),
   };
 }
 
@@ -386,6 +497,7 @@ const TAG_KEY_ALIASES = {
   tilt: "tilt", pitch: "tilt", เอียง: "tilt",
   bearing: "bearing", หมุน: "bearing",
   highlight: "highlight", ไฮไลต์: "highlight",
+  arrows: "arrows", ลูกศรทัพ: "arrows",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -513,10 +625,14 @@ function goToScene(index, durationOverride) {
   void pinToEl.offsetWidth; // บังคับ reflow ให้ retrigger อนิเมชันได้ทุกครั้ง
   pinToEl.classList.add("pin-arrived");
 
-  // หมุดต้นทาง + เส้นทางโค้ง + ลูกศร
+  // หมุดต้นทาง + เส้นทางโค้ง + ลูกศร (ข้ามระบบนี้ถ้าเป็นแผนที่สนามรบ — ใช้ระบบลูกศรหลายเส้นแทน)
   const prevScene = scenes[activeIndex - 1];
   const lineSource = map.getSource("scene-line");
-  if (prevScene) {
+  if (scene.cam === "battle-map") {
+    markerFrom.remove();
+    markerArrow.remove();
+    if (lineSource) lineSource.setData(emptyFC());
+  } else if (prevScene) {
     const a = [prevScene.lng, prevScene.lat];
     const b = [scene.lng, scene.lat];
     markerFrom.setLngLat(a).addTo(map);
@@ -530,7 +646,15 @@ function goToScene(index, durationOverride) {
     if (lineSource) lineSource.setData(emptyFC());
   }
 
-  moveCamera(scene, durationOverride);
+  // แผนที่สนามรบ: ลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย
+  let battleFrame = null;
+  if (scene.cam === "battle-map" && scene.arrows.length) {
+    battleFrame = renderBattleArrows(scene);
+  } else {
+    clearBattleArrows();
+  }
+
+  moveCamera(scene, durationOverride, battleFrame);
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
     btn.classList.toggle("is-active", i === activeIndex);

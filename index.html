@@ -74,11 +74,13 @@
             <br>ใส่แค่บางคีย์ก็ได้ เช่น <code>place=สุโขทัย | cam=fly-to | script=... | tilt=40 | bearing=200</code>
             <br><br><strong>แบบ column เดิม (เรียงตำแหน่งตายตัว):</strong>
             <br><code>สถานที่ | lat,lng | แผนกล้อง | สคริปต์เสียง | วินาที | ไอคอน | เอฟเฟกต์ | insert</code>
-            <br><br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert / insert-overlay</code>
+            <br><br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert / insert-overlay / battle-map</code>
             <br>ไอคอน: <code>city / castle / ship / battle / flag / mountain / camp</code> (ไม่ใส่ = 📍)
             <br>เอฟเฟกต์: <code>storm / fire / battle / none</code> — สติ๊กเกอร์อนิเมชันปักบนพิกัด
-            <br><strong>tilt</strong>: 0-60 (องศาเอียงกล้อง 3D) · <strong>bearing</strong>: 0-360 (ทิศเริ่มช็อต) — ใช้ได้เฉพาะ tag-mode
-            <br><strong>highlight</strong>: <code>country / province / place / none</code> — ไฮไลต์เขตแดนจริงจาก OpenStreetMap ตามพิกัด พร้อมป้ายชื่อขึ้นกลางจอ (ใช้ได้เฉพาะ tag-mode)
+            <br><strong>tilt</strong>: 0-60 (องศาเอียงกล้อง 3D) · <strong>bearing</strong>: 0-360 (ทิศเริ่มช็อต ไม่หมุนต่อเนื่อง) — ใช้ได้เฉพาะ tag-mode
+            <br><strong>highlight</strong>: <code>country / province / place / none</code> — ไฮไลต์เขตแดนจริงจาก OpenStreetMap ตามพิกัด พร้อมป้ายชื่อขึ้นกลางจอ + ปรับซูมให้พอดีขนาดพื้นที่อัตโนมัติ (เฉพาะ tag-mode)
+            <br><strong>cam=battle-map</strong>: มุมมองสไตล์ RTS (เอียงเบาๆ ไม่หมุน) ใช้คู่กับ <strong>arrows</strong> เพื่อวาดลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย
+            <br><code>arrows=ฝ่าย1:RRGGBB:lat,lng:lat,lng;ฝ่าย2:RRGGBB:lat,lng:lat,lng</code> — คั่นแต่ละลูกศรด้วย <code>;</code> ภายในคั่นด้วย <code>:</code> เป็น ชื่อฝ่าย:สีฮ็กซ์:ต้นทาง:ปลายทาง
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>

@@ -13,6 +13,7 @@
   --cam-orbit: #f0748c;
   --cam-cutinsert: #ffffff;
   --cam-insertoverlay: #ff9d5c;
+  --cam-battlemap: #c0392b;
   --radius: 14px;
   --mono: "IBM Plex Mono", monospace;
   --thai: "IBM Plex Sans Thai", sans-serif;
@@ -129,6 +130,19 @@ html, body {
   color: var(--accent);
   font-size: 16px;
   filter: drop-shadow(0 0 4px rgba(242,181,68,0.7));
+}
+
+.battle-label span {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 6px;
+  color: #101010;
+  font-weight: 700;
+  font-size: 11px;
+  font-family: var(--thai);
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.45);
+  transform: translateY(-6px);
 }
 
 .effect-marker-wrap { display: flex; }
@@ -417,6 +431,7 @@ body.is-render-mode .import-panel {
 .scene-chip[data-cam="orbit"] { border-top-color: var(--cam-orbit); }
 .scene-chip[data-cam="cut-to-insert"] { border-top-color: var(--cam-cutinsert); }
 .scene-chip[data-cam="insert-overlay"] { border-top-color: var(--cam-insertoverlay); }
+.scene-chip[data-cam="battle-map"] { border-top-color: var(--cam-battlemap); }
 
 /* ---------- แผงนำเข้าสคริปต์ ---------- */
 
