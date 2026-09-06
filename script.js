@@ -278,6 +278,22 @@ function outerRingOf(geojson) {
   return best;
 }
 
+// ขอบเขตจริงจาก OSM มีจุดได้เป็นพัน — ตัด/คลิปทุกเฟรมจะกระตุก จึงลดจุดลงเฉพาะตอนอนิเมชัน
+// (ค่าที่นิ่งสุดท้ายยังคงใช้ region-boundary ความละเอียดเต็มเสมอ ไม่กระทบความแม่นยำที่ตาเห็น)
+function simplifyRing(ring, maxPoints) {
+  if (ring.length <= maxPoints) return ring;
+  const step = ring.length / maxPoints;
+  const out = [];
+  for (let i = 0; i < maxPoints; i++) out.push(ring[Math.floor(i * step)]);
+  out.push(ring[0]);
+  return out;
+}
+
+function easeInOutCubic(t) {
+  const v = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  return Math.min(1, Math.max(0, v)); // กันพลาดจุดลอยตัวเกิน [0,1] เล็กน้อยตอน t≈1
+}
+
 function sliceRing(ring, fraction) {
   if (fraction >= 1) return ring;
   let total = 0;
@@ -321,7 +337,8 @@ function animateBorderTrace(ring, durationMs, mode) {
   const start = performance.now();
   const startCount = mode === "four" ? 4 : mode === "two" || mode === "tworeverse" ? 2 : 1;
   function step(now) {
-    const t = Math.min(1, (now - start) / durationMs);
+    const raw = Math.min(1, (now - start) / durationMs);
+    const t = easeInOutCubic(raw);
     const src = map.getSource("region-line-trace");
     if (src) {
       const lines = startCount === 1
@@ -332,7 +349,7 @@ function animateBorderTrace(ring, durationMs, mode) {
         features: lines.map((coords) => ({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} })),
       });
     }
-    if (t < 1) boundaryTraceRAF = requestAnimationFrame(step);
+    if (raw < 1) boundaryTraceRAF = requestAnimationFrame(step);
   }
   step(start);
   map.setPaintProperty("region-line-glow", "line-opacity", 0.55);
@@ -421,17 +438,20 @@ function animateFillReveal(geojson, mode, durationMs) {
   const bounds = boundsFromGeojson(geojson);
   if (!bounds) { maskSrc.setData({ type: "Feature", geometry: geojson, properties: {} }); return; }
   const b = { minLng: bounds.getWest(), minLat: bounds.getSouth(), maxLng: bounds.getEast(), maxLat: bounds.getNorth() };
-  const polygons = geojson.type === "MultiPolygon" ? geojson.coordinates.map((p) => p[0]) : [geojson.coordinates[0]];
+  const rawPolygons = geojson.type === "MultiPolygon" ? geojson.coordinates.map((p) => p[0]) : [geojson.coordinates[0]];
+  const polygons = rawPolygons.map((ring) => simplifyRing(ring, 220));
   const start = performance.now();
   function step(now) {
-    const t = Math.min(1, (now - start) / durationMs);
+    const raw = Math.min(1, (now - start) / durationMs);
+    const t = easeInOutCubic(raw);
     const mask = revealMask(mode, t, b);
     const clipped = polygons.map((ring) => clipByConvexMask(ring, mask)).filter((r) => r.length >= 3);
     maskSrc.setData({
       type: "FeatureCollection",
       features: clipped.map((ring) => ({ type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} })),
     });
-    if (t < 1) fillRevealRAF = requestAnimationFrame(step);
+    if (raw < 1) fillRevealRAF = requestAnimationFrame(step);
+    else maskSrc.setData({ type: "Feature", geometry: geojson, properties: {} }); // เฟรมสุดท้ายสลับกลับความละเอียดเต็มให้แม่นยำ
   }
   fillRevealRAF = requestAnimationFrame(step);
 }
@@ -444,10 +464,11 @@ function animateFillOpacity(toFill) {
   const start = performance.now();
   const dur = 500;
   function step(now) {
-    const t = Math.min(1, (now - start) / dur);
+    const raw = Math.min(1, (now - start) / dur);
+    const t = easeInOutCubic(raw);
     map.setPaintProperty("region-fill", "fill-opacity", fromFill + (toFill - fromFill) * t);
     map.setPaintProperty("region-line", "line-opacity", fromLine + (toLine - fromLine) * t);
-    if (t < 1) boundaryFillRAF = requestAnimationFrame(step);
+    if (raw < 1) boundaryFillRAF = requestAnimationFrame(step);
   }
   boundaryFillRAF = requestAnimationFrame(step);
 }
@@ -483,7 +504,7 @@ function lerpColor(hexA, hexB, t) {
 let warmorphRAF = null;
 function animateWarmorph(ring, warmorph, loserColor, durationMs) {
   if (warmorphRAF) cancelAnimationFrame(warmorphRAF);
-  const captured = clipByHalfPlane(ring, warmorph.p1, warmorph.p2, 1).filter((r) => r);
+  const captured = clipByHalfPlane(simplifyRing(ring, 220), warmorph.p1, warmorph.p2, 1).filter((r) => r);
   const capturedSrc = map.getSource("warmorph-captured");
   if (!capturedSrc || captured.length < 3) { if (capturedSrc) capturedSrc.setData(emptyFC()); return; }
   capturedSrc.setData({ type: "Feature", geometry: { type: "Polygon", coordinates: [captured] }, properties: {} });
@@ -491,11 +512,12 @@ function animateWarmorph(ring, warmorph, loserColor, durationMs) {
   map.setPaintProperty("warmorph-captured-line", "line-opacity", 0.9);
   const start = performance.now();
   function step(now) {
-    const t = Math.min(1, (now - start) / durationMs);
+    const raw = Math.min(1, (now - start) / durationMs);
+    const t = easeInOutCubic(raw);
     const color = lerpColor(loserColor, warmorph.color, t);
     map.setPaintProperty("warmorph-captured-fill", "fill-color", color);
     map.setPaintProperty("warmorph-captured-line", "line-color", color);
-    if (t < 1) warmorphRAF = requestAnimationFrame(step);
+    if (raw < 1) warmorphRAF = requestAnimationFrame(step);
   }
   warmorphRAF = requestAnimationFrame(step);
 }
@@ -564,7 +586,8 @@ function showBoundary(scene) {
       el.regionLabel.classList.add("is-visible");
 
       const ring = outerRingOf(data.geojson);
-      if (ring) animateBorderTrace(ring, 1400, scene.trace);
+      const animRing = ring ? simplifyRing(ring, 240) : null;
+      if (animRing) animateBorderTrace(animRing, 1400, scene.trace);
 
       if (scene.landfill === "flag" && data.countryCode) {
         ensureFlagImage(data.countryCode, (imgId) => {
@@ -575,8 +598,8 @@ function showBoundary(scene) {
         map.setPaintProperty("region-fill", "fill-pattern", undefined);
       }
 
-      if (scene.warmorph && ring) {
-        animateWarmorph(ring, scene.warmorph, "#f2b544", 1600);
+      if (scene.warmorph && animRing) {
+        animateWarmorph(animRing, scene.warmorph, "#f2b544", 1600);
       } else {
         clearWarmorph();
       }
@@ -585,8 +608,9 @@ function showBoundary(scene) {
       const bounds = boundsFromGeojson(data.geojson, scene.mainlandOnly);
       if (!bounds) return;
       const cam = map.cameraForBounds(bounds, { padding: 60 });
+      // จุดเดียวที่ขยับกล้องให้ฉากไฮไลต์แบบ auto-frame — กัน moveCamera() ชนกันกลางอากาศ (สาเหตุอนิเมชันกระตุก)
       if (cam) {
-        map.easeTo({ center: cam.center, zoom: cam.zoom, bearing: scene.bearing || 0, pitch: scene.tilt || 0, duration: 900 });
+        map.easeTo({ center: cam.center, zoom: cam.zoom, bearing: scene.bearing || 0, pitch: scene.tilt || 0, duration: 1100 });
       }
     })
     .catch((e) => console.warn(e));
@@ -735,9 +759,10 @@ function startPathIcon(coords, durationMs, glyph) {
   markerTransport.setLngLat(coords[0]).addTo(map);
   const start = performance.now();
   function step(now) {
-    const t = Math.min(1, (now - start) / durationMs);
+    const raw = Math.min(1, (now - start) / durationMs);
+    const t = easeInOutCubic(raw);
     markerTransport.setLngLat(quadBezierPoint(coords[0], coords[1], coords[2], t));
-    if (t < 1) pathIconRAF = requestAnimationFrame(step);
+    if (raw < 1) pathIconRAF = requestAnimationFrame(step);
     else markerTransport.remove();
   }
   pathIconRAF = requestAnimationFrame(step);
@@ -792,6 +817,9 @@ function moveCamera(scene, durationSecOverride, frameOverride) {
     return;
   }
   stopOrbit();
+  // ถ้าฉากนี้ไฮไลต์เขตแดนแบบ auto-frame ให้ showBoundary() เป็นเจ้าของการขยับกล้องเพียงจุดเดียว
+  // (กันสองอนิเมชันชนกันกลางอากาศตอนขอบเขตโหลดมาช้ากว่ากล้อง ทำให้ดูกระตุก)
+  if (scene.highlight !== "none" && AUTO_FRAME_CAMS.has(scene.cam)) return;
   if (scene.cam === "battle-map") {
     // มุมมองแบบเกม RTS: เอียงเล็กน้อยพอเห็นมิติ ไม่หมุน (เว้นแต่ผู้ใช้ตั้ง bearing เอง)
     const zoom = frameOverride ? frameOverride.zoom : 6;
