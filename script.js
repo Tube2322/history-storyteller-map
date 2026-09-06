@@ -5,6 +5,7 @@ const CAM_LABELS = {
   "zoom-out": "ซูมออกเผยภาพรวม",
   "orbit": "กล้องหมุนรอบจุดสนใจ",
   "cut-to-insert": "ตัดเข้าภาพเต็มจอ",
+  "insert-overlay": "แทรกภาพลอย (PiP)",
 };
 const CAM_CLASS = {
   "establishing": "cam-establishing",
@@ -13,6 +14,7 @@ const CAM_CLASS = {
   "zoom-out": "cam-zoomout",
   "orbit": "cam-orbit",
   "cut-to-insert": "cam-cutinsert",
+  "insert-overlay": "cam-insertoverlay",
 };
 const CAM_DOT_VAR = {
   "establishing": "var(--cam-establishing)",
@@ -21,6 +23,7 @@ const CAM_DOT_VAR = {
   "zoom-out": "var(--cam-zoomout)",
   "orbit": "var(--cam-orbit)",
   "cut-to-insert": "var(--cam-cutinsert)",
+  "insert-overlay": "var(--cam-insertoverlay)",
 };
 const DEFAULT_DURATION = 5;
 
@@ -47,6 +50,8 @@ const el = {
   pinTo: document.getElementById("pinTo"),
   pinIcon: document.getElementById("pinIcon"),
   pinLabel: document.getElementById("pinLabel"),
+  insertLayerContent: document.getElementById("insertLayerContent"),
+  insertFloatContent: document.getElementById("insertFloatContent"),
   brandChip: document.getElementById("brandChip"),
   brandText: document.getElementById("brandText"),
   brandInput: document.getElementById("brandInput"),
@@ -76,7 +81,7 @@ let playTimer = null;
 
 function parseRow(line, index) {
   const parts = line.includes("|") ? line.split("|") : line.split("\t");
-  const [place, cam, script, dur, iconRaw, xyRaw] = parts.map((p) => (p || "").trim());
+  const [place, cam, script, dur, iconRaw, xyRaw, insertRaw] = parts.map((p) => (p || "").trim());
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
   const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
@@ -99,7 +104,21 @@ function parseRow(line, index) {
     icon,
     x,
     y,
+    insert: insertRaw || "",
   };
+}
+
+function isImageUrl(str) {
+  return /^https?:\/\//.test(str) || /\.(png|jpe?g|gif|webp|svg)$/i.test(str);
+}
+
+function renderInsertContent(container, text) {
+  if (!text) { container.innerHTML = ""; return; }
+  if (isImageUrl(text)) {
+    container.innerHTML = `<img src="${escapeHtml(text)}" alt="" />`;
+  } else {
+    container.innerHTML = `<span>${escapeHtml(text)}</span>`;
+  }
 }
 
 function parseImportText() {
@@ -159,16 +178,19 @@ function goToScene(index) {
   el.pinLabel.textContent = scene.place;
   el.pinTo.classList.remove("is-hidden");
 
+  renderInsertContent(el.insertLayerContent, scene.insert);
+  renderInsertContent(el.insertFloatContent, scene.insert);
+
   const prevScene = scenes[activeIndex - 1];
   if (prevScene) {
     el.pinFrom.style.left = `${prevScene.x}%`;
     el.pinFrom.style.top = `${prevScene.y}%`;
     el.pinFrom.classList.remove("is-hidden");
-    el.pathLine.setAttribute("d", `M${prevScene.x},${prevScene.y} Q${(prevScene.x + scene.x) / 2},${Math.min(prevScene.y, scene.y) - 15} ${scene.x},${scene.y}`);
-    el.pathLine.style.opacity = "1";
+    const d = `M${prevScene.x},${prevScene.y} Q${(prevScene.x + scene.x) / 2},${Math.min(prevScene.y, scene.y) - 15} ${scene.x},${scene.y}`;
+    animatePath(d);
   } else {
     el.pinFrom.classList.add("is-hidden");
-    el.pathLine.style.opacity = "0";
+    el.pathLine.classList.remove("is-visible");
   }
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
@@ -178,6 +200,20 @@ function goToScene(index) {
   if (activeChip) activeChip.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" });
 
   if (isPlaying) scheduleNext();
+}
+
+function animatePath(d) {
+  el.pathLine.classList.remove("is-visible");
+  el.pathLine.setAttribute("d", d);
+  const length = el.pathLine.getTotalLength();
+  el.pathLine.style.transition = "none";
+  el.pathLine.style.strokeDasharray = `${length}`;
+  el.pathLine.style.strokeDashoffset = `${length}`;
+  // บังคับ reflow ก่อนเริ่มอนิเมชันลากเส้น
+  el.pathLine.getBoundingClientRect();
+  el.pathLine.style.transition = "stroke-dashoffset 1.1s cubic-bezier(.22,.8,.3,1)";
+  el.pathLine.style.strokeDashoffset = "0";
+  el.pathLine.classList.add("is-visible");
 }
 
 function scheduleNext() {

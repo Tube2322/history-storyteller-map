@@ -17,14 +17,20 @@
         <section id="mapStage" class="map-stage cam-establishing">
           <div class="map-grid"></div>
           <svg class="map-path" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <path id="pathLine" d="M15,80 Q50,20 85,35" />
+            <defs>
+              <marker id="arrowHead" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto-start-reverse" markerUnits="strokeWidth">
+                <path d="M0,0 L6,3 L0,6 Z" fill="var(--accent)" />
+              </marker>
+            </defs>
+            <path id="pathLine" d="M15,80 Q50,20 85,35" marker-end="url(#arrowHead)" />
           </svg>
           <div id="pinFrom" class="map-pin pin-from is-hidden"><span class="pin-dot"></span></div>
           <div id="pinTo" class="map-pin pin-to is-hidden" style="left:50%;top:50%">
             <span class="pin-dot"><i id="pinIcon" class="pin-icon"></i></span>
             <em id="pinLabel" class="pin-label"></em>
           </div>
-          <div id="insertLayer" class="insert-layer"></div>
+          <div id="insertLayer" class="insert-layer"><span id="insertLayerContent"></span></div>
+          <div id="insertFloat" class="insert-float"><span id="insertFloatContent"></span></div>
         </section>
 
         <!-- ป้ายแบรนด์/โลโก้ -->
@@ -67,13 +73,15 @@
           </div>
           <p class="import-hint">
             วางข้อมูลทีละแถว คั่นแต่ละคอลัมน์ด้วย tab หรือ <code>|</code> เรียงลำดับ:
-            <br><code>สถานที่ | แผนกล้อง | คำบรรยาย/สคริปต์เสียง | วินาที | ไอคอน | x,y%</code>
-            <br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert</code>
-            <br>ไอคอน: <code>city / castle / ship / battle / flag / mountain / camp</code> (ไม่ใส่ = 📍) — วินาที/ไอคอน/x,y ไม่บังคับ
+            <br><code>สถานที่ | แผนกล้อง | คำบรรยาย/สคริปต์เสียง | วินาที | ไอคอน | x,y% | insert</code>
+            <br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert / insert-overlay</code>
+            <br>ไอคอน: <code>city / castle / ship / battle / flag / mountain / camp</code> (ไม่ใส่ = 📍)
+            <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert (เต็มจอ) / insert-overlay (กล่องลอย) — คอลัมน์ท้ายๆ ไม่บังคับ
           </p>
           <textarea id="importText" class="import-textarea" placeholder="สุโขทัย | establishing | ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | 5 | castle | 20,70
 สุโขทัย → ศรีสัชนาลัย | fly-to | จากนั้นกองคาราวานเดินทางขึ้นเหนือสู่เมืองพันธมิตร | 6 | flag | 55,35
-ศรีสัชนาลัย | push-in | ที่นี่คือจุดที่สงครามกำลังจะเริ่มต้น | 4 | battle | 80,25"></textarea>
+ศรีสัชนาลัย | insert-overlay | ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | 4 | battle | 80,25 | ภาพจำลองการโจมตี
+ศรีสัชนาลัย | cut-to-insert | แต่สิ่งที่เกิดขึ้นต่อจากนี้ ไม่มีใครคาดคิดมาก่อน | 3 | battle | 80,25 | หลักฐานภาพเหตุการณ์"></textarea>
           <div class="import-actions">
             <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
             <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
