@@ -34,6 +34,11 @@
 
         <!-- แถบบน: ชื่อตอน / ลำดับฉาก / แผนกล้อง / ปุ่มควบคุม -->
         <header class="topbar">
+          <div class="transport">
+            <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า">⏮</button>
+            <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด">▶</button>
+            <button id="btnNext" class="tbtn" title="ฉากถัดไป">⏭</button>
+          </div>
           <div class="ep-info">
             <span class="ep-title" id="epTitle">ยังไม่มีตอน</span>
             <span class="ep-sub" id="sceneCounter">ฉาก 0/0</span>
@@ -43,11 +48,6 @@
             <span id="camLabel">ไม่มีแผนกล้อง</span>
           </div>
           <div class="topbar-spacer"></div>
-          <div class="transport">
-            <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า">⏮</button>
-            <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด">▶</button>
-            <button id="btnNext" class="tbtn" title="ฉากถัดไป">⏭</button>
-          </div>
           <div class="export-wrap">
             <button id="btnExport" class="import-btn" type="button" title="เลือกสัดส่วนแล้วอัดหน้าจอเป็นวิดีโอ">บันทึกวิดีโอ</button>
             <div class="export-menu" id="exportMenu" hidden>

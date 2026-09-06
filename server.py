@@ -227,6 +227,13 @@ def fetch_flag(country_code: str) -> bytes:
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # เซิร์ฟเวอร์เดฟสำหรับแก้โค้ดสด — ปิด browser cache ทุกไฟล์เสมอ กัน script.js/index.html/styles.css
+        # ค้างเวอร์ชันเก่าในแคชแล้วดูเหมือนโค้ดที่เพิ่งแก้ไม่มีผล (ไม่งั้นต้อง hard-refresh/เคลียร์แคชเองทุกครั้ง)
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
     def do_GET(self):
         if self.path.startswith("/api/boundary"):
             self.handle_boundary()
@@ -237,7 +244,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith("/api/geocode"):
             self.handle_geocode()
             return
+        path_only = self.path.split("?", 1)[0]
+        if path_only in ("/", "/index.html"):
+            self.handle_index()
+            return
         super().do_GET()
+
+    def handle_index(self):
+        # เสิร์ฟ index.html เองพร้อมแปะ mtime ของ script.js/styles.css ต่อท้าย query string เสมอ
+        # กัน browser cache เก็บโค้ดเก่าค้างไว้ตอนแก้ไขสด (no-store header อย่างเดียวไม่พอ ถ้า cache เดิมมีอยู่แล้วก่อนหน้านี้)
+        try:
+            html = (Path(__file__).parent / "index.html").read_text(encoding="utf-8")
+            script_v = int((Path(__file__).parent / "script.js").stat().st_mtime)
+            style_v = int((Path(__file__).parent / "styles.css").stat().st_mtime)
+            html = html.replace('src="script.js"', f'src="script.js?v={script_v}"')
+            html = html.replace('href="styles.css"', f'href="styles.css?v={style_v}"')
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            self.send_error(500, str(exc))
 
     def handle_geocode(self):
         try:

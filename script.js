@@ -1659,14 +1659,15 @@ document.addEventListener("click", (e) => {
   if (!el.exportMenu.hidden && !e.target.closest(".export-wrap")) el.exportMenu.hidden = true;
 });
 
+// กดปุ่มเดิมซ้ำ = สลับปิด/เปิด (ไม่ใช่แค่เปิดอย่างเดียวเหมือนเดิม) — กดครั้งแรกยื่นเต็มจอ กดซ้ำหดกลับ
+function setImportPanelOpen(open) {
+  el.importPanel.classList.toggle("is-open", open);
+  el.importPanel.setAttribute("aria-hidden", open ? "false" : "true");
+}
 el.btnImport.addEventListener("click", () => {
-  el.importPanel.classList.add("is-open");
-  el.importPanel.setAttribute("aria-hidden", "false");
+  setImportPanelOpen(!el.importPanel.classList.contains("is-open"));
 });
-el.btnCloseImport.addEventListener("click", () => {
-  el.importPanel.classList.remove("is-open");
-  el.importPanel.setAttribute("aria-hidden", "true");
-});
+el.btnCloseImport.addEventListener("click", () => setImportPanelOpen(false));
 el.btnParse.addEventListener("click", parseImportText);
 el.btnClear.addEventListener("click", () => {
   el.importText.value = "";

@@ -578,12 +578,15 @@ body.is-render-mode .import-panel {
 
 /* ---------- แผงนำเข้าสคริปต์ ---------- */
 
+/* กดปุ่ม "นำเข้าสคริปต์" ครั้งแรก = ยื่นออกมาเต็มจอ (ใช้งานง่าย พื้นที่พิมพ์เยอะ), กดซ้ำ/กดปิด = หดกลับ */
 .import-panel {
   position: absolute;
-  top: 0; right: 0; bottom: 0;
-  width: min(480px, 92%);
+  inset: 0;
+  max-width: 900px;
+  margin: 0 auto;
   background: var(--panel);
   border-left: 1px solid var(--panel-border);
+  border-right: 1px solid var(--panel-border);
   padding: 20px;
   z-index: 20;
   display: flex;
@@ -623,7 +626,7 @@ body.is-render-mode .import-panel {
 }
 
 .import-textarea {
-  flex: 0 0 min(280px, 40vh);
+  flex: 1 1 min(400px, 45vh); /* เต็มจอแล้วมีที่ว่างเยอะขึ้น ให้กล่องพิมพ์ยืดใช้พื้นที่ที่เหลือ */
   resize: vertical;
   background: #05070a;
   border: 1px solid var(--panel-border);
