@@ -1231,16 +1231,46 @@ function parseImportText() {
   try { localStorage.setItem(AUTOSAVE_KEY, el.importText.value); } catch (e) { /* ไม่มี localStorage ก็ข้ามไป */ }
 }
 
+// สรุปลูกเล่น/สไตล์ที่เปิดใช้งานจริงในฉากนี้ เป็น chip สั้นๆ ให้เห็นภาพรวมทั้งคลิปว่าฉากไหนใช้อะไรบ้าง
+// (ตอบโจทย์ "วางแผนว่าฉากไหน/นาทีไหนจะใช้ลูกเล่นแบบไหน" โดยไม่ต้องไล่อ่าน tag ในกล่องข้อความ)
+function sceneStyleTags(s) {
+  const tags = [];
+  if (s.highlight !== "none") tags.push(`ไฮไลต์เขต:${s.highlight}`);
+  if (s.focus) tags.push("โฟกัสขาวดำ");
+  if (s.highlightColor) tags.push(`สีไฮไลต์ ${s.highlightColor}`);
+  if (s.warmorph) tags.push("ยึดครอง(warmorph)");
+  if (s.highlight !== "none" && s.reveal !== "fade") tags.push(`reveal:${s.reveal}`);
+  if (s.landfill === "flag") tags.push("ลายธงชาติ");
+  if (s.mainlandOnly) tags.push("แผ่นดินใหญ่");
+  if (s.caption) tags.push("คำบรรยาย");
+  if (s.geophoto) tags.push("รูปปักพิกัด");
+  if (s.badge) tags.push("ป้ายวงกลม");
+  if (s.callout) tags.push("กล่องแทรก+เส้นโยง");
+  if (s.draw && s.draw.length) tags.push("วาดเส้นอิสระ");
+  if (s.persist) tags.push(`คงไฮไลต์ ${s.persist} ฉาก`);
+  if (s.shade) tags.push("สปอตไลต์");
+  if (s.effect !== "none") tags.push(`เอฟเฟกต์:${s.effect}`);
+  if (s.cam === "battle-map" && s.arrows.length) tags.push(`ลูกศรทัพ ${s.arrows.length} ฝ่าย`);
+  if (s.transport !== "none") tags.push(`พาหนะ:${s.transport}`);
+  if (s.hide.length) tags.push(`ซ่อน:${s.hide.join(",")}`);
+  return tags;
+}
+
 function renderPreview() {
   el.importPreview.innerHTML = scenes
-    .map(
-      (s, i) => `
+    .map((s, i) => {
+      const tags = sceneStyleTags(s);
+      const tagsHtml = tags.length
+        ? `<div class="pr-tags">${tags.map((t) => `<span class="pr-tag">${escapeHtml(t)}</span>`).join("")}</div>`
+        : "";
+      return `
       <div class="preview-row" style="border-left-color:${CAM_DOT_VAR[s.cam]}">
         <div class="pr-place">${i + 1}. ${escapeHtml(s.place)}</div>
         <div class="pr-script">${escapeHtml(s.script)}</div>
         <div class="pr-meta">${CAM_LABELS[s.cam]} · ${s.duration}s · ${s.lat.toFixed(3)},${s.lng.toFixed(3)}</div>
-      </div>`
-    )
+        ${tagsHtml}
+      </div>`;
+    })
     .join("");
 }
 

@@ -693,6 +693,17 @@ body.is-render-mode .import-panel {
 .preview-row .pr-place { font-weight: 600; }
 .preview-row .pr-script { color: var(--ink-dim); margin-top: 3px; }
 .preview-row .pr-meta { font-family: var(--mono); color: var(--ink-dim); font-size: 10px; margin-top: 4px; }
+.pr-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.pr-tag {
+  font-family: var(--thai);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(242, 181, 68, 0.35);
+  white-space: nowrap;
+}
 
 .brand-settings {
   border-top: 1px solid var(--panel-border);
