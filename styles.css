@@ -132,6 +132,32 @@ html, body {
   filter: drop-shadow(0 0 4px rgba(242,181,68,0.7));
 }
 
+.transport-marker-wrap {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.transport-icon {
+  display: block;
+  font-size: 18px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7));
+}
+
+.shade-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .5s ease;
+  background: radial-gradient(circle at var(--shade-x, 50%) var(--shade-y, 50%), transparent var(--shade-r, 200px), rgba(0,0,0,0.78) calc(var(--shade-r, 200px) + 120px));
+}
+.shade-overlay.is-visible { opacity: 1; }
+
+.hs-hidden { display: none !important; }
+
 .battle-label span {
   display: inline-block;
   padding: 3px 9px;

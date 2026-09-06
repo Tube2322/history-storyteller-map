@@ -17,6 +17,7 @@
         <!-- เวทีแผนที่: MapLibre GL จริง (ภาพถ่ายดาวเทียม Esri) -->
         <section id="mapStage" class="map-stage">
           <div id="map" class="map-canvas"></div>
+          <div id="shadeOverlay" class="shade-overlay"></div>
           <div id="regionLabel" class="region-label"></div>
           <div id="insertLayer" class="insert-layer"><span id="insertLayerContent"></span></div>
           <div id="insertFloat" class="insert-float"><span id="insertFloatContent"></span></div>
@@ -81,6 +82,10 @@
             <br><strong>highlight</strong>: <code>country / province / place / none</code> — ไฮไลต์เขตแดนจริงจาก OpenStreetMap ตามพิกัด พร้อมป้ายชื่อขึ้นกลางจอ + ปรับซูมให้พอดีขนาดพื้นที่อัตโนมัติ (เฉพาะ tag-mode)
             <br><strong>cam=battle-map</strong>: มุมมองสไตล์ RTS (เอียงเบาๆ ไม่หมุน) ใช้คู่กับ <strong>arrows</strong> เพื่อวาดลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย
             <br><code>arrows=ฝ่าย1:RRGGBB:lat,lng:lat,lng;ฝ่าย2:RRGGBB:lat,lng:lat,lng</code> — คั่นแต่ละลูกศรด้วย <code>;</code> ภายในคั่นด้วย <code>:</code> เป็น ชื่อฝ่าย:สีฮ็กซ์:ต้นทาง:ปลายทาง
+            <br><strong>transport</strong>: <code>plane / car / ship / train / walk</code> — ไอคอนพาหนะวิ่งไปตามเส้นทางตอน cam=fly-to (ดีฟอลต์ plane)
+            <br><strong>shade</strong>: <code>on</code> หรือใส่ตัวเลข (รัศมีเป็น px เช่น <code>250</code>) — มืดรอบข้าง เหลือจุดสนใจสว่างแบบสปอตไลต์
+            <br><strong>hide</strong>: <code>pin,boundary,arrow,timeline,topbar,brand</code> — ซ่อนอย่างใดอย่างหนึ่งเฉพาะฉากนั้น (คั่นด้วย <code>,</code>)
+            <br><strong>landfill</strong>: <code>flag</code> — เติมสีไฮไลต์เขตแดนเป็นลายธงชาติจริงแทนสีทึบ (ใช้คู่กับ highlight)
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>

@@ -56,7 +56,8 @@ def fetch_boundary(lat: float, lng: float, level: str) -> dict:
             data = json.loads(resp.read())
         _last_nominatim_call[0] = time.time()
     name = data.get("name") or (data.get("display_name") or "").split(",")[0]
-    result = {"name": name, "geojson": data.get("geojson")}
+    country_code = (data.get("address") or {}).get("country_code")  # เช่น "th" — ใช้ดึงธงชาติ
+    result = {"name": name, "geojson": data.get("geojson"), "countryCode": country_code}
     _boundary_cache[key] = result
     return result
 
@@ -70,12 +71,49 @@ async def synthesize(text: str, voice: str) -> bytes:
     return bytes(audio)
 
 
+_flag_cache = {}
+
+
+def fetch_flag(country_code: str) -> bytes:
+    code = re.sub(r"[^a-z]", "", country_code.lower())[:2]
+    if code in _flag_cache:
+        return _flag_cache[code]
+    req = urllib.request.Request(
+        f"https://flagcdn.com/160x120/{code}.png",
+        headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool)"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = resp.read()
+    _flag_cache[code] = data
+    return data
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/boundary"):
             self.handle_boundary()
             return
+        if self.path.startswith("/api/flag"):
+            self.handle_flag()
+            return
         super().do_GET()
+
+    def handle_flag(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            code = (qs.get("code", [""])[0] or "").strip()
+            if not code:
+                self.send_error(400, "missing code")
+                return
+            png_bytes = fetch_flag(code)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(png_bytes)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(png_bytes)
+        except Exception as exc:
+            self.send_error(500, str(exc))
 
     def handle_boundary(self):
         try:

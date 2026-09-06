@@ -43,6 +43,13 @@ const EFFECT_GLYPHS = {
   fire: "🔥",
   battle: "⚔️",
 };
+const TRANSPORT_GLYPHS = {
+  plane: "✈️",
+  car: "🚗",
+  ship: "⛴️",
+  train: "🚂",
+  walk: "🚶",
+};
 
 const el = {
   insertLayerContent: document.getElementById("insertLayerContent"),
@@ -75,6 +82,9 @@ const el = {
   stageEl: document.getElementById("stageEl"),
   exportMenu: document.getElementById("exportMenu"),
   regionLabel: document.getElementById("regionLabel"),
+  shadeOverlay: document.getElementById("shadeOverlay"),
+  topbar: document.querySelector(".topbar"),
+  timeline: document.getElementById("timeline"),
   btnSaveProject: document.getElementById("btnSaveProject"),
   fileLoadProject: document.getElementById("fileLoadProject"),
   autosaveHint: document.getElementById("autosaveHint"),
@@ -170,7 +180,16 @@ map.on("load", () => {
     id: "region-line",
     type: "line",
     source: "region-boundary",
-    paint: { "line-color": "#f2b544", "line-width": 2.5, "line-opacity": 0 },
+    paint: { "line-color": "#f2b544", "line-width": 1.5, "line-opacity": 0, "line-dasharray": [1, 1.5] },
+  });
+  // เส้นลากแบบปากกาวาด (border trace) — ทับบนเส้นจางด้านบน ค่อยๆยาวขึ้นตามเวลาจริง
+  map.addSource("region-line-trace", { type: "geojson", data: emptyFC() });
+  map.addLayer({
+    id: "region-line-trace-layer",
+    type: "line",
+    source: "region-line-trace",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#f2b544", "line-width": 3, "line-opacity": 0.95 },
   });
 
   // แผนที่สนามรบ (RTS): ลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย
@@ -195,8 +214,10 @@ function emptyFC() {
 // ---------- ไฮไลต์ขอบเขตพื้นที่ ----------
 
 const boundaryCache = new Map();
-let boundaryRAF = null;
+let boundaryFillRAF = null;
+let boundaryTraceRAF = null;
 let boundaryRequestSeq = 0;
+const loadedFlagImages = new Set();
 
 async function fetchBoundary(lat, lng, level) {
   const key = `${level}:${lat.toFixed(3)},${lng.toFixed(3)}`;
@@ -208,8 +229,67 @@ async function fetchBoundary(lat, lng, level) {
   return data;
 }
 
-function animateBoundaryOpacity(toFill, toLine) {
-  if (boundaryRAF) cancelAnimationFrame(boundaryRAF);
+function haversine(a, b) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b[1] - a[1]);
+  const dLng = toRad(b[0] - a[0]);
+  const la1 = toRad(a[1]);
+  const la2 = toRad(b[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// ดึงวงรอบนอกที่ยาวที่สุดมาใช้ "ลากเส้น" (ถ้าเป็น MultiPolygon เลือกวงที่มีจุดเยอะสุดเป็นตัวแทน)
+function outerRingOf(geojson) {
+  const polygons = geojson.type === "MultiPolygon" ? geojson.coordinates : [geojson.coordinates];
+  let best = null;
+  for (const poly of polygons) {
+    const ring = poly[0];
+    if (!best || ring.length > best.length) best = ring;
+  }
+  return best;
+}
+
+function sliceRing(ring, fraction) {
+  if (fraction >= 1) return ring;
+  let total = 0;
+  for (let i = 1; i < ring.length; i++) total += haversine(ring[i - 1], ring[i]);
+  const target = total * fraction;
+  let acc = 0;
+  const out = [ring[0]];
+  for (let i = 1; i < ring.length; i++) {
+    const d = haversine(ring[i - 1], ring[i]);
+    if (acc + d >= target) {
+      const t = d > 0 ? (target - acc) / d : 0;
+      out.push([
+        ring[i - 1][0] + (ring[i][0] - ring[i - 1][0]) * t,
+        ring[i - 1][1] + (ring[i][1] - ring[i - 1][1]) * t,
+      ]);
+      break;
+    }
+    acc += d;
+    out.push(ring[i]);
+  }
+  return out;
+}
+
+// ลากเส้นขอบเขตทีละนิดเหมือนปากกาวาด (border trace) แทนการโผล่มาทั้งเส้นพร้อมกัน
+function animateBorderTrace(ring, durationMs) {
+  if (boundaryTraceRAF) cancelAnimationFrame(boundaryTraceRAF);
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / durationMs);
+    const src = map.getSource("region-line-trace");
+    if (src) src.setData({ type: "Feature", geometry: { type: "LineString", coordinates: sliceRing(ring, t) } });
+    if (t < 1) boundaryTraceRAF = requestAnimationFrame(step);
+  }
+  boundaryTraceRAF = requestAnimationFrame(step);
+}
+
+function animateFillOpacity(toFill) {
+  if (boundaryFillRAF) cancelAnimationFrame(boundaryFillRAF);
+  const toLine = toFill > 0 ? 0.35 : 0;
   const fromFill = map.getPaintProperty("region-fill", "fill-opacity") || 0;
   const fromLine = map.getPaintProperty("region-line", "line-opacity") || 0;
   const start = performance.now();
@@ -218,13 +298,30 @@ function animateBoundaryOpacity(toFill, toLine) {
     const t = Math.min(1, (now - start) / dur);
     map.setPaintProperty("region-fill", "fill-opacity", fromFill + (toFill - fromFill) * t);
     map.setPaintProperty("region-line", "line-opacity", fromLine + (toLine - fromLine) * t);
-    if (t < 1) boundaryRAF = requestAnimationFrame(step);
+    if (t < 1) boundaryFillRAF = requestAnimationFrame(step);
   }
-  boundaryRAF = requestAnimationFrame(step);
+  boundaryFillRAF = requestAnimationFrame(step);
+}
+
+function ensureFlagImage(countryCode, onReady) {
+  const imgId = `flag-${countryCode}`;
+  if (loadedFlagImages.has(imgId) || map.hasImage(imgId)) { onReady(imgId); return; }
+  // maplibre-gl v4: loadImage() คืน Promise (ไม่ใช่ callback แบบ v2/v3)
+  map
+    .loadImage(`/api/flag?code=${countryCode}`)
+    .then(({ data }) => {
+      if (!map.hasImage(imgId)) map.addImage(imgId, data);
+      loadedFlagImages.add(imgId);
+      onReady(imgId);
+    })
+    .catch((e) => { console.warn("โหลดธงไม่สำเร็จ", e); onReady(null); });
 }
 
 function clearBoundary() {
-  animateBoundaryOpacity(0, 0);
+  animateFillOpacity(0);
+  if (boundaryTraceRAF) cancelAnimationFrame(boundaryTraceRAF);
+  const traceSrc = map.getSource("region-line-trace");
+  if (traceSrc) traceSrc.setData(emptyFC());
   el.regionLabel.classList.remove("is-visible");
 }
 
@@ -259,9 +356,21 @@ function showBoundary(scene) {
     .then((data) => {
       if (mySeq !== boundaryRequestSeq || !data.geojson) return; // กันฉากเปลี่ยนไปแล้วแต่ผลลัพธ์เก่ามาช้า
       map.getSource("region-boundary").setData({ type: "Feature", geometry: data.geojson, properties: {} });
-      animateBoundaryOpacity(0.18, 0.85);
+      animateFillOpacity(0.18);
       el.regionLabel.textContent = data.name || scene.place;
       el.regionLabel.classList.add("is-visible");
+
+      const ring = outerRingOf(data.geojson);
+      if (ring) animateBorderTrace(ring, 1400);
+
+      if (scene.landfill === "flag" && data.countryCode) {
+        ensureFlagImage(data.countryCode, (imgId) => {
+          if (mySeq !== boundaryRequestSeq) return;
+          map.setPaintProperty("region-fill", "fill-pattern", imgId || undefined);
+        });
+      } else {
+        map.setPaintProperty("region-fill", "fill-pattern", undefined);
+      }
 
       if (!AUTO_FRAME_CAMS.has(scene.cam)) return;
       const bounds = boundsFromGeojson(data.geojson);
@@ -397,6 +506,66 @@ function curvedLine(a, b) {
   return [a, bow, b];
 }
 
+// ---------- ไอคอนพาหนะวิ่งไปตามเส้นทาง (route + moving icon) ----------
+
+const transportWrapEl = makeMarkerEl("transport-marker-wrap", `<span class="transport-icon"></span>`);
+const markerTransport = new maplibregl.Marker({ element: transportWrapEl, anchor: "center" });
+let pathIconRAF = null;
+
+function quadBezierPoint(p0, p1, p2, t) {
+  const mt = 1 - t;
+  return [
+    mt * mt * p0[0] + 2 * mt * t * p1[0] + t * t * p2[0],
+    mt * mt * p0[1] + 2 * mt * t * p1[1] + t * t * p2[1],
+  ];
+}
+
+function startPathIcon(coords, durationMs, glyph) {
+  stopPathIcon();
+  transportWrapEl.querySelector(".transport-icon").textContent = glyph;
+  markerTransport.setLngLat(coords[0]).addTo(map);
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / durationMs);
+    markerTransport.setLngLat(quadBezierPoint(coords[0], coords[1], coords[2], t));
+    if (t < 1) pathIconRAF = requestAnimationFrame(step);
+    else markerTransport.remove();
+  }
+  pathIconRAF = requestAnimationFrame(step);
+}
+
+function stopPathIcon() {
+  if (pathIconRAF) cancelAnimationFrame(pathIconRAF);
+  pathIconRAF = null;
+  markerTransport.remove();
+}
+
+// ---------- shade / spotlight: มืดรอบข้าง เหลือจุดสนใจสว่าง ----------
+
+let shadeActive = false;
+let shadeScene = null;
+
+function updateShade() {
+  if (!shadeActive || !shadeScene) return;
+  const p = map.project([shadeScene.lng, shadeScene.lat]);
+  el.shadeOverlay.style.setProperty("--shade-x", `${p.x}px`);
+  el.shadeOverlay.style.setProperty("--shade-y", `${p.y}px`);
+}
+map.on("render", updateShade);
+
+function setShade(scene) {
+  if (scene.shade > 0) {
+    shadeActive = true;
+    shadeScene = scene;
+    el.shadeOverlay.style.setProperty("--shade-r", `${scene.shade}px`);
+    el.shadeOverlay.classList.add("is-visible");
+    updateShade();
+  } else {
+    shadeActive = false;
+    el.shadeOverlay.classList.remove("is-visible");
+  }
+}
+
 function moveCamera(scene, durationSecOverride, frameOverride) {
   const center = frameOverride ? frameOverride.center : [scene.lng, scene.lat];
   const durationSec = durationSecOverride || scene.duration;
@@ -454,12 +623,16 @@ function parseArrows(str) {
 }
 
 function finalizeScene(raw) {
-  const { place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert, tilt, bearing, highlight, arrows } = raw;
+  const {
+    place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
+    tilt, bearing, highlight, arrows, transport: transportRaw, shade, hide, landfill,
+  } = raw;
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
   const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
   const effect = EFFECT_GLYPHS[effectRaw] ? effectRaw : "none";
   const highlightKey = ["country", "province", "place"].includes(highlight) ? highlight : "none";
+  const transport = TRANSPORT_GLYPHS[transportRaw] ? transportRaw : "plane";
 
   let lat, lng;
   if (latlng && latlng.includes(",")) {
@@ -482,6 +655,10 @@ function finalizeScene(raw) {
     bearing: Number.isFinite(Number(bearing)) ? ((Number(bearing) % 360) + 360) % 360 : 0,
     highlight: highlightKey,
     arrows: parseArrows(arrows),
+    transport,
+    shade: shade === "on" || (Number(shade) > 0 ? Number(shade) : 0) ? (Number(shade) > 0 ? Number(shade) : 200) : 0,
+    hide: (hide || "").split(",").map((s) => s.trim()).filter(Boolean),
+    landfill: landfill === "flag" ? "flag" : "color",
   };
 }
 
@@ -498,6 +675,10 @@ const TAG_KEY_ALIASES = {
   bearing: "bearing", หมุน: "bearing",
   highlight: "highlight", ไฮไลต์: "highlight",
   arrows: "arrows", ลูกศรทัพ: "arrows",
+  transport: "transport", vehicle: "transport", พาหนะ: "transport",
+  shade: "shade", spotlight: "shade",
+  hide: "hide", ซ่อน: "hide",
+  landfill: "landfill", fill: "landfill",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -640,10 +821,16 @@ function goToScene(index, durationOverride) {
     if (lineSource) lineSource.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
     const bearing = compassBearing(coords[1], coords[2]);
     markerArrow.setRotation(bearing - 90).setLngLat(coords[1]).addTo(map);
+    if (scene.cam === "fly-to") {
+      startPathIcon(coords, (durationOverride || scene.duration) * 1000, TRANSPORT_GLYPHS[scene.transport]);
+    } else {
+      stopPathIcon();
+    }
   } else {
     markerFrom.remove();
     markerArrow.remove();
     if (lineSource) lineSource.setData(emptyFC());
+    stopPathIcon();
   }
 
   // แผนที่สนามรบ: ลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย
@@ -653,6 +840,18 @@ function goToScene(index, durationOverride) {
   } else {
     clearBattleArrows();
   }
+
+  // shade/spotlight
+  setShade(scene);
+
+  // ซ่อนเลเยอร์เฉพาะฉาก (hide=pin,boundary,arrow,timeline,topbar,brand)
+  const hideSet = new Set(scene.hide);
+  if (hideSet.has("pin")) markerTo.remove();
+  if (hideSet.has("boundary")) clearBoundary();
+  if (hideSet.has("arrow")) { markerArrow.remove(); markerFrom.remove(); stopPathIcon(); if (lineSource) lineSource.setData(emptyFC()); }
+  el.topbar.classList.toggle("hs-hidden", hideSet.has("topbar"));
+  el.timeline.classList.toggle("hs-hidden", hideSet.has("timeline"));
+  el.brandChip.classList.toggle("hs-hidden", hideSet.has("brand"));
 
   moveCamera(scene, durationOverride, battleFrame);
 

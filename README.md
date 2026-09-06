@@ -84,7 +84,12 @@ place=สุโขทัย | latlng=17.0175,99.7016 | cam=fly-to | script=... |
 - ไอคอนหมุด: `city / castle / ship / battle / flag / mountain / camp` (ไม่ใส่ = 📍)
 - เอฟเฟกต์: `storm / fire / battle / none`
 - `tilt` (0-60°) / `bearing` (0-360°) — ปรับมุมเอียง/ทิศกล้องเฉพาะฉากนั้น ใช้ได้เฉพาะ tag-mode (column-mode ไม่มีช่องให้ใส่)
-- `highlight`: `country / province / place / none` — ไฮไลต์เขตแดนจริงจาก OpenStreetMap (Nominatim) ตรงจากพิกัดฉาก พร้อมป้ายชื่อเขต ใช้ได้เฉพาะ tag-mode เท่านั้น ต้องมีอินเทอร์เน็ตและรัน `server.py` (ไม่ใช่ http.server เฉยๆ) เพราะเรียก `/api/boundary` ผ่านเซิร์ฟเวอร์
+- `highlight`: `country / province / place / none` — ไฮไลต์เขตแดนจริงจาก OpenStreetMap (Nominatim) ตรงจากพิกัดฉาก พร้อมป้ายชื่อเขต + เส้นขอบลากทีละนิดแบบปากกาวาด (border trace) ใช้ได้เฉพาะ tag-mode เท่านั้น ต้องมีอินเทอร์เน็ตและรัน `server.py` (ไม่ใช่ http.server เฉยๆ) เพราะเรียก `/api/boundary` ผ่านเซิร์ฟเวอร์
+- `landfill=flag` — เติมพื้นที่ไฮไลต์เป็นลายธงชาติจริงแทนสีทึบ (ดึงจาก `/api/flag` ต้องมี `highlight` ด้วย)
+- `cam=battle-map` คู่กับ `arrows=ฝ่าย1:RRGGBB:lat,lng:lat,lng;ฝ่าย2:...` — ลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย มุมกล้องสไตล์ RTS (เอียงคงที่ ไม่หมุน)
+- `transport`: `plane / car / ship / train / walk` — ไอคอนพาหนะวิ่งไปตามเส้นทางตอน `cam=fly-to` (ดีฟอลต์ plane)
+- `shade`: `on` หรือตัวเลข (รัศมี px) — เอฟเฟกต์สปอตไลต์ มืดรอบข้าง เหลือจุดสนใจสว่าง
+- `hide`: รายชื่อคั่นด้วย `,` จาก `pin,boundary,arrow,timeline,topbar,brand` — ซ่อนเฉพาะฉากนั้น เช่นอยากได้ภาพแผนที่โล่งๆ ไม่มี UI
 - insert: ข้อความหรือ url รูป ใช้กับ `cut-to-insert` / `insert-overlay` — อัพโหลดภาพของตัวเองได้จากปุ่ม "เลือกไฟล์ภาพ" ในแผงนำเข้าสคริปต์ (เก็บไว้ที่โฟลเดอร์ `assets/` ของเครื่องที่รัน `server.py`) กดที่ path ในลิสต์เพื่อคัดลอกมาวางในคอลัมน์นี้
 - ในช่องสคริปต์ใส่ `;;` เพื่อแบ่งซับไตเติลหลายช่วงในฉากเดียว (ห้ามใช้ `|` เพราะชนกับตัวคั่นคอลัมน์/tag)
 - วางเป็นแถวในกล่องข้อความ (คั่นด้วย tab หรือ `|`) หรือดาวน์โหลด/นำเข้าเป็นไฟล์ Excel ก็ได้ (Excel ใช้ column-mode 8 คอลัมน์เดิมเท่านั้น ยังไม่รองรับ tilt/bearing/highlight)
