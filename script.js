@@ -90,6 +90,9 @@ const el = {
   autosaveHint: document.getElementById("autosaveHint"),
   fileUploadImage: document.getElementById("fileUploadImage"),
   uploadList: document.getElementById("uploadList"),
+  searchPlaceInput: document.getElementById("searchPlaceInput"),
+  btnSearchPlace: document.getElementById("btnSearchPlace"),
+  searchResultList: document.getElementById("searchResultList"),
 };
 
 let scenes = [];
@@ -169,12 +172,13 @@ map.on("load", () => {
   });
 
   // ไฮไลต์ขอบเขตพื้นที่ (จังหวัด/ประเทศ) — ข้อมูลจริงจาก OpenStreetMap ต่อพิกัดฉาก
-  map.addSource("region-boundary", { type: "geojson", data: emptyFC() });
+  map.addSource("region-boundary", { type: "geojson", data: emptyFC() }); // เก็บวงรอบเต็มไว้ให้เส้นขอบ/trace อ้างอิงเสมอ
+  map.addSource("region-fill-mask", { type: "geojson", data: emptyFC() }); // ส่วนที่ "เผยแล้ว" ของพื้นที่ (โตขึ้นเรื่อยๆ ตาม reveal mode)
   map.addLayer({
     id: "region-fill",
     type: "fill",
-    source: "region-boundary",
-    paint: { "fill-color": "#f2b544", "fill-opacity": 0 },
+    source: "region-fill-mask",
+    paint: { "fill-color": "#f2b544", "fill-opacity": 0.18 },
   });
   map.addLayer({
     id: "region-line",
@@ -182,14 +186,37 @@ map.on("load", () => {
     source: "region-boundary",
     paint: { "line-color": "#f2b544", "line-width": 1.5, "line-opacity": 0, "line-dasharray": [1, 1.5] },
   });
-  // เส้นลากแบบปากกาวาด (border trace) — ทับบนเส้นจางด้านบน ค่อยๆยาวขึ้นตามเวลาจริง
+  // เรืองแสงใต้เส้นลาก (border glow)
   map.addSource("region-line-trace", { type: "geojson", data: emptyFC() });
+  map.addLayer({
+    id: "region-line-glow",
+    type: "line",
+    source: "region-line-trace",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#f2b544", "line-width": 10, "line-blur": 6, "line-opacity": 0.55 },
+  });
+  // เส้นลากแบบปากกาวาด (border trace) — ทับบนเส้นจางด้านบน ค่อยๆยาวขึ้นตามเวลาจริง
   map.addLayer({
     id: "region-line-trace-layer",
     type: "line",
     source: "region-line-trace",
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": "#f2b544", "line-width": 3, "line-opacity": 0.95 },
+  });
+
+  // War morph: พื้นที่ที่ถูกยึด ค่อยๆเปลี่ยนสีจากฝ่ายแพ้เป็นฝ่ายชนะ + เส้นขอบใหม่
+  map.addSource("warmorph-captured", { type: "geojson", data: emptyFC() });
+  map.addLayer({
+    id: "warmorph-captured-fill",
+    type: "fill",
+    source: "warmorph-captured",
+    paint: { "fill-color": "#f2b544", "fill-opacity": 0 },
+  });
+  map.addLayer({
+    id: "warmorph-captured-line",
+    type: "line",
+    source: "warmorph-captured",
+    paint: { "line-color": "#f2b544", "line-width": 2, "line-opacity": 0 },
   });
 
   // แผนที่สนามรบ (RTS): ลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย
@@ -274,26 +301,148 @@ function sliceRing(ring, fraction) {
   return out;
 }
 
-// ลากเส้นขอบเขตทีละนิดเหมือนปากกาวาด (border trace) แทนการโผล่มาทั้งเส้นพร้อมกัน
-function animateBorderTrace(ring, durationMs) {
+// เริ่มลากเส้นจาก N จุดกระจายเท่าๆกันรอบวงพร้อมกัน (สำหรับ trace=two/four)
+// แต่ละจุดลากไปทิศเดียวกัน (ตามลำดับวง) คนละ 1/N ส่วน — ดูเหมือนหลายปากกาวาดพร้อมกัน
+function sliceRingFromPoints(ring, fraction, startCount) {
+  const n = ring.length;
+  const segFraction = fraction / startCount;
+  const out = [];
+  for (let k = 0; k < startCount; k++) {
+    const startIdx = Math.floor((k / startCount) * n);
+    const rotated = ring.slice(startIdx).concat(ring.slice(0, startIdx + 1));
+    out.push(sliceRing(rotated, Math.min(1, segFraction)));
+  }
+  return out;
+}
+
+// ลากเส้นขอบเขตทีละนิดเหมือนปากกาวาด (border trace) — trace: one/two/tworeverse/four
+function animateBorderTrace(ring, durationMs, mode) {
   if (boundaryTraceRAF) cancelAnimationFrame(boundaryTraceRAF);
   const start = performance.now();
+  const startCount = mode === "four" ? 4 : mode === "two" || mode === "tworeverse" ? 2 : 1;
   function step(now) {
     const t = Math.min(1, (now - start) / durationMs);
     const src = map.getSource("region-line-trace");
-    if (src) src.setData({ type: "Feature", geometry: { type: "LineString", coordinates: sliceRing(ring, t) } });
+    if (src) {
+      const lines = startCount === 1
+        ? [sliceRing(ring, t)]
+        : sliceRingFromPoints(mode === "tworeverse" ? ring.slice().reverse() : ring, t, startCount);
+      src.setData({
+        type: "FeatureCollection",
+        features: lines.map((coords) => ({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} })),
+      });
+    }
     if (t < 1) boundaryTraceRAF = requestAnimationFrame(step);
   }
+  step(start);
+  map.setPaintProperty("region-line-glow", "line-opacity", 0.55);
   boundaryTraceRAF = requestAnimationFrame(step);
+}
+
+// ---------- Fill reveal: fade / wipe / split / circular / diamond ----------
+// ใช้เทคนิค Sutherland-Hodgman ตัด polygon จริงด้วย "หน้ากาก" นูนที่โตขึ้นตามเวลา
+// (wipe/split/diamond = ตัดด้วยเส้นตรง/สี่เหลี่ยมขยาย, circular = ตัดด้วยหลายเหลี่ยมจำลองวงกลม)
+
+function clipByHalfPlane(ring, p1, p2, keepSign) {
+  function side(pt) { return (p2[0] - p1[0]) * (pt[1] - p1[1]) - (p2[1] - p1[1]) * (pt[0] - p1[0]); }
+  function intersect(a, b) {
+    const d1 = side(a), d2 = side(b);
+    const t = d1 / (d1 - d2);
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  }
+  const out = [];
+  for (let i = 0; i < ring.length; i++) {
+    const curr = ring[i];
+    const prev = ring[(i - 1 + ring.length) % ring.length];
+    const cs = side(curr) * keepSign;
+    const ps = side(prev) * keepSign;
+    if (cs >= 0) {
+      if (ps < 0) out.push(intersect(prev, curr));
+      out.push(curr);
+    } else if (ps >= 0) {
+      out.push(intersect(prev, curr));
+    }
+  }
+  return out;
+}
+
+// ตัด ring ด้วยหลายเหลี่ยมนูน (mask) ต่อกันทีละด้าน — ได้ผลลัพธ์เป็นส่วนที่อยู่ "ใน" mask เท่านั้น
+function clipByConvexMask(ring, maskPts) {
+  let result = ring;
+  for (let i = 0; i < maskPts.length && result.length; i++) {
+    const a = maskPts[i];
+    const b = maskPts[(i + 1) % maskPts.length];
+    result = clipByHalfPlane(result, a, b, 1);
+  }
+  return result;
+}
+
+function regularPolygonMask(center, radiusLng, radiusLat, sides) {
+  const pts = [];
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2;
+    pts.push([center[0] + Math.cos(a) * radiusLng, center[1] + Math.sin(a) * radiusLat]);
+  }
+  return pts;
+}
+
+function revealMask(mode, t, bounds) {
+  const { minLng, minLat, maxLng, maxLat } = bounds;
+  const w = maxLng - minLng || 0.0001;
+  const h = maxLat - minLat || 0.0001;
+  const cx = (minLng + maxLng) / 2, cy = (minLat + maxLat) / 2;
+  const pad = Math.max(w, h) * 0.15; // เผื่อขอบกันหน้ากากคมเกินไป
+  if (mode === "wipe") {
+    const x = minLng - pad + (w + pad * 2) * t;
+    return [[minLng - pad, minLat - pad], [x, minLat - pad], [x, maxLat + pad], [minLng - pad, maxLat + pad]];
+  }
+  if (mode === "split") {
+    const half = (w / 2 + pad) * t;
+    return [[cx - half, minLat - pad], [cx + half, minLat - pad], [cx + half, maxLat + pad], [cx - half, maxLat + pad]];
+  }
+  if (mode === "diamond") {
+    const r = (Math.max(w, h) / 2 + pad) * 1.4142 * t;
+    return [[cx, cy - r], [cx + r, cy], [cx, cy + r], [cx - r, cy]];
+  }
+  // circular / iris — จำลองวงกลมด้วย 28 เหลี่ยม
+  const r = (Math.max(w, h) / 2 + pad) * 1.2 * t;
+  return regularPolygonMask([cx, cy], r, r, 28);
+}
+
+let fillRevealRAF = null;
+function animateFillReveal(geojson, mode, durationMs) {
+  if (fillRevealRAF) cancelAnimationFrame(fillRevealRAF);
+  const maskSrc = map.getSource("region-fill-mask");
+  if (!maskSrc) return;
+  if (mode === "fade" || mode === "none") {
+    maskSrc.setData({ type: "Feature", geometry: geojson, properties: {} });
+    return;
+  }
+  const bounds = boundsFromGeojson(geojson);
+  if (!bounds) { maskSrc.setData({ type: "Feature", geometry: geojson, properties: {} }); return; }
+  const b = { minLng: bounds.getWest(), minLat: bounds.getSouth(), maxLng: bounds.getEast(), maxLat: bounds.getNorth() };
+  const polygons = geojson.type === "MultiPolygon" ? geojson.coordinates.map((p) => p[0]) : [geojson.coordinates[0]];
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / durationMs);
+    const mask = revealMask(mode, t, b);
+    const clipped = polygons.map((ring) => clipByConvexMask(ring, mask)).filter((r) => r.length >= 3);
+    maskSrc.setData({
+      type: "FeatureCollection",
+      features: clipped.map((ring) => ({ type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} })),
+    });
+    if (t < 1) fillRevealRAF = requestAnimationFrame(step);
+  }
+  fillRevealRAF = requestAnimationFrame(step);
 }
 
 function animateFillOpacity(toFill) {
   if (boundaryFillRAF) cancelAnimationFrame(boundaryFillRAF);
   const toLine = toFill > 0 ? 0.35 : 0;
-  const fromFill = map.getPaintProperty("region-fill", "fill-opacity") || 0;
-  const fromLine = map.getPaintProperty("region-line", "line-opacity") || 0;
+  const fromFill = map.getPaintProperty("region-fill", "fill-opacity") ?? 0;
+  const fromLine = map.getPaintProperty("region-line", "line-opacity") ?? 0;
   const start = performance.now();
-  const dur = 700;
+  const dur = 500;
   function step(now) {
     const t = Math.min(1, (now - start) / dur);
     map.setPaintProperty("region-fill", "fill-opacity", fromFill + (toFill - fromFill) * t);
@@ -317,30 +466,83 @@ function ensureFlagImage(countryCode, onReady) {
     .catch((e) => { console.warn("โหลดธงไม่สำเร็จ", e); onReady(null); });
 }
 
+// ---------- War morph: พื้นที่ที่ถูกยึดค่อยๆเปลี่ยนสีจากฝ่ายแพ้เป็นฝ่ายชนะ ----------
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHex([r, g, b]) {
+  return `#${[r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+}
+function lerpColor(hexA, hexB, t) {
+  const a = hexToRgb(hexA), b = hexToRgb(hexB);
+  return rgbToHex(a.map((v, i) => v + (b[i] - v) * t));
+}
+
+let warmorphRAF = null;
+function animateWarmorph(ring, warmorph, loserColor, durationMs) {
+  if (warmorphRAF) cancelAnimationFrame(warmorphRAF);
+  const captured = clipByHalfPlane(ring, warmorph.p1, warmorph.p2, 1).filter((r) => r);
+  const capturedSrc = map.getSource("warmorph-captured");
+  if (!capturedSrc || captured.length < 3) { if (capturedSrc) capturedSrc.setData(emptyFC()); return; }
+  capturedSrc.setData({ type: "Feature", geometry: { type: "Polygon", coordinates: [captured] }, properties: {} });
+  map.setPaintProperty("warmorph-captured-fill", "fill-opacity", 0.32);
+  map.setPaintProperty("warmorph-captured-line", "line-opacity", 0.9);
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / durationMs);
+    const color = lerpColor(loserColor, warmorph.color, t);
+    map.setPaintProperty("warmorph-captured-fill", "fill-color", color);
+    map.setPaintProperty("warmorph-captured-line", "line-color", color);
+    if (t < 1) warmorphRAF = requestAnimationFrame(step);
+  }
+  warmorphRAF = requestAnimationFrame(step);
+}
+
+function clearWarmorph() {
+  if (warmorphRAF) cancelAnimationFrame(warmorphRAF);
+  const src = map.getSource("warmorph-captured");
+  if (src) src.setData(emptyFC());
+  map.setPaintProperty("warmorph-captured-fill", "fill-opacity", 0);
+  map.setPaintProperty("warmorph-captured-line", "line-opacity", 0);
+}
+
 function clearBoundary() {
   animateFillOpacity(0);
   if (boundaryTraceRAF) cancelAnimationFrame(boundaryTraceRAF);
+  if (fillRevealRAF) cancelAnimationFrame(fillRevealRAF);
   const traceSrc = map.getSource("region-line-trace");
   if (traceSrc) traceSrc.setData(emptyFC());
+  map.setPaintProperty("region-line-glow", "line-opacity", 0);
+  const maskSrc = map.getSource("region-fill-mask");
+  if (maskSrc) maskSrc.setData(emptyFC());
+  clearWarmorph();
   el.regionLabel.classList.remove("is-visible");
 }
 
 // คำนวณกรอบพิกัด (bounds) ของ polygon/multipolygon จริง ใช้ปรับ zoom ให้พอดีขนาดพื้นที่
 // (ประเทศ = ซูมออกเห็นทั่วประเทศ, ตำบล = ซูมเข้าเห็นทั่วตำบล — ไม่ใช่ zoom ตายตัวอีกต่อไป)
-function boundsFromGeojson(geojson) {
-  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
-  function walk(coords) {
-    if (typeof coords[0] === "number") {
-      const [lng, lat] = coords;
-      if (lng < minLng) minLng = lng;
-      if (lng > maxLng) maxLng = lng;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
-    } else {
-      coords.forEach(walk);
-    }
+// mainlandOnly=true: ตัดชิ้นส่วนเล็กๆที่ไกลออกไป (เกาะ/ดินแดนโพ้นทะเล) ออกจากการคำนวณกรอบ
+function boundsFromGeojson(geojson, mainlandOnly) {
+  let polygons = geojson.type === "MultiPolygon" ? geojson.coordinates.map((p) => p[0]) : [geojson.coordinates[0]];
+  if (mainlandOnly && polygons.length > 1) {
+    let bestIdx = 0, bestSpan = -1;
+    polygons.forEach((ring, i) => {
+      let mnLng = Infinity, mxLng = -Infinity, mnLat = Infinity, mxLat = -Infinity;
+      ring.forEach(([lng, lat]) => { if (lng < mnLng) mnLng = lng; if (lng > mxLng) mxLng = lng; if (lat < mnLat) mnLat = lat; if (lat > mxLat) mxLat = lat; });
+      const span = (mxLng - mnLng) * (mxLat - mnLat);
+      if (span > bestSpan) { bestSpan = span; bestIdx = i; }
+    });
+    polygons = [polygons[bestIdx]];
   }
-  walk(geojson.coordinates);
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  polygons.forEach((ring) => ring.forEach(([lng, lat]) => {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }));
   if (!Number.isFinite(minLng)) return null;
   return new maplibregl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
 }
@@ -357,11 +559,12 @@ function showBoundary(scene) {
       if (mySeq !== boundaryRequestSeq || !data.geojson) return; // กันฉากเปลี่ยนไปแล้วแต่ผลลัพธ์เก่ามาช้า
       map.getSource("region-boundary").setData({ type: "Feature", geometry: data.geojson, properties: {} });
       animateFillOpacity(0.18);
+      animateFillReveal(data.geojson, scene.reveal, 1100);
       el.regionLabel.textContent = data.name || scene.place;
       el.regionLabel.classList.add("is-visible");
 
       const ring = outerRingOf(data.geojson);
-      if (ring) animateBorderTrace(ring, 1400);
+      if (ring) animateBorderTrace(ring, 1400, scene.trace);
 
       if (scene.landfill === "flag" && data.countryCode) {
         ensureFlagImage(data.countryCode, (imgId) => {
@@ -372,8 +575,14 @@ function showBoundary(scene) {
         map.setPaintProperty("region-fill", "fill-pattern", undefined);
       }
 
+      if (scene.warmorph && ring) {
+        animateWarmorph(ring, scene.warmorph, "#f2b544", 1600);
+      } else {
+        clearWarmorph();
+      }
+
       if (!AUTO_FRAME_CAMS.has(scene.cam)) return;
-      const bounds = boundsFromGeojson(data.geojson);
+      const bounds = boundsFromGeojson(data.geojson, scene.mainlandOnly);
       if (!bounds) return;
       const cam = map.cameraForBounds(bounds, { padding: 60 });
       if (cam) {
@@ -622,10 +831,25 @@ function parseArrows(str) {
     .filter(Boolean);
 }
 
+// warmorph=RRGGBB:lat1,lng1:lat2,lng2 — สีฝ่ายชนะ + เส้นตัดแบ่งเขตยึดครอง (ยืนที่จุดที่1 หันไปจุดที่2 พื้นที่ด้านขวามือคือส่วนที่ถูกยึด)
+function parseWarmorph(str) {
+  if (!str) return null;
+  const parts = str.split(":").map((s) => s.trim());
+  if (parts.length !== 3) return null;
+  const [colorRaw, p1raw, p2raw] = parts;
+  if (!/^[0-9a-fA-F]{6}$/.test(colorRaw)) return null;
+  const p1 = p1raw.split(",").map(Number);
+  const p2 = p2raw.split(",").map(Number);
+  if (p1.length !== 2 || p2.length !== 2 || p1.some(Number.isNaN) || p2.some(Number.isNaN)) return null;
+  return { color: `#${colorRaw}`, p1: [p1[1], p1[0]], p2: [p2[1], p2[0]] };
+}
+
 function finalizeScene(raw) {
   const {
     place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
     tilt, bearing, highlight, arrows, transport: transportRaw, shade, hide, landfill,
+    reveal, trace, warmorph, mainland,
+    labelfont, labelsize, labelweight,
   } = raw;
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
@@ -633,6 +857,8 @@ function finalizeScene(raw) {
   const effect = EFFECT_GLYPHS[effectRaw] ? effectRaw : "none";
   const highlightKey = ["country", "province", "place"].includes(highlight) ? highlight : "none";
   const transport = TRANSPORT_GLYPHS[transportRaw] ? transportRaw : "plane";
+  const revealKey = ["fade", "wipe", "split", "circular", "iris", "diamond"].includes(reveal) ? (reveal === "iris" ? "circular" : reveal) : "fade";
+  const traceKey = ["one", "two", "tworeverse", "four"].includes(trace) ? trace : "one";
 
   let lat, lng;
   if (latlng && latlng.includes(",")) {
@@ -659,6 +885,13 @@ function finalizeScene(raw) {
     shade: shade === "on" || (Number(shade) > 0 ? Number(shade) : 0) ? (Number(shade) > 0 ? Number(shade) : 200) : 0,
     hide: (hide || "").split(",").map((s) => s.trim()).filter(Boolean),
     landfill: landfill === "flag" ? "flag" : "color",
+    reveal: revealKey,
+    trace: traceKey,
+    warmorph: parseWarmorph(warmorph),
+    mainlandOnly: mainland === "on" || mainland === "true",
+    labelFont: (labelfont || "").trim(),
+    labelSize: Number(labelsize) > 0 ? Number(labelsize) : 0,
+    labelWeight: (labelweight || "").trim(),
   };
 }
 
@@ -679,6 +912,11 @@ const TAG_KEY_ALIASES = {
   shade: "shade", spotlight: "shade",
   hide: "hide", ซ่อน: "hide",
   landfill: "landfill", fill: "landfill",
+  reveal: "reveal", ลูกเล่นเติม: "reveal",
+  trace: "trace", ลากเส้น: "trace",
+  warmorph: "warmorph", ยึดครอง: "warmorph",
+  mainland: "mainland", แผ่นดินใหญ่: "mainland",
+  labelfont: "labelfont", labelsize: "labelsize", labelweight: "labelweight",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -786,7 +1024,11 @@ function goToScene(index, durationOverride) {
 
   // หมุดปลายทาง
   pinToEl.querySelector(".pin-icon").setAttribute("data-glyph", ICON_GLYPHS[scene.icon]);
-  pinToEl.querySelector(".pin-label").textContent = scene.place;
+  const pinLabelEl = pinToEl.querySelector(".pin-label");
+  pinLabelEl.textContent = scene.place;
+  pinLabelEl.style.fontFamily = scene.labelFont ? `"${scene.labelFont}", var(--thai)` : "";
+  pinLabelEl.style.fontSize = scene.labelSize ? `${scene.labelSize}px` : "";
+  pinLabelEl.style.fontWeight = scene.labelWeight || "";
   markerTo.setLngLat([scene.lng, scene.lat]).addTo(map);
 
   // เอฟเฟกต์เหตุการณ์
@@ -1213,6 +1455,39 @@ el.fileUploadImage.addEventListener("change", async (e) => {
   }
   e.target.value = "";
 });
+
+// ---------- ค้นหาสถานที่ (Nominatim forward geocode) แล้วแทรกแถวตัวอย่างลงสคริปต์ ----------
+
+async function searchPlace() {
+  const q = el.searchPlaceInput.value.trim();
+  if (!q) return;
+  el.searchResultList.innerHTML = `<div class="upload-item">กำลังค้นหา...</div>`;
+  try {
+    const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(`ค้นหาไม่สำเร็จ (${res.status})`);
+    const { results } = await res.json();
+    if (!results.length) { el.searchResultList.innerHTML = `<div class="upload-item">ไม่พบสถานที่นี้</div>`; return; }
+    el.searchResultList.innerHTML = "";
+    results.forEach((r) => {
+      const item = document.createElement("div");
+      item.className = "upload-item";
+      item.innerHTML = `<span class="up-path">${escapeHtml(r.name)} (${r.lat.toFixed(4)},${r.lng.toFixed(4)})</span>`;
+      item.addEventListener("click", () => {
+        const row = `place=${q} | latlng=${r.lat.toFixed(4)},${r.lng.toFixed(4)} | cam=establishing | script=... | sec=5`;
+        el.importText.value = (el.importText.value ? el.importText.value.replace(/\n?$/, "\n") : "") + row + "\n";
+        el.importText.scrollTop = el.importText.scrollHeight;
+        el.searchResultList.innerHTML = "";
+        el.searchPlaceInput.value = "";
+      });
+      el.searchResultList.appendChild(item);
+    });
+  } catch (err) {
+    el.searchResultList.innerHTML = `<div class="upload-item">ผิดพลาด: ${escapeHtml(err.message)} — ต้องรัน server.py</div>`;
+  }
+}
+
+el.btnSearchPlace.addEventListener("click", searchPlace);
+el.searchPlaceInput.addEventListener("keydown", (e) => { if (e.key === "Enter") searchPlace(); });
 
 // กู้สคริปต์ล่าสุดจาก localStorage อัตโนมัติ (ถ้ามีและยังไม่ได้มาจากโหมดเรนเดอร์)
 try {

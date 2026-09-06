@@ -86,9 +86,19 @@
             <br><strong>shade</strong>: <code>on</code> หรือใส่ตัวเลข (รัศมีเป็น px เช่น <code>250</code>) — มืดรอบข้าง เหลือจุดสนใจสว่างแบบสปอตไลต์
             <br><strong>hide</strong>: <code>pin,boundary,arrow,timeline,topbar,brand</code> — ซ่อนอย่างใดอย่างหนึ่งเฉพาะฉากนั้น (คั่นด้วย <code>,</code>)
             <br><strong>landfill</strong>: <code>flag</code> — เติมสีไฮไลต์เขตแดนเป็นลายธงชาติจริงแทนสีทึบ (ใช้คู่กับ highlight)
+            <br><strong>reveal</strong>: <code>fade / wipe / split / circular / diamond</code> — ลักษณะการเผยพื้นที่ไฮไลต์ (ดีฟอลต์ fade)
+            <br><strong>trace</strong>: <code>one / two / tworeverse / four</code> — จำนวนจุดเริ่มลากเส้นขอบเขตพร้อมกัน (ดีฟอลต์ one)
+            <br><strong>warmorph</strong>: <code>RRGGBB:lat1,lng1:lat2,lng2</code> — พื้นที่ฝั่งขวาของเส้น (ยืนที่จุด1 หันไปจุด2) เปลี่ยนสีเป็นฝ่ายชนะทีละนิด ใช้คู่กับ highlight
+            <br><strong>mainland</strong>: <code>on</code> — ตัดเกาะ/ดินแดนไกลออกไปทิ้งตอนคำนวณกรอบกล้อง (ใช้คู่กับ highlight)
+            <br><strong>labelfont / labelsize / labelweight</strong>: ปรับฟอนต์/ขนาด/น้ำหนักตัวอักษรป้ายชื่อหมุดเฉพาะฉากนั้น
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>
+          <div class="import-actions">
+            <input id="searchPlaceInput" class="brand-input" type="text" placeholder="ค้นหาสถานที่ เช่น เสียมราฐ กัมพูชา" style="flex:1" />
+            <button id="btnSearchPlace" class="ghost-btn" type="button">ค้นหาพิกัด</button>
+          </div>
+          <div class="upload-list" id="searchResultList"></div>
           <div class="import-actions">
             <button id="btnDownloadTemplate" class="ghost-btn" type="button">ดาวน์โหลดเทมเพลต Excel</button>
             <label class="ghost-btn file-btn">

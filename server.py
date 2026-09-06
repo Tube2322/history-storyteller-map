@@ -62,6 +62,33 @@ def fetch_boundary(lat: float, lng: float, level: str) -> dict:
     return result
 
 
+_geocode_cache = {}
+
+
+def fetch_geocode(query: str) -> list:
+    key = query.strip().lower()
+    if key in _geocode_cache:
+        return _geocode_cache[key]
+    with _nominatim_lock:
+        wait = 1.1 - (time.time() - _last_nominatim_call[0])
+        if wait > 0:
+            time.sleep(wait)
+        qs = urllib.parse.urlencode({"q": query, "format": "jsonv2", "limit": 5})
+        req = urllib.request.Request(
+            f"https://nominatim.openstreetmap.org/search?{qs}",
+            headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool; contact via github)"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+        _last_nominatim_call[0] = time.time()
+    result = [
+        {"name": item.get("display_name"), "lat": float(item["lat"]), "lng": float(item["lon"])}
+        for item in data
+    ]
+    _geocode_cache[key] = result
+    return result
+
+
 async def synthesize(text: str, voice: str) -> bytes:
     communicate = edge_tts.Communicate(text, voice)
     audio = bytearray()
@@ -96,7 +123,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith("/api/flag"):
             self.handle_flag()
             return
+        if self.path.startswith("/api/geocode"):
+            self.handle_geocode()
+            return
         super().do_GET()
+
+    def handle_geocode(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            query = (qs.get("q", [""])[0] or "").strip()
+            if not query:
+                self.send_error(400, "missing q")
+                return
+            results = fetch_geocode(query)
+            body = json.dumps({"results": results}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
 
     def handle_flag(self):
         try:
