@@ -23,6 +23,7 @@ const CAM_STAGE_CLASS = {
 const DEFAULT_DURATION = 5;
 const FALLBACK_COORD = { lat: 13.7563, lng: 100.5018 }; // กรุงเทพฯ (ใช้เมื่อไม่ระบุ lat,lng)
 const DEFAULT_VOICE = "th-TH-PremwadeeNeural";
+const AUTOSAVE_KEY = "hsm_last_script_v1";
 const SEGMENT_DELIM = ";;";
 
 const ICON_GLYPHS = {
@@ -71,6 +72,9 @@ const el = {
   btnExport: document.getElementById("btnExport"),
   stageEl: document.getElementById("stageEl"),
   aspectToggle: document.getElementById("aspectToggle"),
+  btnSaveProject: document.getElementById("btnSaveProject"),
+  fileLoadProject: document.getElementById("fileLoadProject"),
+  autosaveHint: document.getElementById("autosaveHint"),
 };
 
 let scenes = [];
@@ -81,6 +85,8 @@ let isExporting = false;
 let recorder = null;
 let recordedChunks = [];
 let map; // ประกาศไว้ก่อน เพราะ fitStage() ต้องเรียกได้ตั้งแต่ก่อนสร้างแผนที่จริง (เพื่อเซ็ตขนาด container ก่อน)
+let isRenderMode = false;
+let renderDurations = null; // [[seg1,seg2,...], ...] ต่อฉาก ใส่มาจาก render.py ผ่าน URL ให้จังหวะภาพตรงกับเสียงที่เรนเดอร์แยกไว้เป๊ะๆ
 
 // ---------- สัดส่วนเวที: 9:16 (มือถือ/TikTok/Shorts) หรือ 16:9 (YouTube/คอม) ----------
 // ตัวเอดิเตอร์ปรับได้ทั้งสองแบบ ตอนอัดวิดีโอ (บันทึกวิดีโอ) จะได้ไฟล์ตามสัดส่วนที่เลือกอยู่ตอนนั้นเป๊ะๆ
@@ -279,6 +285,7 @@ function parseImportText() {
   renderTimeline();
   renderPreview();
   goToScene(0);
+  try { localStorage.setItem(AUTOSAVE_KEY, el.importText.value); } catch (e) { /* ไม่มี localStorage ก็ข้ามไป */ }
 }
 
 function renderPreview() {
@@ -438,15 +445,20 @@ async function narrationLoop() {
     const scene = scenes[idx];
     const segments = splitSegments(scene.script);
 
-    el.subtitleText.textContent = "กำลังสร้างเสียง…";
     const clips = [];
-    for (const seg of segments) {
-      if (myToken !== playToken) return;
-      try {
-        clips.push({ text: seg, ...(await fetchTts(seg)) });
-      } catch (e) {
-        console.warn(e);
-        clips.push({ text: seg, url: null, duration: scene.duration / segments.length });
+    if (isRenderMode && renderDurations && renderDurations[idx]) {
+      // โหมดเรนเดอร์: ใช้ความยาวที่ render.py วัดจากเสียงจริงมาแล้ว ไม่ต้องพากย์ซ้ำในเบราว์เซอร์
+      segments.forEach((seg, i) => clips.push({ text: seg, url: null, duration: renderDurations[idx][i] || DEFAULT_DURATION }));
+    } else {
+      el.subtitleText.textContent = "กำลังสร้างเสียง…";
+      for (const seg of segments) {
+        if (myToken !== playToken) return;
+        try {
+          clips.push({ text: seg, ...(await fetchTts(seg)) });
+        } catch (e) {
+          console.warn(e);
+          clips.push({ text: seg, url: null, duration: scene.duration / segments.length });
+        }
       }
     }
     if (myToken !== playToken) return;
@@ -470,6 +482,7 @@ async function narrationLoop() {
       activeIndex = idx + 1;
     } else {
       setPlaying(false);
+      if (isRenderMode) window.__renderComplete = true; // สัญญาณให้ render.py รู้ว่าอัดจบแล้ว
       return;
     }
   }
@@ -611,3 +624,95 @@ el.brandInput.addEventListener("input", () => {
 el.brandCorner.addEventListener("change", () => {
   el.brandChip.className = `brand-chip brand-${el.brandCorner.value}`;
 });
+
+// ---------- บันทึก/โหลดโปรเจกต์เป็นไฟล์ .json ----------
+
+function saveProject() {
+  const data = {
+    version: 1,
+    script: el.importText.value,
+    brand: { text: el.brandInput.value, corner: el.brandCorner.value },
+    aspect: currentAspect,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "history-map-project.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function applyProjectData(data) {
+  if (!data || typeof data.script !== "string") { alert("ไฟล์โปรเจกต์ไม่ถูกต้อง"); return; }
+  el.importText.value = data.script;
+  if (data.brand) {
+    el.brandInput.value = data.brand.text || "HS";
+    el.brandText.textContent = (data.brand.text || "HS").slice(0, 4);
+    el.brandCorner.value = data.brand.corner || "tl";
+    el.brandChip.className = `brand-chip brand-${el.brandCorner.value}`;
+  }
+  if (data.aspect === "169" || data.aspect === "916") {
+    currentAspect = data.aspect;
+    el.aspectToggle.querySelectorAll(".aspect-btn").forEach((b) => b.classList.toggle("is-active", b.dataset.aspect === currentAspect));
+    fitStage();
+  }
+  parseImportText();
+}
+
+function loadProjectFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try { applyProjectData(JSON.parse(e.target.result)); }
+    catch (err) { alert("อ่านไฟล์โปรเจกต์ไม่สำเร็จ: " + err.message); }
+  };
+  reader.readAsText(file, "utf-8");
+}
+
+el.btnSaveProject.addEventListener("click", saveProject);
+el.fileLoadProject.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (file) loadProjectFile(file);
+  e.target.value = "";
+});
+
+// กู้สคริปต์ล่าสุดจาก localStorage อัตโนมัติ (ถ้ามีและยังไม่ได้มาจากโหมดเรนเดอร์)
+try {
+  const saved = localStorage.getItem(AUTOSAVE_KEY);
+  if (saved && !new URLSearchParams(location.search).get("autoplay")) {
+    el.importText.value = saved;
+    el.autosaveHint.hidden = false;
+  }
+} catch (e) { /* ไม่มี localStorage ก็ข้ามไป */ }
+
+// ---------- โหมดเรนเดอร์: รับสคริปต์+ความยาวเสียงจาก render.py ผ่าน URL แล้วเล่นอัตโนมัติ ----------
+
+function b64UrlDecode(str) {
+  const bin = atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+(function initRenderMode() {
+  const params = new URLSearchParams(location.search);
+  if (!params.get("autoplay")) return;
+  isRenderMode = true;
+  document.body.classList.add("is-render-mode");
+
+  const aspectParam = params.get("aspect");
+  if (aspectParam === "169" || aspectParam === "916") {
+    currentAspect = aspectParam;
+    fitStage();
+  }
+
+  const scriptParam = params.get("script");
+  if (scriptParam) el.importText.value = b64UrlDecode(scriptParam);
+
+  const durationsParam = params.get("durations");
+  if (durationsParam) {
+    try { renderDurations = JSON.parse(b64UrlDecode(durationsParam)); } catch (e) { console.warn("อ่าน durations ไม่ได้", e); }
+  }
+
+  parseImportText();
+  setTimeout(() => setPlaying(true), 300); // เผื่อแผนที่/ไทล์เริ่มโหลด
+})();

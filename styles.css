@@ -265,6 +265,13 @@ html, body {
 .aspect-btn:hover { color: var(--ink); }
 .aspect-btn.is-active { background: var(--accent); color: #241a05; font-weight: 600; }
 
+/* โหมดเรนเดอร์ (server.py/render.py ขับผ่าน headless browser): ซ่อนเครื่องมือแก้ไข เหลือแค่เนื้อหาที่จะอัด */
+body.is-render-mode .topbar,
+body.is-render-mode .timeline,
+body.is-render-mode .import-panel {
+  display: none !important;
+}
+
 .transport { display: flex; gap: 6px; }
 .tbtn {
   width: 32px; height: 32px;

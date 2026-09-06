@@ -81,6 +81,14 @@
               <input id="fileImportXlsx" type="file" accept=".xlsx,.xls" hidden />
             </label>
           </div>
+          <div class="import-actions">
+            <button id="btnSaveProject" class="ghost-btn" type="button">บันทึกโปรเจกต์ (.json)</button>
+            <label class="ghost-btn file-btn">
+              โหลดโปรเจกต์
+              <input id="fileLoadProject" type="file" accept=".json" hidden />
+            </label>
+          </div>
+          <p class="import-hint" id="autosaveHint" hidden>กู้สคริปต์ล่าสุดที่เคยกรอกไว้อัตโนมัติ (เก็บในเบราว์เซอร์เครื่องนี้)</p>
           <textarea id="importText" class="import-textarea" placeholder="สุโขทัย | 17.0175,99.7016 | establishing | ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | 5 | castle | none |
 สุโขทัย → ศรีสัชนาลัย | 17.4270,99.8210 | fly-to | จากนั้นกองคาราวานเดินทางขึ้นเหนือ ;; มุ่งสู่เมืองพันธมิตรทางเหนือ | 6 | flag | none |
 ศรีสัชนาลัย | 17.4270,99.8210 | insert-overlay | ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | 4 | battle | fire | ภาพจำลองการโจมตี
