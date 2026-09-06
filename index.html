@@ -71,7 +71,15 @@
             <button id="btnCloseImport" class="icon-btn" title="ปิด">✕</button>
           </div>
           <p class="import-hint">
-            <strong>แบบ tag (ยืดหยุ่น เรียงลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default):</strong>
+            <strong style="color:#f2b544">ข้อกำหนดของสคริปต์ (อ่านก่อนพิมพ์):</strong>
+            <br>• <strong>ต้องมี 3 อย่างเสมอ</strong>: <code>place</code> (ชื่อสถานที่) + <code>cam</code> (แผนกล้อง ต้องสะกดตรงตามรายการด้านล่าง) + <code>script</code> (บทพากย์) — ขาดอันใดอันหนึ่ง ฉากนั้นจะถูกข้ามเงียบๆ ไม่มีสถานที่ก็จบ (ไม่ error ให้เห็น ต้องเช็กเองว่าจำนวนฉากในเส้นเวลาตรงกับที่พิมพ์)
+            <br>• <strong>ห้ามใช้ <code>|</code> ในเนื้อหา</strong> (ชื่อสถานที่/บทพากย์/ค่าใดๆ) เพราะ <code>|</code> คือตัวคั่น tag — ถ้าต้องแบ่งบทพากย์เป็นหลายช่วงให้ใช้ <code>;;</code> แทน
+            <br>• แต่ละบรรทัด = 1 ฉาก, คั่นแต่ละ tag ในบรรทัดด้วย <code>|</code>, ในหนึ่ง tag คั่นชื่อคีย์กับค่าด้วย <code>=</code>
+            <br>• ชื่อคีย์ (เช่น <code>place</code>, <code>cam</code>) ใช้ได้เฉพาะตัวอักษรไทย/อังกฤษเท่านั้น ห้ามมีตัวเลข ขีด หรือช่องว่างปนในชื่อคีย์
+            <br>• พิกัด (<code>latlng</code>, จุดใน <code>arrows</code>/<code>warmorph</code>/<code>draw</code>/<code>geophoto</code>) ต้องเป็น <code>lat,lng</code> คั่นด้วย <code>,</code> เท่านั้น เรียง lat ก่อน lng เสมอ
+            <br>• พิมพ์เฉพาะคีย์ที่จำเป็นก็พอ ที่เหลือ default ให้อัตโนมัติ — คีย์ที่พิมพ์ผิด/ไม่มีในระบบจะถูก<strong>ข้ามเงียบๆเช่นกัน</strong> (ไม่ error) ดังนั้นถ้าตั้งค่าแล้วไม่มีผล ให้เช็กตัวสะกดคีย์ก่อน
+            <br>• แผนกล้อง/ไอคอน/เอฟเฟกต์ ต้องสะกดตรงกับรายการที่กำหนดไว้เป๊ะ (ตัวเล็กหมดทุกตัว) — สะกดผิดจะถูกใช้ค่า default แทนเงียบๆ
+            <br><br><strong>แบบ tag (ยืดหยุ่น เรียงลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default):</strong>
             <br><code>place=... | latlng=lat,lng | cam=... | script=... | sec=... | icon=... | effect=... | tilt=... | bearing=... | highlight=... | insert=...</code>
             <br>ใส่แค่บางคีย์ก็ได้ เช่น <code>place=สุโขทัย | cam=fly-to | script=... | tilt=40 | bearing=200</code>
             <br><br><strong>แบบ column เดิม (เรียงตำแหน่งตายตัว):</strong>
