@@ -20,6 +20,11 @@
           <div id="shadeOverlay" class="shade-overlay"></div>
           <div id="regionLabel" class="region-label"></div>
           <div id="captionOverlay" class="caption-overlay"></div>
+          <svg id="calloutLine" class="callout-line"><line id="calloutLineEl" x1="0" y1="0" x2="0" y2="0" /></svg>
+          <div id="calloutBox" class="callout-box">
+            <div class="callout-media"><img id="calloutImg" alt="" /></div>
+            <div class="callout-label" id="calloutLabel"></div>
+          </div>
           <div id="insertLayer" class="insert-layer"><span id="insertLayerContent"></span></div>
           <div id="insertFloat" class="insert-float"><span id="insertFloatContent"></span></div>
         </section>
@@ -107,6 +112,10 @@
             <br><strong>geophoto</strong>: <code>url:lat,lng</code> — ปักรูปจริง (จากที่อัปโหลดไว้) ตามพิกัดจริงบนแผนที่
             <br><strong>draw / drawcolor</strong>: <code>draw=lat,lng;lat,lng;...</code> — ลากเส้นอิสระตามพิกัดที่พิมพ์เอง (ขีดเส้นทาง/วงล้อม) สีกำหนดด้วย <code>drawcolor=RRGGBB</code>
             <br><strong>persist</strong>: <code>persist=2</code> — ให้เขตแดนที่ไฮไลต์ไว้ค้างอยู่ต่ออีก N ฉากถัดไป แม้ฉากถัดไปไม่ได้ตั้ง highlight
+            <br><strong>focus</strong>: <code>focus=on</code> — ทำพื้นหลังทั้งจอเป็นขาวดำ เหลือแค่เขตที่ไฮไลต์เป็นสีสดจัด (ต้องมี highlight ด้วย)
+            <br><strong>highlightcolor</strong>: <code>highlightcolor=RRGGBB</code> — เปลี่ยนสีไฮไลต์เขตแดนจากเหลืองทองดีฟอลต์ (ใช้คู่กับ highlight)
+            <br><strong>badge</strong>: <code>badge=flag:us:lat,lng:สหรัฐอเมริกา</code> หรือ <code>badge=icon:🏛️:lat,lng:ป้ายชื่อ</code> — ไอคอนวงกลม(ธงชาติ/อีโมจิ)+ป้ายชื่อปักตามพิกัด
+            <br><strong>callout</strong>: <code>callout=url:lat,lng:ป้ายชื่อ</code> — วงแหวนชี้จุดพิกัดจริง พร้อมเส้นโยงไปกล่องรูปแทรกมุมขวาบน (ใช้ url รูปที่อัปโหลดไว้)
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>

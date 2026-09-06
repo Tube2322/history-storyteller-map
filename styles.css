@@ -244,6 +244,81 @@ html, body {
   to { transform: scale(1); opacity: 1; }
 }
 
+/* badge=flag:xx:lat,lng:ป้าย หรือ badge=icon:🏛️:lat,lng:ป้าย — ไอคอนวงกลม+ป้ายชื่อ (สไตล์ Whyhistory) */
+.badge-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.badge-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  background: #1a1f27 center/cover no-repeat;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  animation: geo-photo-pop .45s cubic-bezier(.34,1.56,.64,1);
+}
+.badge-pill {
+  background: rgba(4,6,9,0.82);
+  color: #fff;
+  font-family: var(--thai);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* callout=url:lat,lng:ป้าย — วงแหวนชี้จุด + เส้นโยงไปกล่องรูป/วิดีโอแทรก (สไตล์ Whyhistory) */
+.callout-ring-wrap { display: flex; }
+.callout-ring {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid #ffd23f;
+  box-shadow: 0 0 0 4px rgba(255,210,63,0.25);
+}
+.callout-line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+.callout-line.is-visible { opacity: 1; }
+.callout-line line { stroke: #ffd23f; stroke-width: 2; filter: drop-shadow(0 0 4px rgba(255,210,63,0.7)); }
+.callout-box {
+  position: absolute;
+  top: 90px;
+  right: 16px;
+  width: 42%;
+  max-width: 220px;
+  z-index: 6;
+  border: 2px solid #ffd23f;
+  border-radius: 10px;
+  box-shadow: 0 0 16px rgba(255,210,63,0.6), 0 8px 20px rgba(0,0,0,0.6);
+  background: #000;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity .3s ease, transform .3s ease;
+  overflow: hidden;
+}
+.callout-box.is-visible { opacity: 1; transform: scale(1); }
+.callout-media { width: 100%; aspect-ratio: 16/10; background: #111; }
+.callout-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.callout-label {
+  padding: 5px 8px;
+  font-family: var(--thai);
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(4,6,9,0.9);
+}
+
 .insert-layer {
   position: absolute;
   inset: 0;
