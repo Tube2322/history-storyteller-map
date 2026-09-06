@@ -71,7 +71,7 @@ const el = {
   ttsPlayer: document.getElementById("ttsPlayer"),
   btnExport: document.getElementById("btnExport"),
   stageEl: document.getElementById("stageEl"),
-  aspectToggle: document.getElementById("aspectToggle"),
+  exportMenu: document.getElementById("exportMenu"),
   btnSaveProject: document.getElementById("btnSaveProject"),
   fileLoadProject: document.getElementById("fileLoadProject"),
   autosaveHint: document.getElementById("autosaveHint"),
@@ -90,21 +90,29 @@ let map; // ประกาศไว้ก่อน เพราะ fitStage() �
 let isRenderMode = false;
 let renderDurations = null; // [[seg1,seg2,...], ...] ต่อฉาก ใส่มาจาก render.py ผ่าน URL ให้จังหวะภาพตรงกับเสียงที่เรนเดอร์แยกไว้เป๊ะๆ
 
-// ---------- สัดส่วนเวที: 9:16 (มือถือ/TikTok/Shorts) หรือ 16:9 (YouTube/คอม) ----------
-// ตัวเอดิเตอร์ปรับได้ทั้งสองแบบ ตอนอัดวิดีโอ (บันทึกวิดีโอ) จะได้ไฟล์ตามสัดส่วนที่เลือกอยู่ตอนนั้นเป๊ะๆ
-// เพราะการอัดคือ capture หน้าจอ ณ ขณะนั้นตรงๆ
+// ---------- สัดส่วนเวที ----------
+// แก้ไข/ดูตัวอย่างบนคอม: เต็มจอเสมอ ("free") รองรับทุกขนาดหน้าจอ
+// พอจะ "บันทึกวิดีโอ" ค่อยเลือกสัดส่วนปลายทาง (9:16 TikTok/Shorts/Reels หรือ 16:9 YouTube)
+// ตอนนั้นเวทีจะย่อเป็นกรอบนั้นชั่วคราวระหว่างอัด แล้วคืนเป็นเต็มจอให้อัตโนมัติหลังอัดเสร็จ
+// (render.py ฝั่งเซิร์ฟเวอร์เลือกสัดส่วนแยกผ่าน --aspect โดยไม่เกี่ยวกับตัวเอดิเตอร์เลย)
 
-let currentAspect = "916";
+let currentAspect = "free";
+let lastExportAspect = "916";
 
 function fitStage() {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const ratio = currentAspect === "169" ? 16 / 9 : 9 / 16;
-  let w = vh * ratio;
-  let h = vh;
-  if (w > vw) { w = vw; h = vw / ratio; }
-  el.stageEl.style.width = `${Math.round(w)}px`;
-  el.stageEl.style.height = `${Math.round(h)}px`;
+  if (currentAspect === "free") {
+    el.stageEl.style.width = "100%";
+    el.stageEl.style.height = "100%";
+  } else {
+    const ratio = currentAspect === "169" ? 16 / 9 : 9 / 16;
+    let w = vh * ratio;
+    let h = vh;
+    if (w > vw) { w = vw; h = vw / ratio; }
+    el.stageEl.style.width = `${Math.round(w)}px`;
+    el.stageEl.style.height = `${Math.round(h)}px`;
+  }
   if (map) map.resize();
 }
 window.addEventListener("resize", fitStage);
@@ -550,9 +558,13 @@ el.btnNext.addEventListener("click", () => goToSceneManual(activeIndex + 1));
 el.btnPlay.addEventListener("click", () => setPlaying(!isPlaying));
 
 // ---------- บันทึกเป็นวิดีโอ (อัดหน้าจอผ่าน getDisplayMedia — ต้องเลือก "แท็บนี้" ตอนเบราว์เซอร์ถาม) ----------
+// เลือกสัดส่วนตอนกดอัดเท่านั้น เอดิเตอร์เต็มจอปกติตลอดตอนแก้ไข
 
-async function startExport() {
+async function startExport(aspect) {
   if (!scenes.length) { alert("ยังไม่มีฉาก นำเข้าสคริปต์ก่อน"); return; }
+  currentAspect = aspect;
+  lastExportAspect = aspect;
+  fitStage(); // ย่อเวทีเป็นสัดส่วนที่เลือกชั่วคราว เพื่อให้สิ่งที่อัดตรงตามฟอร์แมตปลายทาง
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: { displaySurface: "browser" },
@@ -579,6 +591,8 @@ async function startExport() {
   } catch (e) {
     console.warn(e);
     alert("เปิดการอัดหน้าจอไม่สำเร็จ — ต้องอนุญาตแชร์แท็บนี้ตอนเบราว์เซอร์ถาม");
+    currentAspect = "free";
+    fitStage();
   }
 }
 
@@ -586,18 +600,22 @@ function stopExport() {
   isExporting = false;
   el.btnExport.textContent = "บันทึกวิดีโอ";
   if (recorder && recorder.state !== "inactive") recorder.stop();
+  currentAspect = "free";
+  fitStage(); // คืนเป็นเต็มจอให้แก้ไขต่อ
 }
 
 el.btnExport.addEventListener("click", () => {
-  if (isExporting) { setPlaying(false); } else { startExport(); }
+  if (isExporting) { setPlaying(false); return; }
+  el.exportMenu.hidden = !el.exportMenu.hidden;
 });
-
-el.aspectToggle.querySelectorAll(".aspect-btn").forEach((btn) => {
+el.exportMenu.querySelectorAll(".export-option").forEach((btn) => {
   btn.addEventListener("click", () => {
-    currentAspect = btn.dataset.aspect;
-    el.aspectToggle.querySelectorAll(".aspect-btn").forEach((b) => b.classList.toggle("is-active", b === btn));
-    fitStage();
+    el.exportMenu.hidden = true;
+    startExport(btn.dataset.aspect);
   });
+});
+document.addEventListener("click", (e) => {
+  if (!el.exportMenu.hidden && !e.target.closest(".export-wrap")) el.exportMenu.hidden = true;
 });
 
 el.btnImport.addEventListener("click", () => {
@@ -634,7 +652,7 @@ function saveProject() {
     version: 1,
     script: el.importText.value,
     brand: { text: el.brandInput.value, corner: el.brandCorner.value },
-    aspect: currentAspect,
+    lastExportAspect,
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -654,10 +672,8 @@ function applyProjectData(data) {
     el.brandCorner.value = data.brand.corner || "tl";
     el.brandChip.className = `brand-chip brand-${el.brandCorner.value}`;
   }
-  if (data.aspect === "169" || data.aspect === "916") {
-    currentAspect = data.aspect;
-    el.aspectToggle.querySelectorAll(".aspect-btn").forEach((b) => b.classList.toggle("is-active", b.dataset.aspect === currentAspect));
-    fitStage();
+  if (data.lastExportAspect === "169" || data.lastExportAspect === "916") {
+    lastExportAspect = data.lastExportAspect; // แค่จำไว้เป็นค่าที่เคยเลือกส่งออกล่าสุด ไม่ยุ่งกับหน้าจอแก้ไข
   }
   parseImportText();
 }

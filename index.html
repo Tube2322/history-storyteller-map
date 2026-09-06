@@ -35,16 +35,18 @@
             <span id="camLabel">ไม่มีแผนกล้อง</span>
           </div>
           <div class="topbar-spacer"></div>
-          <div class="aspect-toggle" id="aspectToggle" role="group" aria-label="สัดส่วนวิดีโอ">
-            <button class="aspect-btn is-active" data-aspect="916" type="button" title="แนวตั้ง — มือถือ/TikTok/Shorts">9:16</button>
-            <button class="aspect-btn" data-aspect="169" type="button" title="แนวนอน — YouTube/คอม">16:9</button>
-          </div>
           <div class="transport">
             <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า">⏮</button>
             <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด">▶</button>
             <button id="btnNext" class="tbtn" title="ฉากถัดไป">⏭</button>
           </div>
-          <button id="btnExport" class="import-btn" type="button" title="อัดหน้าจอเป็นวิดีโอระหว่างเล่น">บันทึกวิดีโอ</button>
+          <div class="export-wrap">
+            <button id="btnExport" class="import-btn" type="button" title="เลือกสัดส่วนแล้วอัดหน้าจอเป็นวิดีโอ">บันทึกวิดีโอ</button>
+            <div class="export-menu" id="exportMenu" hidden>
+              <button class="export-option" data-aspect="916" type="button">9:16 — TikTok / Shorts / Reels</button>
+              <button class="export-option" data-aspect="169" type="button">16:9 — YouTube</button>
+            </div>
+          </div>
           <button id="btnImport" class="import-btn" type="button">นำเข้าสคริปต์</button>
         </header>
         <audio id="ttsPlayer" hidden></audio>
