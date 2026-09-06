@@ -20,11 +20,53 @@ import uuid
 from pathlib import Path
 
 import edge_tts
+from shapely.geometry import shape, mapping
+from shapely.ops import unary_union
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
 DEFAULT_VOICE = "th-TH-PremwadeeNeural"
 ASSETS_DIR = Path("assets")
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+# ---------- ตัดเส้นไฮไลต์ให้อยู่แค่บนแผ่นดิน (ไม่ลากผ่านทะเล) ----------
+# เขตแดนจริงจาก Nominatim บางประเทศ/บางเขตลากเส้นตรงคร่อมทะเล (ไม่แนบชายฝั่งจริง)
+# จึงตัด (intersect) กับข้อมูลแผ่นดินจริง Natural Earth 1:50m ก่อนส่งให้หน้าเว็บเสมอ
+_LAND_MASK_PATH = Path(__file__).parent / "data" / "land_mask_50m.geojson"
+_land_polys = None
+
+
+def _load_land_mask():
+    global _land_polys
+    if _land_polys is not None:
+        return
+    with open(_LAND_MASK_PATH, encoding="utf-8") as f:
+        fc = json.load(f)
+    _land_polys = [shape(feat["geometry"]).buffer(0) for feat in fc["features"]]
+
+
+def clip_to_land(geojson_dict):
+    try:
+        _load_land_mask()
+        geom = shape(geojson_dict).buffer(0)
+        if geom.is_empty:
+            return geojson_dict
+        minx, miny, maxx, maxy = geom.bounds
+        pad = 0.5  # กันคลาดขอบพอดี ไม่ตัดชายฝั่งขาดที่รอยต่อ tile
+        candidates = [
+            p for p in _land_polys
+            if not (p.bounds[2] < minx - pad or p.bounds[0] > maxx + pad
+                    or p.bounds[3] < miny - pad or p.bounds[1] > maxy + pad)
+        ]
+        if not candidates:
+            return geojson_dict
+        land_near = unary_union(candidates)
+        clipped = geom.intersection(land_near)
+        if clipped.is_empty:
+            return geojson_dict  # เกาะ/พื้นที่นอก mask (ไม่ค่อยพบ) — ใช้ของเดิมดีกว่าไม่มีอะไรเลย
+        return mapping(clipped)
+    except Exception as exc:  # ตัดไม่สำเร็จ (ข้อมูลแปลก) — ใช้ขอบเขตดิบแทน ดีกว่าฉากพัง
+        sys.stderr.write(f"clip_to_land ล้มเหลว: {exc}\n")
+        return geojson_dict
 
 # ---------- ไฮไลต์ขอบเขตพื้นที่ (จังหวัด/ประเทศ) จาก OpenStreetMap Nominatim ----------
 # ใช้ reverse geocoding จากพิกัดจริงของฉาก (ไม่ใช่ค้นหาจากชื่อ) เพื่อความแม่นยำ
@@ -57,7 +99,10 @@ def fetch_boundary(lat: float, lng: float, level: str) -> dict:
         _last_nominatim_call[0] = time.time()
     name = data.get("name") or (data.get("display_name") or "").split(",")[0]
     country_code = (data.get("address") or {}).get("country_code")  # เช่น "th" — ใช้ดึงธงชาติ
-    result = {"name": name, "geojson": data.get("geojson"), "countryCode": country_code}
+    geojson = data.get("geojson")
+    if geojson and geojson.get("type") in ("Polygon", "MultiPolygon"):
+        geojson = clip_to_land(geojson)
+    result = {"name": name, "geojson": geojson, "countryCode": country_code}
     _boundary_cache[key] = result
     return result
 

@@ -82,6 +82,7 @@ const el = {
   stageEl: document.getElementById("stageEl"),
   exportMenu: document.getElementById("exportMenu"),
   regionLabel: document.getElementById("regionLabel"),
+  captionOverlay: document.getElementById("captionOverlay"),
   shadeOverlay: document.getElementById("shadeOverlay"),
   topbar: document.querySelector(".topbar"),
   timeline: document.getElementById("timeline"),
@@ -98,6 +99,7 @@ const el = {
 let scenes = [];
 let activeIndex = -1;
 let isPlaying = false;
+let highlightPersistLeft = 0; // persist=N — จำนวนฉากถัดไปที่ยังคงให้เขตแดนที่ไฮไลต์ค้างอยู่ ไม่เคลียร์ทันที
 let playToken = 0;
 let isExporting = false;
 let recorder = null;
@@ -231,6 +233,16 @@ map.on("load", () => {
       "line-width": 3.5,
       "line-opacity": 0.92,
     },
+  });
+
+  // draw= — เส้นวาดอิสระตามพิกัดที่พิมพ์เอง (เทียบเท่า "Pen" ของ AnimateMyMap แบบพิมพ์พิกัดแทนลากเมาส์)
+  map.addSource("freeform-draw", { type: "geojson", data: emptyFC() });
+  map.addLayer({
+    id: "freeform-draw-layer",
+    type: "line",
+    source: "freeform-draw",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0 },
   });
 });
 
@@ -676,11 +688,13 @@ const pinFromEl = makeMarkerEl("map-pin-content is-from", `<span class="pin-dot"
 // ห้ามใส่ CSS animation หรือ style.transform เพิ่มบน element นี้ตรงๆ — ให้ครอบ span ชั้นในแทน
 const arrowWrapEl = makeMarkerEl("arrow-marker-wrap", `<span class="arrow-marker">➤</span>`);
 const effectWrapEl = makeMarkerEl("effect-marker-wrap", "");
+const geoPhotoWrapEl = makeMarkerEl("geo-photo-wrap", `<span class="geo-photo-card"></span>`);
 
 const markerTo = new maplibregl.Marker({ element: pinToEl, anchor: "center" });
 const markerFrom = new maplibregl.Marker({ element: pinFromEl, anchor: "center" });
 const markerArrow = new maplibregl.Marker({ element: arrowWrapEl, anchor: "center", rotationAlignment: "map" });
 const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "bottom" });
+const markerGeoPhoto = new maplibregl.Marker({ element: geoPhotoWrapEl, anchor: "bottom" });
 
 // pool ลูกศรหัวธง + ป้ายชื่อฝ่ายต้นทาง สำหรับแผนที่สนามรบ (จำนวนไม่แน่นอนต่อฉาก จึงสร้าง/รียูสตามจำนวนจริง)
 let battleArrowMarkers = [];
@@ -800,6 +814,44 @@ function setShade(scene) {
   }
 }
 
+// caption= — ข้อความลอยกลางจอ ไม่ผูกกับหมุด (เทียบเท่า "Add Text" ของ AnimateMyMap)
+function setCaption(scene) {
+  el.captionOverlay.classList.remove("pos-top", "pos-center", "pos-bottom");
+  if (scene.caption) {
+    el.captionOverlay.textContent = scene.caption;
+    el.captionOverlay.classList.add(`pos-${scene.captionPos}`);
+    el.captionOverlay.classList.add("is-visible");
+  } else {
+    el.captionOverlay.classList.remove("is-visible");
+  }
+}
+
+// geophoto=url:lat,lng — รูปจริงปักหมุดตามพิกัด (เทียบเท่า "Add Image" ของ AnimateMyMap)
+function setGeoPhoto(scene) {
+  if (scene.geophoto) {
+    geoPhotoWrapEl.querySelector(".geo-photo-card").style.backgroundImage = `url("${scene.geophoto.url}")`;
+    markerGeoPhoto.setLngLat([scene.geophoto.lng, scene.geophoto.lat]).addTo(map);
+  } else {
+    markerGeoPhoto.remove();
+  }
+}
+
+// draw= — เส้นวาดอิสระตามพิกัดที่พิมพ์เอง (เทียบเท่า "Pen" ของ AnimateMyMap แบบพิมพ์พิกัดแทนลากเมาส์)
+function setFreeformDraw(scene) {
+  const src = map.getSource("freeform-draw");
+  if (!src) return;
+  if (scene.draw && scene.draw.length >= 2) {
+    src.setData({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: scene.draw },
+      properties: { color: scene.drawColor },
+    });
+    map.setPaintProperty("freeform-draw-layer", "line-opacity", 0.85);
+  } else {
+    map.setPaintProperty("freeform-draw-layer", "line-opacity", 0);
+  }
+}
+
 function moveCamera(scene, durationSecOverride, frameOverride) {
   const center = frameOverride ? frameOverride.center : [scene.lng, scene.lat];
   const durationSec = durationSecOverride || scene.duration;
@@ -872,12 +924,36 @@ function parseWarmorph(str) {
   return { color: `#${colorRaw}`, p1: [p1[1], p1[0]], p2: [p2[1], p2[0]] };
 }
 
+// geophoto=url:lat,lng — ปักรูปจริงตามพิกัด
+function parseGeophoto(str) {
+  if (!str) return null;
+  const idx = str.lastIndexOf(":");
+  if (idx < 0) return null;
+  const url = str.slice(0, idx).trim();
+  const latlng = str.slice(idx + 1).split(",").map((n) => Number(n.trim()));
+  if (!url || latlng.length !== 2 || latlng.some(Number.isNaN)) return null;
+  return { url, lat: latlng[0], lng: latlng[1] };
+}
+
+// draw=lat,lng;lat,lng;... — เส้นวาดอิสระตามพิกัดที่พิมพ์เอง (ตรง/โค้ง/วงกลม แล้วแต่จำนวนจุด)
+function parseDraw(str) {
+  if (!str) return [];
+  return str
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => p.split(",").map((n) => Number(n.trim())))
+    .filter((pair) => pair.length === 2 && !pair.some(Number.isNaN))
+    .map(([lat, lng]) => [lng, lat]);
+}
+
 function finalizeScene(raw) {
   const {
     place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
     tilt, bearing, highlight, arrows, transport: transportRaw, shade, hide, landfill,
     reveal, trace, warmorph, mainland,
     labelfont, labelsize, labelweight,
+    caption, captionpos, geophoto, draw, drawcolor, persist,
   } = raw;
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
@@ -887,6 +963,8 @@ function finalizeScene(raw) {
   const transport = TRANSPORT_GLYPHS[transportRaw] ? transportRaw : "plane";
   const revealKey = ["fade", "wipe", "split", "circular", "iris", "diamond"].includes(reveal) ? (reveal === "iris" ? "circular" : reveal) : "fade";
   const traceKey = ["one", "two", "tworeverse", "four"].includes(trace) ? trace : "one";
+  const captionPosKey = ["top", "center", "bottom"].includes(captionpos) ? captionpos : "top";
+  const drawColorKey = /^[0-9a-fA-F]{6}$/.test(drawcolor || "") ? `#${drawcolor}` : "#f2b544";
 
   let lat, lng;
   if (latlng && latlng.includes(",")) {
@@ -920,6 +998,12 @@ function finalizeScene(raw) {
     labelFont: (labelfont || "").trim(),
     labelSize: Number(labelsize) > 0 ? Number(labelsize) : 0,
     labelWeight: (labelweight || "").trim(),
+    caption: (caption || "").trim(),
+    captionPos: captionPosKey,
+    geophoto: parseGeophoto(geophoto),
+    draw: parseDraw(draw),
+    drawColor: drawColorKey,
+    persist: Number(persist) > 0 ? Math.floor(Number(persist)) : 0,
   };
 }
 
@@ -945,6 +1029,10 @@ const TAG_KEY_ALIASES = {
   warmorph: "warmorph", ยึดครอง: "warmorph",
   mainland: "mainland", แผ่นดินใหญ่: "mainland",
   labelfont: "labelfont", labelsize: "labelsize", labelweight: "labelweight",
+  caption: "caption", ข้อความ: "caption", captionpos: "captionpos",
+  geophoto: "geophoto", รูปพิกัด: "geophoto",
+  draw: "draw", วาด: "draw", drawcolor: "drawcolor",
+  persist: "persist", คงอยู่: "persist",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1068,8 +1156,19 @@ function goToScene(index, durationOverride) {
   }
 
   // ไฮไลต์เขตแดน (จังหวัด/ประเทศ) จากพิกัดจริง
-  if (scene.highlight !== "none") showBoundary(scene);
-  else clearBoundary();
+  // persist=N — ให้เขตแดนที่ไฮไลต์ไว้ค้างข้ามฉากถัดไปอีก N ฉาก (เทียบเท่า "Keep visible" ของ AnimateMyMap)
+  if (scene.highlight !== "none") {
+    showBoundary(scene);
+    highlightPersistLeft = scene.persist;
+  } else if (highlightPersistLeft > 0) {
+    highlightPersistLeft--;
+  } else {
+    clearBoundary();
+  }
+
+  setCaption(scene);
+  setGeoPhoto(scene);
+  setFreeformDraw(scene);
 
   // pulse ring ตอนหมุดมาถึง
   pinToEl.classList.remove("pin-arrived");

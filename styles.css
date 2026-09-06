@@ -203,6 +203,47 @@ html, body {
 }
 .region-label.is-visible { opacity: 1; transform: translate(-50%, 0); }
 
+/* caption=... — ข้อความลอยกลางจอ ไม่ผูกกับหมุด (เทียบเท่า "Add Text" ของ AnimateMyMap) */
+.caption-overlay {
+  position: absolute;
+  left: 50%;
+  z-index: 5;
+  max-width: 82%;
+  text-align: center;
+  transform: translate(-50%, 10px);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(16px, 3vw, 26px);
+  color: #fff;
+  text-shadow: 0 2px 16px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .5s ease, transform .5s ease;
+}
+.caption-overlay.is-visible { opacity: 1; transform: translate(-50%, 0); }
+.caption-overlay.pos-top { top: 8%; }
+.caption-overlay.pos-center { top: 46%; transform: translate(-50%, 10px) translateY(-50%); }
+.caption-overlay.pos-center.is-visible { transform: translate(-50%, 0) translateY(-50%); }
+.caption-overlay.pos-bottom { top: auto; bottom: 22%; }
+
+/* geophoto=... — รูปจริงปักหมุดตามพิกัด (เทียบเท่า "Add Image" ของ AnimateMyMap) */
+.geo-photo-wrap { display: flex; }
+.geo-photo-card {
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  border: 3px solid #fff;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+  overflow: hidden;
+  background: #111 center/cover no-repeat;
+  transform-origin: center bottom;
+  animation: geo-photo-pop .45s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes geo-photo-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 .insert-layer {
   position: absolute;
   inset: 0;

@@ -19,6 +19,7 @@
           <div id="map" class="map-canvas"></div>
           <div id="shadeOverlay" class="shade-overlay"></div>
           <div id="regionLabel" class="region-label"></div>
+          <div id="captionOverlay" class="caption-overlay"></div>
           <div id="insertLayer" class="insert-layer"><span id="insertLayerContent"></span></div>
           <div id="insertFloat" class="insert-float"><span id="insertFloatContent"></span></div>
         </section>
@@ -91,6 +92,10 @@
             <br><strong>warmorph</strong>: <code>RRGGBB:lat1,lng1:lat2,lng2</code> — พื้นที่ฝั่งขวาของเส้น (ยืนที่จุด1 หันไปจุด2) เปลี่ยนสีเป็นฝ่ายชนะทีละนิด ใช้คู่กับ highlight
             <br><strong>mainland</strong>: <code>on</code> — ตัดเกาะ/ดินแดนไกลออกไปทิ้งตอนคำนวณกรอบกล้อง (ใช้คู่กับ highlight)
             <br><strong>labelfont / labelsize / labelweight</strong>: ปรับฟอนต์/ขนาด/น้ำหนักตัวอักษรป้ายชื่อหมุดเฉพาะฉากนั้น
+            <br><strong>caption / captionpos</strong>: <code>caption=ข้อความ | captionpos=top/center/bottom</code> — ข้อความลอยกลางจอ ไม่ผูกกับหมุด (ทำหัวข้อ/คำโปรย)
+            <br><strong>geophoto</strong>: <code>url:lat,lng</code> — ปักรูปจริง (จากที่อัปโหลดไว้) ตามพิกัดจริงบนแผนที่
+            <br><strong>draw / drawcolor</strong>: <code>draw=lat,lng;lat,lng;...</code> — ลากเส้นอิสระตามพิกัดที่พิมพ์เอง (ขีดเส้นทาง/วงล้อม) สีกำหนดด้วย <code>drawcolor=RRGGBB</code>
+            <br><strong>persist</strong>: <code>persist=2</code> — ให้เขตแดนที่ไฮไลต์ไว้ค้างอยู่ต่ออีก N ฉากถัดไป แม้ฉากถัดไปไม่ได้ตั้ง highlight
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>
