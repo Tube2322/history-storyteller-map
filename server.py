@@ -12,6 +12,10 @@ import json
 import re
 import socketserver
 import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -21,6 +25,40 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
 DEFAULT_VOICE = "th-TH-PremwadeeNeural"
 ASSETS_DIR = Path("assets")
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+# ---------- ไฮไลต์ขอบเขตพื้นที่ (จังหวัด/ประเทศ) จาก OpenStreetMap Nominatim ----------
+# ใช้ reverse geocoding จากพิกัดจริงของฉาก (ไม่ใช่ค้นหาจากชื่อ) เพื่อความแม่นยำ
+# Nominatim usage policy: ต้องมี User-Agent ระบุตัวตน และไม่ยิงเกิน ~1 req/sec
+_boundary_cache = {}
+_nominatim_lock = threading.Lock()
+_last_nominatim_call = [0.0]
+BOUNDARY_ZOOM = {"country": 4, "province": 6, "place": 10}  # ปรับคาลิเบรตจาก Nominatim จริง (addresstype: country/province/municipality)
+
+
+def fetch_boundary(lat: float, lng: float, level: str) -> dict:
+    key = (round(lat, 3), round(lng, 3), level)
+    if key in _boundary_cache:
+        return _boundary_cache[key]
+    zoom = BOUNDARY_ZOOM.get(level, 10)
+    with _nominatim_lock:
+        wait = 1.1 - (time.time() - _last_nominatim_call[0])
+        if wait > 0:
+            time.sleep(wait)
+        qs = urllib.parse.urlencode({
+            "lat": lat, "lon": lng, "format": "jsonv2",
+            "zoom": zoom, "polygon_geojson": 1,
+        })
+        req = urllib.request.Request(
+            f"https://nominatim.openstreetmap.org/reverse?{qs}",
+            headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool; contact via github)"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+        _last_nominatim_call[0] = time.time()
+    name = data.get("name") or (data.get("display_name") or "").split(",")[0]
+    result = {"name": name, "geojson": data.get("geojson")}
+    _boundary_cache[key] = result
+    return result
 
 
 async def synthesize(text: str, voice: str) -> bytes:
@@ -33,6 +71,34 @@ async def synthesize(text: str, voice: str) -> bytes:
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/api/boundary"):
+            self.handle_boundary()
+            return
+        super().do_GET()
+
+    def handle_boundary(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            lat = float(qs.get("lat", [""])[0])
+            lng = float(qs.get("lng", [""])[0])
+            level = (qs.get("level", ["place"])[0] or "place").strip()
+            result = fetch_boundary(lat, lng, level)
+            body = json.dumps(result).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
+
     def do_POST(self):
         if self.path == "/api/upload":
             self.handle_upload()
@@ -104,5 +170,5 @@ class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 if __name__ == "__main__":
     with ThreadingServer(("", PORT), Handler) as httpd:
-        print(f"serving on http://localhost:{PORT} (static + /api/tts)")
+        print(f"serving on http://localhost:{PORT} (static + /api/tts + /api/upload + /api/boundary)")
         httpd.serve_forever()

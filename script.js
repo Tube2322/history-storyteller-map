@@ -72,6 +72,7 @@ const el = {
   btnExport: document.getElementById("btnExport"),
   stageEl: document.getElementById("stageEl"),
   exportMenu: document.getElementById("exportMenu"),
+  regionLabel: document.getElementById("regionLabel"),
   btnSaveProject: document.getElementById("btnSaveProject"),
   fileLoadProject: document.getElementById("fileLoadProject"),
   autosaveHint: document.getElementById("autosaveHint"),
@@ -154,10 +155,75 @@ map.on("load", () => {
       "line-opacity": 0.9,
     },
   });
+
+  // ไฮไลต์ขอบเขตพื้นที่ (จังหวัด/ประเทศ) — ข้อมูลจริงจาก OpenStreetMap ต่อพิกัดฉาก
+  map.addSource("region-boundary", { type: "geojson", data: emptyFC() });
+  map.addLayer({
+    id: "region-fill",
+    type: "fill",
+    source: "region-boundary",
+    paint: { "fill-color": "#f2b544", "fill-opacity": 0 },
+  });
+  map.addLayer({
+    id: "region-line",
+    type: "line",
+    source: "region-boundary",
+    paint: { "line-color": "#f2b544", "line-width": 2.5, "line-opacity": 0 },
+  });
 });
 
 function emptyFC() {
   return { type: "FeatureCollection", features: [] };
+}
+
+// ---------- ไฮไลต์ขอบเขตพื้นที่ ----------
+
+const boundaryCache = new Map();
+let boundaryRAF = null;
+let boundaryRequestSeq = 0;
+
+async function fetchBoundary(lat, lng, level) {
+  const key = `${level}:${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (boundaryCache.has(key)) return boundaryCache.get(key);
+  const res = await fetch(`/api/boundary?lat=${lat}&lng=${lng}&level=${level}`);
+  if (!res.ok) throw new Error(`โหลดขอบเขตพื้นที่ไม่สำเร็จ (${res.status})`);
+  const data = await res.json();
+  boundaryCache.set(key, data);
+  return data;
+}
+
+function animateBoundaryOpacity(toFill, toLine) {
+  if (boundaryRAF) cancelAnimationFrame(boundaryRAF);
+  const fromFill = map.getPaintProperty("region-fill", "fill-opacity") || 0;
+  const fromLine = map.getPaintProperty("region-line", "line-opacity") || 0;
+  const start = performance.now();
+  const dur = 700;
+  function step(now) {
+    const t = Math.min(1, (now - start) / dur);
+    map.setPaintProperty("region-fill", "fill-opacity", fromFill + (toFill - fromFill) * t);
+    map.setPaintProperty("region-line", "line-opacity", fromLine + (toLine - fromLine) * t);
+    if (t < 1) boundaryRAF = requestAnimationFrame(step);
+  }
+  boundaryRAF = requestAnimationFrame(step);
+}
+
+function clearBoundary() {
+  animateBoundaryOpacity(0, 0);
+  el.regionLabel.classList.remove("is-visible");
+}
+
+function showBoundary(scene) {
+  const mySeq = ++boundaryRequestSeq;
+  el.regionLabel.classList.remove("is-visible");
+  fetchBoundary(scene.lat, scene.lng, scene.highlight)
+    .then((data) => {
+      if (mySeq !== boundaryRequestSeq || !data.geojson) return; // กันฉากเปลี่ยนไปแล้วแต่ผลลัพธ์เก่ามาช้า
+      map.getSource("region-boundary").setData({ type: "Feature", geometry: data.geojson, properties: {} });
+      animateBoundaryOpacity(0.18, 0.85);
+      el.regionLabel.textContent = data.name || scene.place;
+      el.regionLabel.classList.add("is-visible");
+    })
+    .catch((e) => console.warn(e));
 }
 
 function makeMarkerEl(className, innerHTML) {
@@ -169,7 +235,7 @@ function makeMarkerEl(className, innerHTML) {
 
 const pinToEl = makeMarkerEl(
   "map-pin-content",
-  `<span class="pin-dot"><i class="pin-icon"></i></span><em class="pin-label"></em>`
+  `<span class="pin-dot"><i class="pin-icon"></i><i class="pin-ring"></i></span><em class="pin-label"></em>`
 );
 const pinFromEl = makeMarkerEl("map-pin-content is-from", `<span class="pin-dot"></span>`);
 // หมายเหตุ: element ที่ส่งให้ maplibregl.Marker ถูกคุม transform โดย maplibre เอง (ตำแหน่ง/หมุน)
@@ -187,9 +253,8 @@ function stopOrbit() {
   if (orbitRAF) cancelAnimationFrame(orbitRAF);
   orbitRAF = null;
 }
-function startOrbit(durationSec) {
+function startOrbit(durationSec, startBearing = map.getBearing()) {
   stopOrbit();
-  const startBearing = map.getBearing();
   const start = performance.now();
   const totalMs = Math.max(durationSec, 1) * 1000;
   function step(now) {
@@ -218,40 +283,45 @@ function curvedLine(a, b) {
 function moveCamera(scene, durationSecOverride) {
   const center = [scene.lng, scene.lat];
   const durationSec = durationSecOverride || scene.duration;
+  const pitch = scene.tilt || 0; // tilt=องศา ในสคริปต์ (0-60) ให้มุมกล้อง 3D
+  const bearing = scene.bearing || 0; // bearing=องศา ในสคริปต์ ตั้งทิศเริ่มต้นของช็อต
+
   if (scene.cam === "cut-to-insert" || scene.cam === "insert-overlay") {
     stopOrbit();
     map.easeTo({ center, duration: 600, bearing: map.getBearing() });
     return;
   }
   if (scene.cam === "orbit") {
-    map.easeTo({ center, zoom: 8, duration: 800, pitch: 0 });
-    startOrbit(durationSec);
+    map.easeTo({ center, zoom: 8, duration: 800, pitch: pitch || 45, bearing });
+    setTimeout(() => startOrbit(durationSec, bearing), 800);
     return;
   }
   stopOrbit();
   if (scene.cam === "fly-to") {
-    map.flyTo({ center, zoom: 6.2, duration: durationSec * 1000, curve: 1.4, bearing: 0, pitch: 0 });
+    map.flyTo({ center, zoom: 6.2, duration: durationSec * 1000, curve: 1.4, bearing, pitch });
   } else if (scene.cam === "push-in") {
-    map.easeTo({ center, zoom: 10, duration: 1200, bearing: 0, pitch: 0 });
+    map.easeTo({ center, zoom: 10, duration: 1200, bearing, pitch });
   } else if (scene.cam === "zoom-out") {
-    map.easeTo({ center, zoom: 4.2, duration: 1200, bearing: 0, pitch: 0 });
+    map.easeTo({ center, zoom: 4.2, duration: 1200, bearing, pitch });
   } else {
-    map.easeTo({ center, zoom: 4.3, duration: 1200, bearing: 0, pitch: 0 });
+    map.easeTo({ center, zoom: 4.3, duration: 1200, bearing, pitch });
   }
 }
 
 // ---------- แปลงข้อมูลดิบ → ฉาก ----------
 
-function parseFields(f, index) {
-  const [place, latlngRaw, cam, script, dur, iconRaw, effectRaw, insertRaw] = f;
+// รับ raw fields (จาก tag-mode หรือ column-mode ก็ได้) มาตรวจ/เติมค่า default ให้เป็นฉากที่ใช้งานได้จริง
+function finalizeScene(raw) {
+  const { place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert, tilt, bearing, highlight } = raw;
   if (!place || !cam || !script) return null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
   const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
   const effect = EFFECT_GLYPHS[effectRaw] ? effectRaw : "none";
+  const highlightKey = ["country", "province", "place"].includes(highlight) ? highlight : "none";
 
   let lat, lng;
-  if (latlngRaw && latlngRaw.includes(",")) {
-    const [la, ln] = latlngRaw.split(",").map((n) => Number(n.trim()));
+  if (latlng && latlng.includes(",")) {
+    const [la, ln] = latlng.split(",").map((n) => Number(n.trim()));
     if (!Number.isNaN(la) && !Number.isNaN(ln)) { lat = la; lng = ln; }
   }
   if (lat === undefined) { lat = FALLBACK_COORD.lat; lng = FALLBACK_COORD.lng; }
@@ -263,15 +333,57 @@ function parseFields(f, index) {
     duration: Number(dur) > 0 ? Number(dur) : DEFAULT_DURATION,
     icon,
     effect,
-    insert: (insertRaw || "").trim(),
+    insert: (insert || "").trim(),
     lat,
     lng,
+    tilt: Number(tilt) >= 0 && Number(tilt) <= 60 ? Number(tilt) : 0,
+    bearing: Number.isFinite(Number(bearing)) ? ((Number(bearing) % 360) + 360) % 360 : 0,
+    highlight: highlightKey,
   };
 }
 
-function parseRow(line, index) {
+const TAG_KEY_ALIASES = {
+  place: "place", loc: "place", ที่: "place",
+  latlng: "latlng", lat: "latlng", พิกัด: "latlng",
+  cam: "cam", camera: "cam", กล้อง: "cam",
+  script: "script", text: "script", สคริปต์: "script",
+  sec: "dur", duration: "dur", วินาที: "dur",
+  icon: "icon", ไอคอน: "icon",
+  effect: "effect", fx: "effect", เอฟเฟกต์: "effect",
+  insert: "insert",
+  tilt: "tilt", pitch: "tilt", เอียง: "tilt",
+  bearing: "bearing", หมุน: "bearing",
+  highlight: "highlight", ไฮไลต์: "highlight",
+};
+
+// โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
+function parseTagRow(line) {
+  const segments = line.split("|").map((s) => s.trim()).filter(Boolean);
+  const raw = {};
+  let matched = 0;
+  for (const seg of segments) {
+    const m = seg.match(/^([a-zA-Zก-๙]+)\s*=\s*([\s\S]*)$/);
+    if (!m) continue;
+    const key = TAG_KEY_ALIASES[m[1].toLowerCase()] || TAG_KEY_ALIASES[m[1]];
+    if (!key) continue;
+    raw[key] = m[2].trim();
+    matched++;
+  }
+  if (matched === 0) return null; // ไม่ใช่ tag-mode ปล่อยให้ column-mode ลองต่อ
+  return finalizeScene(raw);
+}
+
+// โหมด column เดิม: "สถานที่ | lat,lng | แผนกล้อง | สคริปต์ | วินาที | ไอคอน | เอฟเฟกต์ | insert"
+function parseColumnRow(parts) {
+  const [place, latlng, cam, script, dur, icon, effect, insert] = parts;
+  return finalizeScene({ place, latlng, cam, script, dur, icon, effect, insert });
+}
+
+function parseRow(line) {
+  const tagged = parseTagRow(line);
+  if (tagged) return tagged;
   const parts = line.includes("|") ? line.split("|") : line.split("\t");
-  return parseFields(parts.map((p) => (p || "").trim()), index);
+  return parseColumnRow(parts.map((p) => (p || "").trim()));
 }
 
 function isImageUrl(str) {
@@ -359,6 +471,15 @@ function goToScene(index, durationOverride) {
   } else {
     markerEffect.remove();
   }
+
+  // ไฮไลต์เขตแดน (จังหวัด/ประเทศ) จากพิกัดจริง
+  if (scene.highlight !== "none") showBoundary(scene);
+  else clearBoundary();
+
+  // pulse ring ตอนหมุดมาถึง
+  pinToEl.classList.remove("pin-arrived");
+  void pinToEl.offsetWidth; // บังคับ reflow ให้ retrigger อนิเมชันได้ทุกครั้ง
+  pinToEl.classList.add("pin-arrived");
 
   // หมุดต้นทาง + เส้นทางโค้ง + ลูกศร
   const prevScene = scenes[activeIndex - 1];
@@ -542,7 +663,7 @@ function importXlsxFile(file) {
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
     const body = rows.slice(1); // ข้ามแถวหัวตาราง
     const parsed = body
-      .map((row, i) => parseFields(row.map((c) => (c === undefined || c === null ? "" : String(c).trim())), i))
+      .map((row) => parseColumnRow(row.map((c) => (c === undefined || c === null ? "" : String(c).trim()))))
       .filter(Boolean);
     if (!parsed.length) return;
     scenes = parsed;

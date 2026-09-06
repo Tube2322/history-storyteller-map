@@ -23,6 +23,7 @@
 import argparse
 import base64
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -42,18 +43,40 @@ DEFAULT_VOICE = "th-TH-PremwadeeNeural"
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 
+TAG_ALIASES = {
+    "place": "place", "loc": "place",
+    "script": "script", "text": "script",
+    "sec": "dur", "duration": "dur",
+}
+TAG_RE = re.compile(r"^([a-zA-Z]+)\s*=\s*([\s\S]*)$")
+
+
 def parse_rows(text: str):
+    # ต้องอ่านให้ตรงกับ finalizeScene ฝั่ง script.js (tag-mode หรือ column-mode)
+    # แต่ render.py สนแค่ place/script/duration สำหรับพากย์เสียง+จับเวลา ส่วนภาพให้ script.js
+    # จัดการตอนเล่นในเบราว์เซอร์ headless ทั้งหมดอยู่แล้ว
     rows = []
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
-        parts = line.split("|") if "|" in line else line.split("\t")
-        parts = [p.strip() for p in parts]
-        while len(parts) < 8:
-            parts.append("")
-        place, latlng, cam, script, dur, icon, effect, insert = parts[:8]
-        if not place or not cam or not script:
+        segments = [s.strip() for s in line.split("|") if s.strip()]
+        tags = {}
+        for seg in segments:
+            m = TAG_RE.match(seg)
+            if not m:
+                continue
+            key = TAG_ALIASES.get(m.group(1).lower())
+            if key:
+                tags[key] = m.group(2).strip()
+
+        if tags:
+            place, script, dur = tags.get("place", ""), tags.get("script", ""), tags.get("dur", "")
+        else:
+            parts = segments + [""] * 8
+            place, _latlng, _cam, script, dur = parts[0], parts[1], parts[2], parts[3], parts[4]
+
+        if not place or not script:
             continue
         rows.append({"place": place, "script": script, "duration": float(dur) if dur else 5.0})
     return rows

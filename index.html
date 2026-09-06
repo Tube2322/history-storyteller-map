@@ -17,6 +17,7 @@
         <!-- เวทีแผนที่: MapLibre GL จริง (ภาพถ่ายดาวเทียม Esri) -->
         <section id="mapStage" class="map-stage">
           <div id="map" class="map-canvas"></div>
+          <div id="regionLabel" class="region-label"></div>
           <div id="insertLayer" class="insert-layer"><span id="insertLayerContent"></span></div>
           <div id="insertFloat" class="insert-float"><span id="insertFloatContent"></span></div>
         </section>
@@ -68,13 +69,18 @@
             <button id="btnCloseImport" class="icon-btn" title="ปิด">✕</button>
           </div>
           <p class="import-hint">
-            วางข้อมูลทีละแถว คั่นแต่ละคอลัมน์ด้วย tab หรือ <code>|</code> เรียงลำดับ:
+            <strong>แบบ tag (ยืดหยุ่น เรียงลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default):</strong>
+            <br><code>place=... | latlng=lat,lng | cam=... | script=... | sec=... | icon=... | effect=... | tilt=... | bearing=... | highlight=... | insert=...</code>
+            <br>ใส่แค่บางคีย์ก็ได้ เช่น <code>place=สุโขทัย | cam=fly-to | script=... | tilt=40 | bearing=200</code>
+            <br><br><strong>แบบ column เดิม (เรียงตำแหน่งตายตัว):</strong>
             <br><code>สถานที่ | lat,lng | แผนกล้อง | สคริปต์เสียง | วินาที | ไอคอน | เอฟเฟกต์ | insert</code>
-            <br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert / insert-overlay</code>
+            <br><br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert / insert-overlay</code>
             <br>ไอคอน: <code>city / castle / ship / battle / flag / mountain / camp</code> (ไม่ใส่ = 📍)
             <br>เอฟเฟกต์: <code>storm / fire / battle / none</code> — สติ๊กเกอร์อนิเมชันปักบนพิกัด
-            <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay — คอลัมน์ท้ายๆ ไม่บังคับ
-            <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code> เพราะชนกับตัวคั่นคอลัมน์) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
+            <br><strong>tilt</strong>: 0-60 (องศาเอียงกล้อง 3D) · <strong>bearing</strong>: 0-360 (ทิศเริ่มช็อต) — ใช้ได้เฉพาะ tag-mode
+            <br><strong>highlight</strong>: <code>country / province / place / none</code> — ไฮไลต์เขตแดนจริงจาก OpenStreetMap ตามพิกัด พร้อมป้ายชื่อขึ้นกลางจอ (ใช้ได้เฉพาะ tag-mode)
+            <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
+            <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>
           <div class="import-actions">
             <button id="btnDownloadTemplate" class="ghost-btn" type="button">ดาวน์โหลดเทมเพลต Excel</button>
@@ -91,10 +97,10 @@
             </label>
           </div>
           <p class="import-hint" id="autosaveHint" hidden>กู้สคริปต์ล่าสุดที่เคยกรอกไว้อัตโนมัติ (เก็บในเบราว์เซอร์เครื่องนี้)</p>
-          <textarea id="importText" class="import-textarea" placeholder="สุโขทัย | 17.0175,99.7016 | establishing | ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | 5 | castle | none |
-สุโขทัย → ศรีสัชนาลัย | 17.4270,99.8210 | fly-to | จากนั้นกองคาราวานเดินทางขึ้นเหนือ ;; มุ่งสู่เมืองพันธมิตรทางเหนือ | 6 | flag | none |
-ศรีสัชนาลัย | 17.4270,99.8210 | insert-overlay | ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | 4 | battle | fire | ภาพจำลองการโจมตี
-ศรีสัชนาลัย | 17.4270,99.8210 | cut-to-insert | แต่สิ่งที่เกิดขึ้นต่อจากนี้ ไม่มีใครคาดคิดมาก่อน | 3 | battle | none | หลักฐานภาพเหตุการณ์"></textarea>
+          <textarea id="importText" class="import-textarea" placeholder="place=สุโขทัย | latlng=17.0175,99.7016 | cam=establishing | script=ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | sec=5 | icon=castle | highlight=province
+place=สุโขทัย → ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=fly-to | script=จากนั้นกองคาราวานเดินทางขึ้นเหนือ ;; มุ่งสู่เมืองพันธมิตรทางเหนือ | sec=6 | icon=flag | tilt=45 | bearing=200
+place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=insert-overlay | script=ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | sec=4 | icon=battle | effect=fire | insert=ภาพจำลองการโจมตี
+place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=cut-to-insert | script=แต่สิ่งที่เกิดขึ้นต่อจากนี้ ไม่มีใครคาดคิดมาก่อน | sec=3 | icon=battle | insert=หลักฐานภาพเหตุการณ์"></textarea>
           <div class="import-actions">
             <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
             <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
