@@ -112,6 +112,7 @@ const el = {
   subtitleColor: document.getElementById("subtitleColor"),
   subtitleSize: document.getElementById("subtitleSize"),
   subtitleWeight: document.getElementById("subtitleWeight"),
+  landClipToggle: document.getElementById("landClipToggle"),
   calloutLine: document.getElementById("calloutLine"),
   calloutLineEl: document.getElementById("calloutLineEl"),
   calloutBox: document.getElementById("calloutBox"),
@@ -130,6 +131,7 @@ let isExporting = false;
 let voiceSettings = { voice: DEFAULT_VOICE, rate: "+0%", pitch: "+0Hz" };
 let bgmUrl = "";
 let bgmVolumeLevel = 0.25;
+let landClipEnabled = true; // ตัดเส้นไฮไลต์ให้อยู่แค่บนแผ่นดิน (ปิดได้ถ้าอยากได้เขตทางทะเลตามข้อมูล OSM จริง)
 let sceneGapSec = 0;
 let subtitleStyle = { pos: "bottom", color: "", size: 0, weight: "" };
 
@@ -296,9 +298,10 @@ let boundaryRequestSeq = 0;
 const loadedFlagImages = new Set();
 
 async function fetchBoundary(lat, lng, level) {
-  const key = `${level}:${lat.toFixed(3)},${lng.toFixed(3)}`;
+  const clip = landClipEnabled ? 1 : 0;
+  const key = `${level}:${lat.toFixed(3)},${lng.toFixed(3)}:${clip}`; // แยกแคชตามโหมดตัดชายฝั่ง เพราะได้รูปคนละแบบ
   if (boundaryCache.has(key)) return boundaryCache.get(key);
-  const res = await fetch(`/api/boundary?lat=${lat}&lng=${lng}&level=${level}`);
+  const res = await fetch(`/api/boundary?lat=${lat}&lng=${lng}&level=${level}&landclip=${clip}`);
   if (!res.ok) throw new Error(`โหลดขอบเขตพื้นที่ไม่สำเร็จ (${res.status})`);
   const data = await res.json();
   boundaryCache.set(key, data);
@@ -1733,6 +1736,12 @@ el.sceneGap.addEventListener("input", () => {
   el.sceneGapOut.textContent = `${sceneGapSec.toFixed(1)} วิ`;
 });
 
+el.landClipToggle.addEventListener("change", () => {
+  landClipEnabled = el.landClipToggle.checked;
+  boundaryCache.clear(); // ขอบเขตที่แคชไว้เป็นของโหมดเดิม ต้องดึงใหม่ให้ตรงกับที่เลือก
+  if (scenes.length) goToScene(activeIndex === -1 ? 0 : activeIndex);
+});
+
 el.subtitlePos.addEventListener("change", () => { subtitleStyle.pos = el.subtitlePos.value; applySubtitleStyle(); });
 el.subtitleColor.addEventListener("input", () => { subtitleStyle.color = el.subtitleColor.value; applySubtitleStyle(); });
 el.subtitleSize.addEventListener("input", () => { subtitleStyle.size = Number(el.subtitleSize.value) || 0; applySubtitleStyle(); });
@@ -1750,6 +1759,7 @@ function saveProject() {
     bgm: { url: bgmUrl, volume: bgmVolumeLevel },
     sceneGapSec,
     subtitleStyle,
+    landClipEnabled,
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -1791,6 +1801,11 @@ function applyProjectData(data) {
     sceneGapSec = Number(data.sceneGapSec);
     el.sceneGap.value = Math.round(sceneGapSec * 10);
     el.sceneGapOut.textContent = `${sceneGapSec.toFixed(1)} วิ`;
+  }
+  if (typeof data.landClipEnabled === "boolean") {
+    landClipEnabled = data.landClipEnabled;
+    el.landClipToggle.checked = landClipEnabled;
+    boundaryCache.clear();
   }
   if (data.subtitleStyle) {
     subtitleStyle = { pos: "bottom", color: "", size: 0, weight: "", ...data.subtitleStyle };
@@ -1935,6 +1950,11 @@ function b64UrlDecode(str) {
 
   const gapParam = params.get("gap");
   if (gapParam) sceneGapSec = Number(gapParam) || 0;
+
+  if (params.get("landclip") === "0") {
+    landClipEnabled = false;
+    el.landClipToggle.checked = false;
+  }
 
   subtitleStyle = {
     pos: params.get("subpos") === "top" ? "top" : "bottom",

@@ -718,6 +718,8 @@ body.is-render-mode .import-panel {
 .brand-settings label { display: block; font-size: 12px; color: var(--ink-dim); font-family: var(--thai); margin-top: 8px; }
 .brand-settings label:first-child { margin-top: 0; }
 .brand-settings input[type="range"] { display: block; margin-top: 4px; accent-color: var(--accent); }
+.check-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.check-row input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 
 .upload-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .upload-item {

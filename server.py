@@ -30,18 +30,31 @@ SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 # ---------- ตัดเส้นไฮไลต์ให้อยู่แค่บนแผ่นดิน (ไม่ลากผ่านทะเล) ----------
 # เขตแดนจริงจาก Nominatim บางประเทศ/บางเขตลากเส้นตรงคร่อมทะเล (ไม่แนบชายฝั่งจริง)
-# จึงตัด (intersect) กับข้อมูลแผ่นดินจริง Natural Earth 1:50m ก่อนส่งให้หน้าเว็บเสมอ
-_LAND_MASK_PATH = Path(__file__).parent / "data" / "land_mask_50m.geojson"
+# จึงตัด (intersect) กับข้อมูลแผ่นดินจริง Natural Earth 1:10m ก่อนส่งให้หน้าเว็บ (ปิดได้จากหน้าเว็บ)
+_LAND_MASK_PATH = Path(__file__).parent / "data" / "land_mask_10m.geojson"
 _land_polys = None
+_land_lock = threading.Lock()
 
 
 def _load_land_mask():
+    # ไฟล์ 10m เก็บทวีปเป็น MultiPolygon ก้อนใหญ่ไม่กี่ก้อน — ต้องแตกเป็นรูปหลายเหลี่ยมเดี่ยวๆก่อน
+    # ไม่งั้นการกรองด้วยกรอบสี่เหลี่ยม (bbox) ไม่ช่วยอะไรเลย เพราะ bbox ของทั้งทวีปกว้างเกินไป
     global _land_polys
     if _land_polys is not None:
         return
-    with open(_LAND_MASK_PATH, encoding="utf-8") as f:
-        fc = json.load(f)
-    _land_polys = [shape(feat["geometry"]).buffer(0) for feat in fc["features"]]
+    with _land_lock:
+        if _land_polys is not None:
+            return
+        with open(_LAND_MASK_PATH, encoding="utf-8") as f:
+            fc = json.load(f)
+        polys = []
+        for feat in fc["features"]:
+            geom = shape(feat["geometry"]).buffer(0)
+            if geom.geom_type == "MultiPolygon":
+                polys.extend(list(geom.geoms))
+            elif not geom.is_empty:
+                polys.append(geom)
+        _land_polys = polys
 
 
 def clip_to_land(geojson_dict):
@@ -74,21 +87,37 @@ def clip_to_land(geojson_dict):
 _boundary_cache = {}
 _nominatim_lock = threading.Lock()
 _last_nominatim_call = [0.0]
-BOUNDARY_ZOOM = {"country": 4, "province": 6, "place": 10}  # ปรับคาลิเบรตจาก Nominatim จริง (addresstype: country/province/municipality)
+# ลำดับ zoom ที่จะลองยิงต่อระดับ (ลองตัวแรกก่อน ถ้าได้ชนิดพื้นที่ไม่ตรงค่อยไล่ตัวถัดไป)
+# ที่ต้องมีหลายค่าเพราะลำดับชั้นการปกครองแต่ละประเทศไม่เหมือนกัน — zoom เดียวใช้ได้ทั่วโลกไม่ได้จริง
+BOUNDARY_ZOOM_LADDER = {
+    "country": [3, 4, 2, 5],
+    "province": [5, 6, 7, 8, 4],
+    "place": [10, 12, 9, 13, 8, 14],
+}
+# ชนิดพื้นที่ (addresstype ของ Nominatim) ต่อระดับ แยกเป็น 2 ชั้น:
+# PRIMARY = ชนิดที่ตรงความหมายที่สุด เจอเมื่อไหร่ใช้ทันที
+# SECONDARY = ชนิดที่พอใช้แทนได้ เก็บไว้ก่อน ใช้ต่อเมื่อไล่ zoom จนหมดแล้วไม่เจอ primary เลย
+# (จำเป็นเพราะบางเมืองใหญ่ เช่น ปารีส ยิง zoom ปกติแล้วได้ "suburb" ซึ่งเป็นเขตย่อย ไม่ใช่ตัวเมืองจริง)
+BOUNDARY_PRIMARY_TYPES = {
+    "country": {"country"},
+    "province": {"state", "province", "region", "territory"},
+    "place": {"city", "town", "municipality", "village"},
+}
+BOUNDARY_SECONDARY_TYPES = {
+    "country": set(),
+    "province": {"state_district", "county", "administrative"},
+    "place": {"county", "district", "city_district", "borough", "suburb", "subdistrict", "hamlet", "administrative"},
+}
 
 
-def fetch_boundary(lat: float, lng: float, level: str) -> dict:
-    key = (round(lat, 3), round(lng, 3), level)
-    if key in _boundary_cache:
-        return _boundary_cache[key]
-    zoom = BOUNDARY_ZOOM.get(level, 10)
+def _nominatim_reverse(lat: float, lng: float, zoom: int) -> dict:
     with _nominatim_lock:
         wait = 1.1 - (time.time() - _last_nominatim_call[0])
         if wait > 0:
             time.sleep(wait)
         qs = urllib.parse.urlencode({
             "lat": lat, "lon": lng, "format": "jsonv2",
-            "zoom": zoom, "polygon_geojson": 1,
+            "zoom": zoom, "polygon_geojson": 1, "addressdetails": 1,
         })
         req = urllib.request.Request(
             f"https://nominatim.openstreetmap.org/reverse?{qs}",
@@ -97,12 +126,42 @@ def fetch_boundary(lat: float, lng: float, level: str) -> dict:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
         _last_nominatim_call[0] = time.time()
+    return data
+
+
+def fetch_boundary(lat: float, lng: float, level: str, land_clip: bool = True) -> dict:
+    key = (round(lat, 3), round(lng, 3), level, land_clip)
+    if key in _boundary_cache:
+        return _boundary_cache[key]
+
+    primary = BOUNDARY_PRIMARY_TYPES.get(level, set())
+    secondary = BOUNDARY_SECONDARY_TYPES.get(level, set())
+    ladder = BOUNDARY_ZOOM_LADDER.get(level, [10])
+    data = None
+    secondary_hit = None
+    fallback = None
+    for zoom in ladder:
+        candidate = _nominatim_reverse(lat, lng, zoom)
+        geo = candidate.get("geojson")
+        if not geo or geo.get("type") not in ("Polygon", "MultiPolygon"):
+            continue
+        if fallback is None:
+            fallback = candidate  # เก็บอันแรกที่มีรูปพื้นที่จริงไว้เผื่อไม่เจอชนิดที่ตรงเลย
+        addr_type = candidate.get("addresstype")
+        if addr_type in primary:
+            data = candidate
+            break
+        if secondary_hit is None and addr_type in secondary:
+            secondary_hit = candidate
+    if data is None:
+        data = secondary_hit or fallback or {}
+
     name = data.get("name") or (data.get("display_name") or "").split(",")[0]
     country_code = (data.get("address") or {}).get("country_code")  # เช่น "th" — ใช้ดึงธงชาติ
     geojson = data.get("geojson")
-    if geojson and geojson.get("type") in ("Polygon", "MultiPolygon"):
+    if land_clip and geojson and geojson.get("type") in ("Polygon", "MultiPolygon"):
         geojson = clip_to_land(geojson)
-    result = {"name": name, "geojson": geojson, "countryCode": country_code}
+    result = {"name": name, "geojson": geojson, "countryCode": country_code, "addressType": data.get("addresstype")}
     _boundary_cache[key] = result
     return result
 
@@ -226,7 +285,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             lat = float(qs.get("lat", [""])[0])
             lng = float(qs.get("lng", [""])[0])
             level = (qs.get("level", ["place"])[0] or "place").strip()
-            result = fetch_boundary(lat, lng, level)
+            land_clip = (qs.get("landclip", ["1"])[0] or "1").strip() != "0"  # ปิดได้จากหน้าเว็บถ้าอยากได้เขตทางทะเลจริงด้วย
+            result = fetch_boundary(lat, lng, level, land_clip)
             body = json.dumps(result).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
