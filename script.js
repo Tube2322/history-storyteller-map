@@ -909,7 +909,8 @@ function moveCamera(scene, durationSecOverride, frameOverride) {
     const zoom = frameOverride ? frameOverride.zoom : 6;
     map.easeTo({ center, zoom, duration: 1000, bearing, pitch: pitch || 35 });
   } else if (scene.cam === "fly-to") {
-    map.flyTo({ center, zoom: 6.2, duration: durationSec * 1000, curve: 1.4, bearing, pitch });
+    const zoom = frameOverride ? frameOverride.zoom : 6.2;
+    map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch });
   } else if (scene.cam === "push-in") {
     map.easeTo({ center, zoom: 10, duration: 1200, bearing, pitch });
   } else if (scene.cam === "zoom-out") {
@@ -992,7 +993,8 @@ function finalizeScene(raw) {
   const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
   const effect = EFFECT_GLYPHS[effectRaw] ? effectRaw : "none";
   const highlightKey = ["country", "province", "place"].includes(highlight) ? highlight : "none";
-  const transport = TRANSPORT_GLYPHS[transportRaw] ? transportRaw : "plane";
+  // ไม่ดีฟอลต์เป็น plane เพราะฉากประวัติศาสตร์ก่อนยุคเครื่องบินจะโชว์ไอคอนผิดยุค — ไม่ระบุ = ไม่มีไอคอนวิ่ง
+  const transport = TRANSPORT_GLYPHS[transportRaw] ? transportRaw : "none";
   const revealKey = ["fade", "wipe", "split", "circular", "iris", "diamond"].includes(reveal) ? (reveal === "iris" ? "circular" : reveal) : "fade";
   const traceKey = ["one", "two", "tworeverse", "four"].includes(trace) ? trace : "one";
   const captionPosKey = ["top", "center", "bottom"].includes(captionpos) ? captionpos : "top";
@@ -1210,6 +1212,7 @@ function goToScene(index, durationOverride) {
   // หมุดต้นทาง + เส้นทางโค้ง + ลูกศร (ข้ามระบบนี้ถ้าเป็นแผนที่สนามรบ — ใช้ระบบลูกศรหลายเส้นแทน)
   const prevScene = scenes[activeIndex - 1];
   const lineSource = map.getSource("scene-line");
+  let flyFrame = null; // fly-to: ซูมให้พอดีระยะทางจริงระหว่างจุดเดิม-จุดใหม่ (คำนวณด้านล่างถ้ามี prevScene)
   if (scene.cam === "battle-map") {
     markerFrom.remove();
     markerArrow.remove();
@@ -1222,10 +1225,17 @@ function goToScene(index, durationOverride) {
     if (lineSource) lineSource.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
     const bearing = compassBearing(coords[1], coords[2]);
     markerArrow.setRotation(bearing - 90).setLngLat(coords[1]).addTo(map);
-    if (scene.cam === "fly-to") {
+    if (scene.cam === "fly-to" && scene.transport !== "none") {
       startPathIcon(coords, (durationOverride || scene.duration) * 1000, TRANSPORT_GLYPHS[scene.transport]);
     } else {
       stopPathIcon();
+    }
+    // fly-to ไม่มี highlight: ซูมให้พอดีระยะทางจริงระหว่าง 2 จุด ไม่ใช่ค่าคงที่ตายตัว
+    // (เดิม zoom 6.2 เสมอ ทำให้จุดใกล้กันมากๆ กล้องยังถอยไกลเกินพื้นที่จริง)
+    if (scene.cam === "fly-to" && scene.highlight === "none") {
+      const routeBounds = new maplibregl.LngLatBounds(a, a).extend(b);
+      const cam = map.cameraForBounds(routeBounds, { padding: 90 });
+      if (cam) flyFrame = { center: cam.center, zoom: Math.min(Math.max(cam.zoom, 3), 10) };
     }
   } else {
     markerFrom.remove();
@@ -1257,7 +1267,7 @@ function goToScene(index, durationOverride) {
   el.timeline.classList.toggle("hs-hidden", isCapturing && hideSet.has("timeline"));
   el.brandChip.classList.toggle("hs-hidden", hideSet.has("brand"));
 
-  moveCamera(scene, durationOverride, battleFrame);
+  moveCamera(scene, durationOverride, battleFrame || flyFrame);
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
     btn.classList.toggle("is-active", i === activeIndex);
@@ -1324,6 +1334,22 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// เตรียมเสียงพากย์ "ทั้งคลิป" ให้เสร็จก่อนเริ่มเล่น กันเสียงมาสะดุดกลางคันตอนเล่นจริง
+// (คืน false ถ้าโดนยกเลิกระหว่างเตรียม เช่นกดหยุดหรือกดเล่นซ้ำ)
+async function preloadNarration(myToken) {
+  const startIdx = activeIndex === -1 ? 0 : activeIndex;
+  for (let i = startIdx; i < scenes.length; i++) {
+    if (myToken !== playToken) return false;
+    const segments = splitSegments(scenes[i].script);
+    for (const seg of segments) {
+      if (myToken !== playToken) return false;
+      el.subtitleText.textContent = `กำลังเตรียมเสียงพากย์ทั้งคลิป... (ฉาก ${i + 1}/${scenes.length})`;
+      try { await fetchTts(seg); } catch (e) { console.warn(e); }
+    }
+  }
+  return myToken === playToken;
+}
+
 async function narrationLoop() {
   const myToken = ++playToken;
   isPlaying = true;
@@ -1380,15 +1406,31 @@ async function narrationLoop() {
   }
 }
 
+function startBgm() {
+  if (!bgmUrl) return;
+  if (el.bgmPlayer.src !== bgmUrl) el.bgmPlayer.src = bgmUrl;
+  el.bgmPlayer.volume = bgmVolumeLevel;
+  el.bgmPlayer.currentTime = 0;
+  el.bgmPlayer.play().catch(() => {});
+}
+
 function setPlaying(next) {
   if (next) {
-    if (bgmUrl) {
-      if (el.bgmPlayer.src !== bgmUrl) el.bgmPlayer.src = bgmUrl;
-      el.bgmPlayer.volume = bgmVolumeLevel;
-      el.bgmPlayer.currentTime = 0;
-      el.bgmPlayer.play().catch(() => {});
+    if (isRenderMode) {
+      // โหมดเรนเดอร์มีความยาวเสียงมาแล้วจาก render.py ไม่ต้องเตรียมเสียงเอง เล่นได้เลยทันที
+      startBgm();
+      narrationLoop();
+      return;
     }
-    narrationLoop();
+    // เตรียมเสียงพากย์ทั้งคลิปให้เสร็จก่อน แล้วค่อยเริ่มเล่น+เพลงพร้อมกันทีเดียว กันเสียงสะดุดกลางคัน
+    const myToken = ++playToken;
+    isPlaying = true;
+    el.btnPlay.textContent = "⏸";
+    preloadNarration(myToken).then((completed) => {
+      if (!completed || myToken !== playToken) return;
+      startBgm();
+      narrationLoop();
+    });
     return;
   }
   isPlaying = false;
