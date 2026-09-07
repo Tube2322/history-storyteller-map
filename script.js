@@ -1733,48 +1733,33 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ---------- ซับไตเติลคาราโอเกะ: ไฮไลต์ทีละคำตามจังหวะพูดจริง (ฟีลคลิปสไตล์เจนซี/TikTok) ----------
+// ---------- ซับไตเติลคาราโอเกะ: โชว์ทีละ 3-4 คำ ไฮไลต์คำที่กำลังพูดตามจังหวะจริง (ฟีลคลิปสั้น/เจนซี ไม่ยืดยาวเป็นก้อนประโยค) ----------
 // edge-tts ไม่ให้ timestamp ระดับคำมาตรงๆ จึงประมาณเวลาต่อคำจากสัดส่วนความยาวตัวอักษรเทียบกับความยาวคลิปจริง
 // ภาษาไทยไม่มีเว้นวรรคระหว่างคำ split(" ") ธรรมดาจะได้แค่ก้อนประโยคใหญ่ๆ ไม่ใช่ "คำ" จริง
 // ใช้ Intl.Segmenter('th', {granularity:'word'}) ของเบราว์เซอร์ (ตัดคำไทยด้วย ICU dictionary) แทน
 const thSegmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter("th", { granularity: "word" }) : null;
+const KARAOKE_CHUNK_WORDS = 4; // โชว์บนจอทีละกี่คำ
 
-function renderKaraokeText(text) {
-  el.subtitleText.innerHTML = "";
-  const wordEls = [];
+function buildKaraokeSegments(text) {
   if (thSegmenter) {
-    for (const { segment, isWordLike } of thSegmenter.segment(text)) {
-      if (isWordLike) {
-        const span = document.createElement("span");
-        span.className = "sub-word";
-        span.textContent = segment;
-        el.subtitleText.appendChild(span);
-        wordEls.push(span);
-      } else {
-        el.subtitleText.appendChild(document.createTextNode(segment));
-      }
-    }
-    return wordEls;
+    return [...thSegmenter.segment(text)].map(({ segment, isWordLike }) => ({ text: segment, isWord: !!isWordLike }));
   }
   // เบราว์เซอร์เก่าไม่มี Intl.Segmenter: fallback แบ่งตามช่องว่าง (ใช้ได้ดีเฉพาะข้อความอังกฤษ)
-  const tokens = text.split(/(\s+)/).filter((t) => t !== "");
-  tokens.forEach((t) => {
-    if (/^\s+$/.test(t)) {
-      el.subtitleText.appendChild(document.createTextNode(t));
-    } else {
-      const span = document.createElement("span");
-      span.className = "sub-word";
-      span.textContent = t;
-      el.subtitleText.appendChild(span);
-      wordEls.push(span);
-    }
-  });
-  return wordEls;
+  return text
+    .split(/(\s+)/)
+    .filter((t) => t !== "")
+    .map((t) => ({ text: t, isWord: !/^\s+$/.test(t) }));
 }
 
-function runKaraoke(wordEls, durationSec, myToken, getElapsedSec) {
-  if (!wordEls.length || durationSec <= 0) return;
-  const weights = wordEls.map((w) => w.textContent.length + 1);
+function runKaraoke(text, durationSec, myToken, getElapsedSec) {
+  const segs = buildKaraokeSegments(text);
+  const wordSegIdxs = [];
+  segs.forEach((s, i) => { if (s.isWord) wordSegIdxs.push(i); });
+  if (!wordSegIdxs.length || durationSec <= 0) {
+    el.subtitleText.textContent = text;
+    return;
+  }
+  const weights = wordSegIdxs.map((i) => segs[i].text.length + 1);
   const totalWeight = weights.reduce((a, b) => a + b, 0);
   const thresholds = [];
   let acc = 0;
@@ -1782,19 +1767,54 @@ function runKaraoke(wordEls, durationSec, myToken, getElapsedSec) {
     acc += w;
     thresholds.push((acc / totalWeight) * durationSec);
   }
-  let activeIdx = -1;
+
+  let renderedChunk = -1;
+  let wordSpans = [];
+  let activeInChunkIdx = -1;
+
+  function renderChunk(chunkStartWord) {
+    const chunkEndWord = Math.min(chunkStartWord + KARAOKE_CHUNK_WORDS, wordSegIdxs.length);
+    const segStart = wordSegIdxs[chunkStartWord];
+    // ตัดเอาแค่ถึงก่อนคำแรกของก้อนถัดไป (พ่วง whitespace/เครื่องหมายวรรคตอนท้ายก้อนให้ด้วย) กันข้อความยาวเป็นประโยคเดิม
+    const segEnd = chunkEndWord < wordSegIdxs.length ? wordSegIdxs[chunkEndWord] : segs.length;
+    el.subtitleText.innerHTML = "";
+    wordSpans = [];
+    for (let i = segStart; i < segEnd; i++) {
+      const s = segs[i];
+      if (s.isWord) {
+        const span = document.createElement("span");
+        span.className = "sub-word";
+        span.textContent = s.text;
+        el.subtitleText.appendChild(span);
+        wordSpans.push(span);
+      } else {
+        el.subtitleText.appendChild(document.createTextNode(s.text));
+      }
+    }
+  }
+
   function tick() {
     if (myToken !== playToken) return;
     const elapsed = getElapsedSec();
-    let idx = thresholds.findIndex((t) => elapsed < t);
-    if (idx === -1) idx = wordEls.length - 1;
-    if (idx !== activeIdx) {
-      if (activeIdx >= 0 && wordEls[activeIdx]) wordEls[activeIdx].classList.remove("active");
-      if (wordEls[idx]) wordEls[idx].classList.add("active");
-      activeIdx = idx;
+    let wIdx = thresholds.findIndex((t) => elapsed < t);
+    if (wIdx === -1) wIdx = wordSegIdxs.length - 1;
+    const chunkNum = Math.floor(wIdx / KARAOKE_CHUNK_WORDS);
+    if (chunkNum !== renderedChunk) {
+      renderChunk(chunkNum * KARAOKE_CHUNK_WORDS);
+      renderedChunk = chunkNum;
+      activeInChunkIdx = -1;
+    }
+    const localIdx = wIdx - chunkNum * KARAOKE_CHUNK_WORDS;
+    if (localIdx !== activeInChunkIdx) {
+      if (activeInChunkIdx >= 0 && wordSpans[activeInChunkIdx]) wordSpans[activeInChunkIdx].classList.remove("active");
+      if (wordSpans[localIdx]) wordSpans[localIdx].classList.add("active");
+      activeInChunkIdx = localIdx;
     }
     if (elapsed < durationSec && myToken === playToken) requestAnimationFrame(tick);
   }
+
+  renderChunk(0);
+  renderedChunk = 0;
   requestAnimationFrame(tick);
 }
 
@@ -1855,10 +1875,9 @@ async function narrationLoop() {
     for (let ci = 0; ci < clips.length; ci++) {
       const clip = clips[ci];
       if (myToken !== playToken) return;
-      const wordEls = renderKaraokeText(clip.text);
       const clipStartMs = performance.now();
       const getElapsedSec = clip.url ? () => el.ttsPlayer.currentTime : () => (performance.now() - clipStartMs) / 1000;
-      runKaraoke(wordEls, clip.duration, myToken, getElapsedSec);
+      runKaraoke(clip.text, clip.duration, myToken, getElapsedSec);
       if (clip.url) await playAudioClip(clip.url, myToken);
       else await wait(clip.duration * 1000);
       if (myToken !== playToken) return;
