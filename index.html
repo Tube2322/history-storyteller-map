@@ -79,8 +79,18 @@
             <h2>นำเข้าสคริปต์ซีน</h2>
             <button id="btnCloseImport" class="icon-btn" title="ปิด">✕</button>
           </div>
-          <details class="import-details" id="builderDetails" open>
-          <summary>🧭 สร้างฉากง่ายๆ (จากจุด A ไป B) — ไม่ต้องพิมพ์ tag เอง (กด "แก้ไข" ที่การ์ดฉากด้านล่างเพื่อแก้ฉากที่สร้างไว้ก่อนหน้าได้)</summary>
+
+          <div class="import-tabs" role="tablist">
+            <button class="import-tab-btn" data-tab="builder" type="button">🧭 สร้างฉากง่ายๆ</button>
+            <button class="import-tab-btn is-active" data-tab="script" type="button">📝 เขียนสคริปต์</button>
+            <button class="import-tab-btn" data-tab="smart" type="button">🎬 Smart Import</button>
+            <button class="import-tab-btn" data-tab="project" type="button">💾 Excel / โปรเจกต์</button>
+            <button class="import-tab-btn" data-tab="debug" type="button">🔍 ตรวจสอบ</button>
+            <button class="import-tab-btn" data-tab="settings" type="button">⚙️ ตั้งค่า</button>
+          </div>
+
+          <div class="tab-panel" data-tab="builder" id="builderDetails" hidden>
+          <p class="import-hint">🧭 สร้างฉากง่ายๆ (จากจุด A ไป B) — ไม่ต้องพิมพ์ tag เอง (กด "แก้ไข" ที่การ์ดฉากในแท็บ "เขียนสคริปต์" เพื่อแก้ฉากที่สร้างไว้ก่อนหน้าได้)</p>
           <div class="builder-form">
             <div class="builder-field">
               <label>จาก (เว้นว่างได้ถ้าไม่ต้องการฉากเปิดที่จุดเริ่ม)</label>
@@ -190,8 +200,9 @@
               <button id="btnBuilderCancelEdit" class="ghost-btn" type="button" hidden>ยกเลิก</button>
             </div>
           </div>
-          </details>
+          </div>
 
+          <div class="tab-panel" data-tab="script">
           <details class="import-details">
           <summary>วิธีเขียนสคริปต์ + รายการ tag ทั้งหมด (แตะเพื่อดู)</summary>
           <p class="import-hint">
@@ -287,9 +298,10 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
             <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
           </div>
           <div class="import-preview" id="importPreview"></div>
+          </div>
 
-          <details class="import-details" id="smartImportDetails">
-          <summary>🎬 SMART IMPORT — จับคู่รูป/วิดีโอ/เสียงกับฉากอัตโนมัติ</summary>
+          <div class="tab-panel" data-tab="smart" id="smartImportDetails" hidden>
+          <p class="import-hint">🎬 SMART IMPORT — จับคู่รูป/วิดีโอ/เสียงกับฉากอัตโนมัติ</p>
           <p class="import-hint">กด "แปลงเป็นฉาก" ด้านบนก่อน 1 ครั้ง แล้วลากสื่อทั้งหมดมาวางที่นี่ทีเดียว — ไม่ต้อง rename ไฟล์ ไม่ต้องลากทีละฉาก ถ้าในสคริปต์มี <code>image=01</code> / <code>video=01</code> / <code>audio=01</code> ระบบจับคู่ตามเลขนั้นก่อนเป็นอันดับแรก (มั่นใจ 100%) ฉากที่ไม่ได้ระบุเลขจะได้ไฟล์ที่เหลือไปเรียงตามลำดับอัพโหลดแทน (มั่นใจ 75%) — ไม่ใส่ <code>image=</code>/<code>video=</code>/<code>audio=</code> เลยสักฉากก็ยังใช้ได้ปกติ (ทำงานเหมือนเดิม 100%)</p>
 
           <label class="check-row">
@@ -319,10 +331,10 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
               <button id="btnSmartApprove" class="primary-btn" type="button">✓ อนุมัติ &amp; สร้าง Timeline</button>
             </div>
           </div>
-          </details>
+          </div>
 
-          <details class="import-details">
-          <summary>Excel / บันทึกโปรเจกต์</summary>
+          <div class="tab-panel" data-tab="project" hidden>
+          <p class="import-hint">💾 Excel / บันทึกโปรเจกต์</p>
           <div class="import-actions">
             <button id="btnDownloadTemplate" class="ghost-btn" type="button">ดาวน์โหลดเทมเพลต Excel</button>
             <label class="ghost-btn file-btn">
@@ -338,19 +350,19 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
             </label>
           </div>
           <p class="import-hint" id="autosaveHint" hidden>กู้สคริปต์ล่าสุดที่เคยกรอกไว้อัตโนมัติ (เก็บในเบราว์เซอร์เครื่องนี้)</p>
-          </details>
+          </div>
 
-          <details class="import-details">
-          <summary>โหมดตรวจสอบ (Debug) — ไม่กระทบการแสดงผลปกติ</summary>
+          <div class="tab-panel" data-tab="debug" hidden>
+          <p class="import-hint">🔍 โหมดตรวจสอบ (Debug) — ไม่กระทบการแสดงผลปกติ</p>
           <label class="check-row">
             <input id="debugModeToggle" type="checkbox" />
             เปิดโหมดตรวจสอบ (แสดงรายการปัญหาที่เจอตอนแปลงสคริปต์ล่าสุด — ไม่แสดง error รบกวนผู้ใช้ปกติเลย)
           </label>
           <div class="import-preview" id="validationReport" hidden></div>
-          </details>
+          </div>
 
-          <details class="import-details">
-          <summary>ตั้งค่าเพิ่มเติม (เสียงพากย์ / เพลง / จังหวะ / สไตล์ / รูป / แบรนด์)</summary>
+          <div class="tab-panel" data-tab="settings" hidden>
+          <p class="import-hint">⚙️ ตั้งค่าเพิ่มเติม (เสียงพากย์ / เพลง / จังหวะ / สไตล์ / รูป / แบรนด์)</p>
           <div class="brand-settings">
             <h3>เสียงพากย์</h3>
             <div class="brand-row">
@@ -453,7 +465,7 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
               </select>
             </div>
           </div>
-          </details>
+          </div>
         </aside>
 
       </main>

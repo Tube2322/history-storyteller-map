@@ -732,6 +732,36 @@ body.is-render-mode .import-panel {
 .import-head { display: flex; align-items: center; justify-content: space-between; }
 .import-head h2 { margin: 0; font-family: var(--display); font-size: 16px; font-weight: 600; }
 
+/* แถบแท็บด้านบน — กดปุ่มไหนแสดงหน้านั้น แทนการพับ/กางซ้อนกันหลายส่วนที่หาไม่เจอ */
+.import-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--panel);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--panel-border);
+}
+.import-tab-btn {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  color: var(--ink-dim);
+  font-family: var(--thai);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.import-tab-btn:hover { color: var(--ink); border-color: var(--ink-dim); }
+.import-tab-btn.is-active { background: var(--accent, #f2b544); color: #1a1206; border-color: transparent; }
+.tab-panel { display: flex; flex-direction: column; gap: 12px; }
+.tab-panel[hidden] { display: none; }
+
 .icon-btn {
   width: 30px; height: 30px;
   border-radius: 8px;

@@ -2136,7 +2136,7 @@ el.importPreview.addEventListener("click", (e) => {
   const s = scenes[idx];
   if (!s) return;
   editingSceneIndex = idx;
-  el.builderDetails.open = true;
+  switchImportTab("builder");
   builderFromPick = null;
   el.builderFromInput.value = "";
   el.builderFromResults.innerHTML = "";
@@ -2827,6 +2827,15 @@ el.btnImport.addEventListener("click", () => {
   setImportPanelOpen(!el.importPanel.classList.contains("is-open"));
 });
 el.btnCloseImport.addEventListener("click", () => setImportPanelOpen(false));
+
+// แบ่งแผงนำเข้าสคริปต์เป็นแท็บ (กดปุ่มไหนแสดงหน้านั้น) แทนพับ/กางหลาย <details> ซ้อนกันแบบเดิมที่หาฟีเจอร์ยาก
+function switchImportTab(tabName) {
+  document.querySelectorAll(".import-tab-btn").forEach((btn) => btn.classList.toggle("is-active", btn.dataset.tab === tabName));
+  document.querySelectorAll(".tab-panel").forEach((panel) => { panel.hidden = panel.dataset.tab !== tabName; });
+}
+document.querySelectorAll(".import-tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => switchImportTab(btn.dataset.tab));
+});
 el.btnParse.addEventListener("click", parseImportText);
 el.btnClear.addEventListener("click", () => {
   el.importText.value = "";
