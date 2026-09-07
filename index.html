@@ -240,6 +240,13 @@
             <br><strong>beat</strong>: <code>hook / question / setup / reveal / escalation / conflict / twist / turningpoint / payoff</code> — จังหวะสำคัญของการเล่าเรื่อง (ไม่ใส่ = <code>auto</code>) — beat <code>reveal/twist/turningpoint/payoff</code> เสริมเวลาพักก่อนตัดฉากถัดไปให้อัตโนมัติ
             <br><strong>importance</strong>: <code>low / medium / high / critical</code> — คุมแค่ "จังหวะ" ไม่เพิ่ม effect/reveal/กล้องใหม่ให้เอง (ไม่ใส่ = เดาจากเนื้อหา ไม่มั่นใจ = <code>medium</code> เท่าเดิมทุกอย่าง) — <code>critical</code> กล้องขยับช้าลง+พักก่อนตัดฉากนานขึ้น (ให้เวลาคนดูอ่าน/ซึมซับ), <code>low</code> กล้องขยับไวขึ้น
             <br><strong>mood</strong>: <code>calm / curious / mysterious / tension / fear / tragic / epic / hope / shock</code> — คุมจังหวะกล้อง+โทนพากย์เสียง (rate/pitch) เท่านั้น (ไม่ใส่ = <code>auto</code> เดาจากเนื้อหา ไม่มั่นใจ = ใช้โทนของ <code>style</code> ถ้ามี ไม่งั้นใช้ค่าเสียงกลางปกติ) — ใส่เองจะทับโทนของ <code>style</code> เสมอ
+            <br><br><strong>Camera System (ทั้งหมด optional — cam เดิม 8 แบบยังทำงานเหมือนเดิมทุกตัวถ้าไม่ใส่คีย์พวกนี้):</strong>
+            <br><strong>shot</strong>: <code>establishing / wide / medium / close / detail / insert</code> — ระยะภาพ ปรับซูมจาก baseline เดิมของ <code>cam</code> นั้นๆ (ไม่ใส่ = ใช้ baseline เดิมเป๊ะ)
+            <br><strong>cameraaction</strong>: <code>static / gentle / cinematic / dynamic / urgent / tracking / reveal / drift</code> — ลักษณะการเคลื่อนกล้อง คูณเข้ากับความเร็วกล้อง (ไม่ใส่ = ไม่คูณ)
+            <br><strong>focuspoint</strong>: <code>focuspoint=lat,lng</code> — จุดที่กล้องเล็ง แยกจากพิกัดหลักของฉาก (<code>latlng</code> ยังเป็นพิกัดของหมุด/ไฮไลต์เหมือนเดิมทุกจุด ไม่กระทบ)
+            <br><strong>motion</strong>: <code>static / slow / normal / fast / accelerate / decelerate</code> — ความเร็วกล้อง คูณเข้ากับ cameraaction (accelerate/decelerate โดยนัยเซ็ต motioncurve ให้ด้วยถ้ายังไม่ได้ตั้งเอง)
+            <br><strong>motioncurve</strong>: <code>linear / ease-in / ease-out / ease-in-out</code> — รูปแบบเร่ง/ชะลอของกล้อง (ไม่ใส่ = ใช้เส้นโค้งเดิมของระบบ)
+            <br><strong>Geographic Camera Continuity</strong>: ถ้าฉากนี้ไม่ได้ตั้ง <code>tilt=</code>/<code>bearing=</code> เอง และพิกัดอยู่ใกล้ฉากก่อนหน้า (≲60กม.) กล้องจะสืบทอดมุมเอียง/ทิศจากฉากก่อนแทนการรีเซ็ตกลับ 0 ทุกครั้ง
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>

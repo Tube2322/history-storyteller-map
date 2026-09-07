@@ -1097,51 +1097,84 @@ function setFreeformDraw(scene) {
   }
 }
 
-function moveCamera(scene, durationSecOverride, frameOverride) {
-  const center = frameOverride ? frameOverride.center : [scene.lng, scene.lat];
+// ติดตามกล้องล่าสุดไว้ให้ Geographic Camera Continuity ใช้สืบทอด tilt/bearing ตอนฉากถัดไปอยู่พื้นที่ต่อเนื่องกัน
+// (ผู้ใช้ไม่ได้ตั้ง tilt=/bearing= เองในฉากนั้น) กันกล้อง reset มุมกลับ 0 ทุกครั้งโดยไม่จำเป็น
+let lastCamPitch = 0;
+let lastCamBearing = 0;
+const GEO_CONTINUITY_THRESHOLD_M = 60000; // ~60กม. ถือว่า "พื้นที่ต่อเนื่องกัน"
+
+function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
+  // focuspoint=lat,lng — กล้องเล็งจุดนี้แทนพิกัดหลักของฉาก (scene.lat/lng ยังใช้กับหมุด/ไฮไลต์/มาร์กเกอร์อื่นเหมือนเดิมทุกจุด ไม่กระทบ)
+  const center = frameOverride ? frameOverride.center : scene.focusPoint ? [scene.focusPoint.lng, scene.focusPoint.lat] : [scene.lng, scene.lat];
   const durationSec = durationSecOverride || scene.duration;
-  const pitch = scene.tilt || 0; // tilt=องศา ในสคริปต์ (0-60) ให้มุมกล้อง 3D
-  const bearing = scene.bearing || 0; // bearing=องศา ในสคริปต์ ตั้งทิศเริ่มต้นของช็อต (ไม่หมุนต่อเนื่อง ยกเว้น orbit)
-  // importance/mood คุมแค่ "ความเร็ว" ของการขยับกล้องที่มีอยู่แล้ว (ไม่เพิ่มการขยับใหม่) — ไม่ตั้ง importance/mood = 1 = พฤติกรรมเดิมเป๊ะ
-  const paceMul = scene.camPaceMul || 1;
+
+  // Geographic Camera Continuity: ฉากนี้ไม่ได้ตั้ง tilt=/bearing= เอง และอยู่ใกล้ฉากก่อนหน้าพอ (>threshold ถือว่าคนละพื้นที่ ไม่สืบทอด)
+  // → สืบทอดมุมกล้องล่าสุดแทนการ reset กลับ 0 เสมอ; ตั้งเองหรือไม่มีฉากก่อนหน้า/อยู่ไกลกัน = พฤติกรรมเดิมเป๊ะ (tilt||0 / bearing||0)
+  const isGeoContinuous = !!(prevScene && haversine([prevScene.lng, prevScene.lat], [scene.lng, scene.lat]) < GEO_CONTINUITY_THRESHOLD_M);
+  const pitch = scene.tiltExplicit ? scene.tilt : isGeoContinuous ? lastCamPitch : scene.tilt || 0; // tilt=องศา ในสคริปต์ (0-60) ให้มุมกล้อง 3D
+  const bearing = scene.bearingExplicit ? scene.bearing : isGeoContinuous ? lastCamBearing : scene.bearing || 0; // bearing=องศา ตั้งทิศเริ่มต้นของช็อต (ไม่หมุนต่อเนื่อง ยกเว้น orbit)
+
+  // importance/mood (Story System) × cameraaction/motion (Camera System) คุมแค่ "ความเร็ว" ของการขยับกล้องที่มีอยู่แล้ว
+  // (ไม่เพิ่มการขยับใหม่) — ไม่ตั้งอะไรเลยทั้ง 4 คีย์ = คูณกันได้ 1 = พฤติกรรมเดิมเป๊ะ
+  const paceMul = (scene.camPaceMul || 1) * (scene.camActionMotionMul || 1);
+  // motioncurve/motion=accelerate/decelerate ที่ผู้ใช้ระบุเอง แทน easing เริ่มต้น; ไม่ระบุ = EASE_CINEMATIC เดิมของระบบ ไม่เปลี่ยนอะไร
+  const easingFn = scene.motioncurveFn || EASE_CINEMATIC;
+  // shot=... ที่ผู้ใช้ระบุเอง ปรับซูมจาก baseline เดิมของ cam นั้น; ไม่ระบุ (null) = ใช้ baseline เดิมเป๊ะทุกจุด
+  const shotZoom = scene.shotZoomOverride;
 
   if (scene.cam === "cut-to-insert" || scene.cam === "insert-overlay") {
     stopOrbit();
-    map.easeTo({ center, duration: 450 * paceMul, bearing: map.getBearing(), easing: EASE_CINEMATIC });
+    const zoomParam = shotZoom != null ? { zoom: shotZoom } : {};
+    map.easeTo({ center, duration: 450 * paceMul, bearing: map.getBearing(), easing: easingFn, ...zoomParam });
+    lastCamPitch = pitch;
+    lastCamBearing = bearing;
     return;
   }
   if (scene.cam === "orbit") {
     const setupMs = 650 * paceMul;
-    map.easeTo({ center, zoom: 8, duration: setupMs, pitch: pitch || 45, bearing, easing: EASE_CINEMATIC });
+    const orbitPitch = pitch || 45;
+    map.easeTo({ center, zoom: shotZoom != null ? shotZoom : 8, duration: setupMs, pitch: orbitPitch, bearing, easing: easingFn });
     setTimeout(() => startOrbit(durationSec, bearing), setupMs);
+    lastCamPitch = orbitPitch;
+    lastCamBearing = bearing;
     return;
   }
   stopOrbit();
   // ถ้าฉากนี้ไฮไลต์เขตแดนแบบ auto-frame ให้ showBoundary() เป็นเจ้าของการขยับกล้องเพียงจุดเดียว
   // (กันสองอนิเมชันชนกันกลางอากาศตอนขอบเขตโหลดมาช้ากว่ากล้อง ทำให้ดูกระตุก)
-  if (scene.highlight !== "none" && AUTO_FRAME_CAMS.has(scene.cam)) return;
+  if (scene.highlight !== "none" && AUTO_FRAME_CAMS.has(scene.cam)) {
+    // showBoundary() ใช้ scene.tilt||0 / scene.bearing||0 ของตัวเอง — sync ค่าไว้ให้ฉากถัดไปสืบทอดถูกต้อง
+    lastCamPitch = scene.tilt || 0;
+    lastCamBearing = scene.bearing || 0;
+    return;
+  }
   // ระยะเวลากล้องขยับสั้นลงกว่าเดิม (จาก 1000-1200ms เหลือ 650-850ms) ให้ฟีลตัดต่อไวขึ้นแบบคลิปสั้น/เจนซี
   // กล้องเข้าที่เร็วขึ้น เหลือเวลาให้เนื้อหา/ซับไตเติลมากขึ้นในแต่ละฉาก
+  let appliedPitch = pitch;
   if (scene.cam === "battle-map") {
     // มุมมองแบบเกม RTS: เอียงเล็กน้อยพอเห็นมิติ ไม่หมุน (เว้นแต่ผู้ใช้ตั้ง bearing เอง)
-    const zoom = frameOverride ? frameOverride.zoom : 6;
-    map.easeTo({ center, zoom, duration: 800 * paceMul, bearing, pitch: pitch || 35, easing: EASE_CINEMATIC });
+    const zoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : 6;
+    appliedPitch = pitch || 35;
+    map.easeTo({ center, zoom, duration: 800 * paceMul, bearing, pitch: appliedPitch, easing: easingFn });
   } else if (scene.cam === "fly-to") {
-    const zoom = frameOverride ? frameOverride.zoom : 6.2;
+    const zoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : 6.2;
     if (scene.follow) {
       // follow=on: กล้องแค่ขยับไปตั้งต้นที่จุดเริ่มเร็วๆ แล้วปล่อยให้ startPathIcon() เป็นคนลากกล้องตามไอคอนเองทุกเฟรม
-      map.easeTo({ center, zoom, duration: 550 * paceMul, bearing, pitch: pitch || 30, easing: EASE_CINEMATIC });
+      appliedPitch = pitch || 30;
+      map.easeTo({ center, zoom, duration: 550 * paceMul, bearing, pitch: appliedPitch, easing: easingFn });
     } else {
       // ไม่คูณ paceMul: ระยะเวลานี้ผูกกับความยาวฉากจริง (จากเสียงพากย์) อยู่แล้ว ไม่ใช่ค่าคงที่แบบอื่นๆ
-      map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch, easing: EASE_CINEMATIC });
+      map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch, easing: easingFn });
     }
   } else if (scene.cam === "push-in") {
-    map.easeTo({ center, zoom: 10, duration: 850 * paceMul, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: shotZoom != null ? shotZoom : 10, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
   } else if (scene.cam === "zoom-out") {
-    map.easeTo({ center, zoom: 4.2, duration: 850 * paceMul, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: shotZoom != null ? shotZoom : 4.2, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
   } else {
-    map.easeTo({ center, zoom: 4.3, duration: 850 * paceMul, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: shotZoom != null ? shotZoom : 4.3, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
   }
+  lastCamPitch = appliedPitch;
+  lastCamBearing = bearing;
 }
 
 // ---------- แปลงข้อมูลดิบ → ฉาก ----------
@@ -1318,6 +1351,40 @@ function inferMood(script) {
   return null;
 }
 
+// ---------- Camera System: shot / cameraaction / focuspoint / motion / motioncurve ----------
+// cam เดิม 8 แบบยังทำงานเหมือนเดิมทุกตัว — คีย์ใหม่ทั้งหมด optional, ไม่ใส่ = ใช้ label ดีฟอลต์ตาม cam (เพื่อโชว์ในพรีวิว)
+// แต่ "ไม่มีผลต่อค่าตัวเลขจริง" (ซูม/ความเร็ว/เส้นโค้ง) จนกว่าผู้ใช้จะระบุเองชัดเจน — กันไม่ให้พฤติกรรมเดิมเปลี่ยนแม้แต่นิดเดียว
+const SHOT_VALUES = ["establishing", "wide", "medium", "close", "detail", "insert"];
+const CAMERAACTION_VALUES = ["static", "gentle", "cinematic", "dynamic", "urgent", "tracking", "reveal", "drift"];
+const MOTION_VALUES = ["static", "slow", "normal", "fast", "accelerate", "decelerate"];
+const MOTIONCURVE_VALUES = ["linear", "ease-in", "ease-out", "ease-in-out"];
+
+// ค่า default ต่อ cam เดิม (เอาไว้ label/แสดงพรีวิวเท่านั้น — ไม่ได้ป้อนกลับเข้าเลขจริงถ้าผู้ใช้ไม่ได้พิมพ์เอง)
+const DEFAULT_SHOT_FOR_CAM = { establishing: "wide", "fly-to": "wide", "push-in": "close", "zoom-out": "wide", orbit: "medium", "cut-to-insert": "insert", "insert-overlay": "detail", "battle-map": "medium" };
+const DEFAULT_CAMERAACTION_FOR_CAM = { establishing: "gentle", "fly-to": "tracking", "push-in": "cinematic", "zoom-out": "reveal", orbit: "cinematic", "cut-to-insert": "static", "insert-overlay": "static", "battle-map": "dynamic" };
+const DEFAULT_MOTION_FOR_CAM = { establishing: "slow", "fly-to": "normal", "push-in": "slow", "zoom-out": "normal", orbit: "slow", "cut-to-insert": "static", "insert-overlay": "static", "battle-map": "normal" };
+const DEFAULT_MOTIONCURVE_FOR_CAM = { establishing: "ease-in-out", "fly-to": "ease-in-out", "push-in": "ease-in-out", "zoom-out": "ease-out", orbit: "linear", "cut-to-insert": "linear", "insert-overlay": "linear", "battle-map": "ease-in-out" };
+
+// ผลจริงต่อการเรนเดอร์ — ใช้เฉพาะตอนผู้ใช้พิมพ์คีย์เองเท่านั้น (ดูจุดใช้งานใน finalizeScene: shotValid/cameraactionValid/motionValid/motioncurveValid)
+const SHOT_ZOOM = { establishing: 4.3, wide: 4.3, medium: 6.2, close: 10, detail: 13, insert: null };
+const CAMERAACTION_MUL = { static: 1.4, gentle: 1.15, cinematic: 1.05, dynamic: 0.85, urgent: 0.65, tracking: 1, reveal: 1.1, drift: 1.2 };
+const MOTION_MUL = { static: 1.6, slow: 1.25, normal: 1, fast: 0.75, accelerate: 0.85, decelerate: 0.85 };
+const MOTION_IMPLIED_CURVE = { accelerate: "ease-in", decelerate: "ease-out" };
+const MOTIONCURVE_EASE_FN = {
+  linear: (t) => t,
+  "ease-in": (t) => t * t * t,
+  "ease-out": (t) => 1 - Math.pow(1 - t, 3),
+  "ease-in-out": EASE_CINEMATIC,
+};
+
+// focuspoint=lat,lng — จุดที่กล้องควรสนใจ แยกจากพิกัดหลักของฉาก (scene.lat/lng ยังคงเป็นพิกัดของ place/หมุด/ไฮไลต์เหมือนเดิมทุกจุด)
+function parseFocusPoint(str) {
+  if (!str) return null;
+  const parts = str.split(",").map((n) => Number(n.trim()));
+  if (parts.length !== 2 || parts.some(Number.isNaN)) return null;
+  return { lat: parts[0], lng: parts[1] };
+}
+
 function finalizeScene(raw) {
   const {
     place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
@@ -1327,6 +1394,7 @@ function finalizeScene(raw) {
     caption, captionpos, geophoto, draw, drawcolor, persist,
     focus, highlightcolor, badge, callout, route, follow, speed, style,
     narrative: narrativeRaw, beat: beatRaw, importance: importanceRaw, mood: moodRaw,
+    shot: shotRaw, cameraaction: cameraactionRaw, focuspoint, motion: motionRaw, motioncurve: motioncurveRaw,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1373,6 +1441,28 @@ function finalizeScene(raw) {
   // โทนพากย์: mood ที่ผู้ใช้ตั้งเอง ทับทุกอย่างรวมถึง style preset; ไม่ตั้ง mood แต่ตั้ง style ใช้โทนของ style เดิม (ไม่เปลี่ยนพฤติกรรมเดิม);
   // ไม่ตั้งทั้งคู่แต่ auto เดาโทนได้จากเนื้อหา ใช้เป็นโทนแนะนำเบาๆ; ไม่มีอะไรเลย = null เหมือนเดิมทุกประการ
   const resolvedMoodTts = moodValid ? MOOD_TTS[moodKey] : preset ? preset.mood : moodGuess ? MOOD_TTS[moodGuess] : null;
+
+  // ---------- resolve shot/cameraaction/motion/motioncurve: label ดีฟอลต์ตาม cam เดิม แต่ผลจริงใช้เฉพาะตอนผู้ใช้ระบุเอง ----------
+  const shotValid = SHOT_VALUES.includes(shotRaw) ? shotRaw : null;
+  const cameraactionValid = CAMERAACTION_VALUES.includes(cameraactionRaw) ? cameraactionRaw : null;
+  const motionValid = MOTION_VALUES.includes(motionRaw) ? motionRaw : null;
+  const motioncurveValid = MOTIONCURVE_VALUES.includes(motioncurveRaw) ? motioncurveRaw : null;
+
+  const shotKey = shotValid || DEFAULT_SHOT_FOR_CAM[camKey] || "wide";
+  const cameraactionKey = cameraactionValid || DEFAULT_CAMERAACTION_FOR_CAM[camKey] || "gentle";
+  const motionKey = motionValid || DEFAULT_MOTION_FOR_CAM[camKey] || "normal";
+  const resolvedMotioncurveName = motioncurveValid || (motionValid && MOTION_IMPLIED_CURVE[motionValid]) || DEFAULT_MOTIONCURVE_FOR_CAM[camKey] || "ease-in-out";
+
+  const shotZoomOverride = shotValid ? SHOT_ZOOM[shotValid] : null; // null = ไม่ยุ่งกับซูมเดิมของ cam นั้นเลย
+  const cameraactionMul = cameraactionValid ? CAMERAACTION_MUL[cameraactionValid] : 1;
+  const motionMul = motionValid ? MOTION_MUL[motionValid] : 1;
+  const camActionMotionMul = cameraactionMul * motionMul; // ไม่ระบุทั้งคู่ = 1 = พฤติกรรมเดิมเป๊ะ (คูณรวมกับ camPaceMul ของ Story System อีกที)
+  // ไม่ระบุ motioncurve และไม่ระบุ motion (หรือ motion ที่ไม่มี curve โดยนัย) = null = ใช้ EASE_CINEMATIC เดิมของระบบ ไม่เปลี่ยนอะไร
+  const motioncurveFn = (motioncurveValid || (motionValid && MOTION_IMPLIED_CURVE[motionValid])) ? MOTIONCURVE_EASE_FN[resolvedMotioncurveName] : null;
+
+  const focusPointVal = parseFocusPoint(focuspoint);
+  const tiltExplicit = tilt !== undefined && String(tilt).trim() !== "";
+  const bearingExplicit = bearing !== undefined && String(bearing).trim() !== "";
 
   return {
     place,
@@ -1424,6 +1514,20 @@ function finalizeScene(raw) {
     moodSource: moodValid ? "user" : "auto",
     camPaceMul,
     holdBonusMs,
+    shot: shotKey,
+    shotSource: shotValid ? "user" : "auto",
+    cameraaction: cameraactionKey,
+    cameraactionSource: cameraactionValid ? "user" : "auto",
+    motion: motionKey,
+    motionSource: motionValid ? "user" : "auto",
+    motioncurve: resolvedMotioncurveName,
+    motioncurveSource: (motioncurveValid || motionValid) ? "user" : "auto",
+    focusPoint: focusPointVal,
+    shotZoomOverride,
+    camActionMotionMul,
+    motioncurveFn,
+    tiltExplicit,
+    bearingExplicit,
   };
 }
 
@@ -1465,6 +1569,11 @@ const TAG_KEY_ALIASES = {
   beat: "beat", จังหวะ: "beat",
   importance: "importance", ความสำคัญ: "importance",
   mood: "mood", อารมณ์: "mood",
+  shot: "shot", ระยะภาพ: "shot",
+  cameraaction: "cameraaction", ลักษณะเคลื่อนกล้อง: "cameraaction",
+  focuspoint: "focuspoint", จุดโฟกัส: "focuspoint",
+  motion: "motion", ความเร็วกล้อง: "motion",
+  motioncurve: "motioncurve", จังหวะเร่งชะลอ: "motioncurve",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1533,6 +1642,11 @@ function sceneStyleTags(s) {
   if (s.beat && s.beat !== "auto") tags.push(`beat:${s.beat}${s.beatSource === "auto" ? " (auto)" : ""}`);
   if (s.importance && s.importance !== "medium") tags.push(`importance:${s.importance}${s.importanceSource === "auto" ? " (auto)" : ""}`);
   if (s.mood && s.mood !== "auto") tags.push(`mood:${s.mood}${s.moodSource === "auto" ? " (auto)" : ""}`);
+  if (s.shotSource === "user") tags.push(`shot:${s.shot}`);
+  if (s.cameraactionSource === "user") tags.push(`cameraaction:${s.cameraaction}`);
+  if (s.motionSource === "user") tags.push(`motion:${s.motion}`);
+  if (s.motioncurveSource === "user") tags.push(`motioncurve:${s.motioncurve}`);
+  if (s.focusPoint) tags.push("focuspoint");
   if (s.highlight !== "none") tags.push(`ไฮไลต์เขต:${s.highlight}`);
   if (s.focus) tags.push("โฟกัสขาวดำ");
   if (s.highlightColor) tags.push(`สีไฮไลต์ ${s.highlightColor}`);
@@ -1784,7 +1898,7 @@ function goToScene(index, durationOverride) {
   el.timeline.classList.toggle("hs-hidden", isCapturing && hideSet.has("timeline"));
   el.brandChip.classList.toggle("hs-hidden", hideSet.has("brand"));
 
-  moveCamera(scene, durationOverride, battleFrame || flyFrame);
+  moveCamera(scene, durationOverride, battleFrame || flyFrame, prevScene);
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
     btn.classList.toggle("is-active", i === activeIndex);

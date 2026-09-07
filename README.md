@@ -129,6 +129,16 @@
 - **Auto Narrative Analysis**: จับคีย์เวิร์ดในสคริปต์ (ไทย+อังกฤษ) แปลงเป็น narrative/beat/importance โดยอัตโนมัติเมื่อผู้ใช้ไม่ได้ระบุเอง เช่น `"กองทัพเยอรมันบุกโปแลนด์"` → `narrative=conflict, beat=conflict, importance=high` (ทดสอบแล้วตรงตามตัวอย่างที่กำหนด) — เดาไม่ออกจากคำในสคริปต์ ลองเดาจาก `cam=battle-map`/`effect=battle,fire,lightning` ต่อ เดาไม่ออกเลยตกไปที่ดีฟอลต์ปลอดภัย ผู้ใช้ระบุเองทับค่าเดาเสมอไม่ว่าฟิลด์ไหน
 - ลำดับความสำคัญของโทนพากย์ (rate/pitch): `mood=` ที่ผู้ใช้ตั้งเอง > โทนจาก `style=` preset (เดิม) > โทนที่ auto เดาจากเนื้อหา > ไม่มีอะไรเลย (ใช้ค่าเสียงกลางปกติ) — ทั้งหมดยังไหลผ่านฟิลด์ `styleMood` เดิม ไม่ได้เปลี่ยนจุดเชื่อมกับระบบพากย์เสียงเลย
 
+**พาท 19 — Camera System: shot / cameraaction / focuspoint / motion / motioncurve + Geographic Camera Continuity (เพิ่มความสามารถล้วนๆ ไม่กระทบของเดิม)**
+- `cam` เดิมทั้ง 8 แบบ (`establishing/fly-to/push-in/zoom-out/orbit/cut-to-insert/insert-overlay/battle-map`) ยังทำงานเหมือนเดิมทุกตัว — ตรวจแล้ว: สคริปต์ที่ไม่มีคีย์ใหม่พวกนี้เลยได้ `shotZoomOverride=null, camActionMotionMul=1` = ไม่กระทบเลขจริงใดๆ เลย (คีย์ใหม่ resolve เป็น label ดีฟอลต์ตาม cam ไว้แค่โชว์พรีวิว)
+- **`shot`**: `establishing/wide/medium/close/detail/insert` — ระยะภาพ ปรับซูมจาก baseline เดิมของ `cam` นั้นๆ **เฉพาะตอนผู้ใช้ระบุเอง** เท่านั้น
+- **`cameraaction`**: `static/gentle/cinematic/dynamic/urgent/tracking/reveal/drift` — ลักษณะการเคลื่อนกล้อง คูณเข้ากับความเร็วกล้อง (0.65×-1.4×)
+- **`motion`**: `static/slow/normal/fast/accelerate/decelerate` — ความเร็วกล้อง คูณรวมกับ `cameraaction`; `accelerate/decelerate` เซ็ต `motioncurve` โดยนัยให้ (ease-in/ease-out) ถ้ายังไม่ได้ตั้งเอง
+- **`motioncurve`**: `linear/ease-in/ease-out/ease-in-out` — รูปแบบเร่ง/ชะลอ แทน easing เริ่มต้นของระบบ (`EASE_CINEMATIC`) เฉพาะตอนตั้งเอง
+- **`focuspoint`**: `focuspoint=lat,lng` — แยกจุดที่กล้องเล็งออกจากพิกัดหลักของฉากได้ (`latlng` ยังเป็นพิกัดของหมุด/ไฮไลต์/มาร์กเกอร์อื่นทุกจุดเหมือนเดิม ไม่กระทบ)
+- **Geographic Camera Continuity**: ถ้าฉากไม่ได้ตั้ง `tilt=`/`bearing=` เอง และพิกัดอยู่ใกล้ฉากก่อนหน้า (< 60กม.) กล้องจะสืบทอดมุมเอียง/ทิศจากฉากก่อนแทนการรีเซ็ตกลับ 0 — ทดสอบแล้ว: ฉากใกล้กันสืบทอด pitch/bearing ถูกต้อง, ฉากไกลกัน (คนละทวีป) รีเซ็ตกลับ 0 ตามพฤติกรรมเดิม; ตั้ง `tilt=`/`bearing=` เองเมื่อไหร่ก็ทับค่าสืบทอดเสมอ (ครอบคลุมเฉพาะ path หลักใน `moveCamera()`, ไม่รวม path ไฮไลต์เขตแดนที่ `showBoundary()` คุมกล้องเอง)
+- ทดสอบเต็มรูปแบบ (6 ฉากผสม establishing/push-in/fly-to/orbit/battle-map + highlight/route/badge/style ทุกแบบ) เล่นจบไม่มี error console เลย
+
 ## เปิดใช้งาน
 
 ต้องรัน `server.py` (ไม่ใช่ `python -m http.server` เฉยๆ) เพราะต้องมี endpoint `/api/tts` สำหรับเสียงพากย์:
