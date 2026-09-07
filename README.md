@@ -173,6 +173,16 @@
 - **Auto Scene Planning**: ฉากที่มีแค่ place/cam/script (ไม่ตั้งคีย์ metadata อะไรเลย) engine วิเคราะห์ narrative/beat/mapmode/pace/mood/importance/shot/cameraaction/transition/continuity ให้เองทั้งหมดจากระบบ auto-analysis ที่มีอยู่แล้ว (พาท 18-23 รวมกัน) — ค่าที่ auto วิเคราะห์เป็นแค่ default เสมอ ผู้ใช้ตั้งค่าไหนเองก็ทับค่านั้นทันที
 - ทดสอบเต็มรูปแบบ (climax→resolution ต่อกัน + anti-overediting + effect ที่ตั้งเอง) เล่นจบไม่มี error console เลย
 
+**พาท 24 — Global Compatibility Rules: Internal Validation + Debug Mode (ตรวจสอบย้อนหลังทุกระบบ พาท 18-23)**
+- คำสั่งรอบนี้เป็นกฎกำกับระบบทั้งหมดที่สร้างมา ไม่ใช่ฟีเจอร์แสดงผลใหม่ — งานหลักคือตรวจสอบว่าทุกพาทที่ผ่านมายึดกฎเหล่านี้จริง แล้วเพิ่มเครื่องมือตรวจสอบที่ยังไม่มี (Validation Report)
+- **Priority order** (Explicit User > Legacy > Intelligent Auto > Default) เป็นสถาปัตยกรรมที่ใช้สม่ำเสมอมาตั้งแต่พาท 18 แล้ว (`xxxValid || guess.xxx || default` ทุกจุด) — ตรวจย้อนหลังผ่านแล้วทุกคีย์ใหม่ทั้ง 30+ ตัว
+- **ห้ามลบ/เปลี่ยนชื่อ/เปลี่ยน syntax คีย์เดิม**: คีย์เดิมทั้งหมดตั้งแต่ก่อนพาท 18 (place/latlng/cam/script/sec/icon/effect/insert/tilt/bearing/highlight/arrows/transport/shade/hide/landfill/reveal/trace/warmorph/mainland/labelfont/labelsize/labelweight/caption/captionpos/geophoto/draw/drawcolor/persist/focus/highlightcolor/badge/callout/route/follow/speed/style) ไม่ถูกแตะเลยตลอด 6 พาทที่ผ่านมา ตรวจโค้ดยืนยันอีกครั้งรอบนี้
+- **Fail Gracefully**: คีย์ผิด/ไม่รู้จักถูกข้ามเงียบๆมาตั้งแต่ `parseTagRow` ดั้งเดิม (`if (!key) continue;`) — enum ผิดทุกคีย์ใหม่ตกไปดีฟอลต์ปลอดภัยเสมอ (ไม่มีคีย์ไหน throw หรือทำให้ฉากอื่น render พังไปด้วย) ตรวจแล้ว: ฉากที่มี `unknownkey=xyz` render ฉากได้ปกติทุกจุด
+- **Internal Validation + Validation Report ใหม่**: เพิ่ม `validateScript()`/`validateTagLine()` ตรวจ: จำนวนบรรทัด, place/cam/script ขาด, cam ไม่รู้จัก, latlng ผิดรูปแบบ, `;;` ว่างเปล่าใน script, คีย์ไม่รู้จัก (info level), column-mode น้อยกว่า 4 คอลัมน์ — ทำงานทุกครั้งที่กด "แปลงเป็นฉาก" แต่**ไม่แสดงอะไรเลยใน Production Mode** (ดีฟอลต์) ต้องเปิด "โหมดตรวจสอบ (Debug)" เองถึงจะเห็นรายงาน — ทดสอบแล้ว: สคริปต์ 5 บรรทัดมีปัญหา 3 แบบ (ขาด place/latlng ผิด/`;;` ว่าง) จับได้ครบ 4 รายการ, debug ปิด `reportVisible=false` แต่ scene ที่ parse ผ่านยัง render 4 ฉากตามปกติ (fail-graceful ไม่กระทบ)
+- **Column mode / Tag mode เดิม**: ทดสอบซ้ำอีกรอบ — column mode (`\t` คั่น ไม่มี `key=value` เลย) ยัง parse ได้ปกติ 100%, tag mode สคริปต์สมบูรณ์ไม่มีปัญหาแสดง "ไม่พบปัญหาในสคริปต์ล่าสุด" ถูกต้อง
+- **ห้ามสร้างข้อมูล/ยานพาหนะผิดยุค**: ไม่มีจุดไหนในทุกระบบ auto-fetch/auto-fabricate สถานที่ พิกัด หรือเหตุการณ์ที่ไม่มีข้อมูลรองรับ (ค้นภาพอัตโนมัติดึงจาก Wikimedia Commons จริงเท่านั้น, evidence= ห้ามสร้าง URL เอง) — `transport` ดีฟอลต์ "none" เสมอมาตั้งแต่ก่อนพาท 18 แล้ว (ไม่ดีฟอลต์เป็นเครื่องบินกันโชว์พาหนะผิดยุคในฉากประวัติศาสตร์ก่อนมีเครื่องบิน)
+- **Accuracy > Continuity > Comprehension > Aesthetics > Effects**: สะท้อนในดีไซน์อยู่แล้ว — fly-to ที่มี route bounds จริงชนะ shot ที่สืบทอดมา (Comprehension ก่อน Aesthetics), Anti-Overediting ลดเฉพาะ effect ตกแต่งจาก style preset ไม่แตะเนื้อหาที่ผู้ใช้ตั้งเอง (Effects ท้ายสุดจริงๆ), continuity เป็นค่าดีฟอลต์อัตโนมัติมาตั้งแต่พาท 19 ไม่ต้องตั้งเอง
+
 ## เปิดใช้งาน
 
 ต้องรัน `server.py` (ไม่ใช่ `python -m http.server` เฉยๆ) เพราะต้องมี endpoint `/api/tts` สำหรับเสียงพากย์:

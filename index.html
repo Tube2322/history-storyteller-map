@@ -267,6 +267,7 @@
             <br><strong>intensity</strong>: <code>low / medium / high</code> — ความเข้มข้นของกล้อง ดีฟอลต์ medium (climax เดาเป็น high อัตโนมัติ)
             <br><strong>composition</strong>: <code>auto / left / right / center / top / bottom</code> — ตำแหน่งกล่อง insert (left/right ทับ heuristic ป้องกันการบังอัตโนมัติได้)
             <br><strong>Anti-Overediting</strong>: ฉากที่มี insert+caption+arrows+highlight+effect พร้อมกันตั้งแต่ 4 อย่างขึ้นไป จะลด effect ที่มาจาก style preset (ไม่ใช่ที่พิมพ์เอง) ให้อัตโนมัติ กันฉากรกเกินไป
+            <br><br><strong>โหมดตรวจสอบ (Debug)</strong>: เปิดได้จากช่อง "โหมดตรวจสอบ" ด้านล่าง — แสดงรายการปัญหาที่เจอตอนแปลงสคริปต์ล่าสุด (คีย์ไม่รู้จัก/พิกัดผิด/ขาด place-cam-script ฯลฯ) โดยไม่กระทบการแสดงผลปกติเลย คีย์ผิด/ไม่รู้จักถูกข้ามเงียบๆเสมอไม่ว่าจะเปิดโหมดนี้หรือไม่
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>
           </details>
@@ -300,6 +301,15 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
             </label>
           </div>
           <p class="import-hint" id="autosaveHint" hidden>กู้สคริปต์ล่าสุดที่เคยกรอกไว้อัตโนมัติ (เก็บในเบราว์เซอร์เครื่องนี้)</p>
+          </details>
+
+          <details class="import-details">
+          <summary>โหมดตรวจสอบ (Debug) — ไม่กระทบการแสดงผลปกติ</summary>
+          <label class="check-row">
+            <input id="debugModeToggle" type="checkbox" />
+            เปิดโหมดตรวจสอบ (แสดงรายการปัญหาที่เจอตอนแปลงสคริปต์ล่าสุด — ไม่แสดง error รบกวนผู้ใช้ปกติเลย)
+          </label>
+          <div class="import-preview" id="validationReport" hidden></div>
           </details>
 
           <details class="import-details">

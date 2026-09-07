@@ -145,6 +145,8 @@ const el = {
   btnSaveProject: document.getElementById("btnSaveProject"),
   fileLoadProject: document.getElementById("fileLoadProject"),
   autosaveHint: document.getElementById("autosaveHint"),
+  debugModeToggle: document.getElementById("debugModeToggle"),
+  validationReport: document.getElementById("validationReport"),
   fileUploadImage: document.getElementById("fileUploadImage"),
   uploadList: document.getElementById("uploadList"),
   bgmPlayer: document.getElementById("bgmPlayer"),
@@ -1859,6 +1861,71 @@ function parseRow(line) {
   return parseColumnRow(parts.map((p) => (p || "").trim()));
 }
 
+// ---------- Internal Validation + Debug Mode ----------
+// Production Mode (ดีฟอลต์): พฤติกรรมเดิมเป๊ะ — คีย์ผิด/ไม่รู้จักถูกข้ามเงียบๆ เสมอ ไม่มี error โผล่รบกวนผู้ใช้ที่ไหนเลย
+// Debug Mode (ผู้ใช้เปิดเอง): แค่โชว์ "รายงาน" แยกต่างหาก ไม่แตะ logic การ render ของฉากใดๆทั้งสิ้น
+let debugMode = false;
+let lastValidationReport = [];
+
+function validateTagLine(line, lineIndex) {
+  const segments = line.split("|").map((s) => s.trim()).filter(Boolean);
+  const raw = {};
+  const issues = [];
+  let matched = 0;
+  for (const seg of segments) {
+    const m = seg.match(/^([a-zA-Zก-๙]+)\s*=\s*([\s\S]*)$/);
+    if (!m) continue;
+    const key = TAG_KEY_ALIASES[m[1].toLowerCase()] || TAG_KEY_ALIASES[m[1]];
+    if (!key) {
+      issues.push({ line: lineIndex + 1, level: "info", msg: `ไม่รู้จักคีย์ "${m[1]}" — ข้ามอัตโนมัติ ฉากยัง render ต่อได้ปกติ` });
+      continue;
+    }
+    raw[key] = m[2].trim();
+    matched++;
+  }
+  if (matched === 0) return null; // ไม่ใช่ tag-mode ปล่อยให้ column-mode ตรวจต่อ
+  if (!raw.place) issues.push({ line: lineIndex + 1, level: "error", msg: "ขาด place= — บรรทัดนี้จะไม่ถูกแปลงเป็นฉาก" });
+  if (!raw.cam) issues.push({ line: lineIndex + 1, level: "error", msg: "ขาด cam= — บรรทัดนี้จะไม่ถูกแปลงเป็นฉาก" });
+  else if (!CAM_LABELS[raw.cam]) issues.push({ line: lineIndex + 1, level: "warn", msg: `cam="${raw.cam}" ไม่รู้จัก — ใช้ establishing แทนอัตโนมัติ` });
+  if (!raw.script) issues.push({ line: lineIndex + 1, level: "error", msg: "ขาด script= — บรรทัดนี้จะไม่ถูกแปลงเป็นฉาก" });
+  else if (raw.script.split(";;").some((s) => !s.trim())) issues.push({ line: lineIndex + 1, level: "warn", msg: "มีช่วง ;; ว่างเปล่าใน script= — ช่วงว่างจะถูกข้าม" });
+  if (raw.latlng) {
+    const parts = raw.latlng.split(",").map((n) => Number(n.trim()));
+    if (parts.length !== 2 || parts.some(Number.isNaN)) issues.push({ line: lineIndex + 1, level: "error", msg: `latlng="${raw.latlng}" ไม่ถูกรูปแบบ (ต้องเป็น lat,lng) — ใช้พิกัดค่าเริ่มต้นแทน` });
+  }
+  return issues;
+}
+
+function validateScript(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const report = [];
+  if (!lines.length) return [{ line: 0, level: "error", msg: "ไม่มีบรรทัดสคริปต์เลย" }];
+  lines.forEach((line, i) => {
+    const tagIssues = validateTagLine(line, i);
+    if (tagIssues) { report.push(...tagIssues); return; }
+    const parts = line.includes("|") ? line.split("|") : line.split("\t");
+    if (parts.length < 4) report.push({ line: i + 1, level: "error", msg: `column mode ต้องมีอย่างน้อย 4 คอลัมน์ (สถานที่|lat,lng|แผนกล้อง|สคริปต์) พบ ${parts.length} คอลัมน์` });
+  });
+  return report;
+}
+
+function renderValidationReport() {
+  if (!debugMode) { el.validationReport.hidden = true; return; }
+  el.validationReport.hidden = false;
+  if (!lastValidationReport.length) {
+    el.validationReport.innerHTML = `<div class="validation-empty">ไม่พบปัญหาในสคริปต์ล่าสุด</div>`;
+    return;
+  }
+  el.validationReport.innerHTML = lastValidationReport
+    .map((r) => `<div class="validation-row level-${r.level}">บรรทัด ${r.line}: ${escapeHtml(r.msg)}</div>`)
+    .join("");
+}
+
+el.debugModeToggle.addEventListener("change", () => {
+  debugMode = el.debugModeToggle.checked;
+  renderValidationReport();
+});
+
 function isImageUrl(str) {
   return /^https?:\/\//.test(str) || /\.(png|jpe?g|gif|webp|svg)$/i.test(str);
 }
@@ -1877,6 +1944,9 @@ function parseImportText() {
   // เก็บบรรทัดดิบคู่กับฉากที่ parse ได้ ให้ sceneRawLines[i] ตรงกับ scenes[i] เป๊ะเสมอ
   // (บรรทัดที่ parse ไม่ผ่านจะถูกข้ามทั้งคู่ ไม่งั้น index จะเพี้ยนตอนแก้ไขฉากทีหลัง)
   const pairs = raw.map((line) => ({ line, scene: parseRow(line) })).filter((p) => p.scene);
+  // ตรวจสอบ+รายงานเสมอ (แม้ parse ไม่ผ่านสักบรรทัด) เพื่อให้ debug mode เห็นสาเหตุได้ — ไม่กระทบ early-return ปกติด้านล่างเลย
+  lastValidationReport = validateScript(el.importText.value);
+  renderValidationReport();
   if (!pairs.length) return;
   scenes = pairs.map((p) => p.scene);
   sceneRawLines = pairs.map((p) => p.line);

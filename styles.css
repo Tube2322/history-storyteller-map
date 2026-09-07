@@ -822,6 +822,18 @@ body.is-render-mode .import-panel {
 .preview-row .pr-script { color: var(--ink-dim); margin-top: 3px; }
 .preview-row .pr-meta { font-family: var(--mono); color: var(--ink-dim); font-size: 10px; margin-top: 4px; }
 .pr-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.validation-row {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  border-left: 3px solid var(--panel-border);
+}
+.validation-row.level-error { border-left-color: #e74c3c; background: rgba(231,76,60,0.08); }
+.validation-row.level-warn { border-left-color: #f2b544; background: rgba(242,181,68,0.08); }
+.validation-row.level-info { border-left-color: #3498db; background: rgba(52,152,219,0.08); }
+.validation-empty { font-family: var(--thai); font-size: 12px; color: var(--ink-dim); }
+
 .pr-tag {
   font-family: var(--thai);
   font-size: 10px;
