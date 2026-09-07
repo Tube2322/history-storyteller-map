@@ -7,6 +7,7 @@ Microsoft Edge) เบราว์เซอร์เรียกตรงไม�
 
 import asyncio
 import base64
+import hashlib
 import http.server
 import json
 import re
@@ -27,6 +28,9 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
 DEFAULT_VOICE = "th-TH-PremwadeeNeural"
 ASSETS_DIR = Path("assets")
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+# แคชเสียงพากย์ลงดิสก์ — คนทำคอนเทนต์แก้สคริปต์แล้วกดเล่นซ้ำหลายรอบ ประโยคที่ไม่ได้แก้ไม่ควรต้องรอ edge-tts ใหม่ทุกครั้ง
+# (แคชในหน่วยความจำฝั่งเว็บหายทุกครั้งที่รีเฟรชหน้า ส่วนอันนี้อยู่ข้ามรอบ/ข้ามวันได้)
+TTS_CACHE_DIR = Path(__file__).parent / ".tts-cache"
 
 # ---------- ตัดเส้นไฮไลต์ให้อยู่แค่บนแผ่นดิน (ไม่ลากผ่านทะเล) ----------
 # เขตแดนจริงจาก Nominatim บางประเทศ/บางเขตลากเส้นตรงคร่อมทะเล (ไม่แนบชายฝั่งจริง)
@@ -424,16 +428,42 @@ _RATE_RE = re.compile(r"^[+-]\d{1,3}%$")
 _PITCH_RE = re.compile(r"^[+-]\d{1,3}Hz$")
 
 
+def _tts_cache_path(text: str, voice: str, rate: str, pitch: str) -> Path:
+    key = hashlib.sha1(f"{voice}::{rate}::{pitch}::{text}".encode("utf-8")).hexdigest()
+    return TTS_CACHE_DIR / f"{key}.mp3"
+
+
 async def synthesize(text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz") -> bytes:
     # ตรวจรูปแบบก่อนส่งต่อให้ edge-tts เสมอ (รับค่าจากฝั่งเว็บ ป้องกันค่าผิดรูปแบบหลุดเข้า Communicate)
     rate = rate if _RATE_RE.match(rate or "") else "+0%"
     pitch = pitch if _PITCH_RE.match(pitch or "") else "+0Hz"
-    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
-    audio = bytearray()
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio.extend(chunk["data"])
-    return bytes(audio)
+    cache_path = _tts_cache_path(text, voice, rate, pitch)
+    if cache_path.exists():
+        return cache_path.read_bytes()
+    # edge-tts เป็นบริการฟรีของ Microsoft ที่ปฏิเสธ/ตัดการเชื่อมต่อเป็นระยะเมื่อยิงคำขอถี่ๆติดกัน (เจอจากเทสสคริปต์ 31 ฉาก:
+    # ล้มเหลวราวครึ่งหนึ่งของคำขอตอน preload ทำให้ฉากนั้นไม่มีเสียงในแคช แล้วไปค้างกลางคลิปตอนเล่นจริง)
+    # ลองใหม่ถึง 3 ครั้งพร้อมหน่วงเพิ่มขึ้นเรื่อยๆ ก่อนยอมแพ้ — ฝั่งเว็บยัง fallback ได้เหมือนเดิมถ้าล้มเหลวครบ 3 ครั้ง
+    last_exc = None
+    for attempt in range(3):
+        try:
+            communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+            audio = bytearray()
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio.extend(chunk["data"])
+            if audio:
+                try:
+                    TTS_CACHE_DIR.mkdir(exist_ok=True)
+                    cache_path.write_bytes(bytes(audio))
+                except OSError as exc:  # เขียนแคชไม่ได้ (ดิสก์เต็ม/สิทธิ์) ไม่ควรทำให้พากย์เสียงล้มเหลวไปด้วย
+                    print(f"เขียนแคชเสียงไม่สำเร็จ: {exc}", file=sys.stderr)
+                return bytes(audio)
+            last_exc = RuntimeError("edge-tts ส่งเสียงกลับมาว่างเปล่า")
+        except Exception as exc:
+            last_exc = exc
+        if attempt < 2:
+            await asyncio.sleep(0.8 * (attempt + 1))
+    raise last_exc or RuntimeError("edge-tts ล้มเหลวโดยไม่ทราบสาเหตุ")
 
 
 _flag_cache = {}

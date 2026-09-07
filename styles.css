@@ -272,9 +272,11 @@ html, body {
 
 /* geophoto=... — รูปจริงปักหมุดตามพิกัด (เทียบเท่า "Add Image" ของ AnimateMyMap) */
 .geo-photo-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+/* ขนาดการ์ดภาพประกอบปักพิกัด: ดีฟอลต์เดิม 84px เล็กเกินไปจนดูไม่ออกว่าเป็นภาพอะไรตอนดูคลิปจริง (ผู้ใช้แจ้ง) — ขยายเป็น 140px
+   ยังปรับรายฉากได้ด้วย photosize= เหมือนเดิมทุกจุด */
 .geo-photo-card {
-  width: 84px;
-  height: 84px;
+  width: 140px;
+  height: 140px;
   border-radius: 10px;
   border: 3px solid #fff;
   box-shadow: 0 6px 18px rgba(0,0,0,0.55);
@@ -300,8 +302,8 @@ html, body {
 
 /* videoAsset (Smart Documentary Production Import) — วิดีโอปักพิกัดคู่กับ geophoto ได้ ใช้เลย์เอาต์เดียวกัน */
 .geo-video-card {
-  width: 84px;
-  height: 84px;
+  width: 140px;
+  height: 140px;
   border-radius: 10px;
   border: 3px solid #fff;
   box-shadow: 0 6px 18px rgba(0,0,0,0.55);

@@ -241,6 +241,7 @@ let bgmVolumeLevel = 0.25;
 let landClipEnabled = true; // ตัดเส้นไฮไลต์ให้อยู่แค่บนแผ่นดิน (ปิดได้ถ้าอยากได้เขตทางทะเลตามข้อมูล OSM จริง)
 let sceneGapSec = 0;
 let autoFetchImagesEnabled = false; // ดึงภาพประกอบอัตโนมัติจาก Wikimedia Commons ทุกฉากที่ยังไม่มีรูป — ดีฟอลต์ปิด ต้องเปิดเอง
+const PRELOAD_HEAD_SCENES = 6; // เตรียมเสียงล่วงหน้ากี่ฉากก่อนเริ่มเล่น (ที่เหลือเตรียมเบื้องหลังระหว่างเล่น) — ต้องมากพอให้มี buffer กันสะดุดระหว่างฉาก
 let subtitleStyle = { pos: "bottom", color: "", size: 0, weight: "" };
 
 function applySubtitleStyle() {
@@ -881,7 +882,7 @@ const markerArrow = new maplibregl.Marker({ element: arrowWrapEl, anchor: "cente
 const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "bottom" });
 // offset ยกขึ้น กันป้ายชื่อใต้รูป (geo-photo-label) ไปทับป้ายชื่อหมุดหลัก (pin label) ที่อยู่จุดพิกัดเดียวกัน
 const markerGeoPhoto = new maplibregl.Marker({ element: geoPhotoWrapEl, anchor: "bottom", offset: [0, -34] });
-const markerGeoVideo = new maplibregl.Marker({ element: geoVideoWrapEl, anchor: "bottom", offset: [96, -34] });
+const markerGeoVideo = new maplibregl.Marker({ element: geoVideoWrapEl, anchor: "bottom", offset: [152, -34] }); // เลื่อนไปข้างขวาให้พ้นการ์ดรูป (กว้าง 140px) ถ้าฉากมีทั้งรูปและวิดีโอ
 const markerBadge = new maplibregl.Marker({ element: badgeWrapEl, anchor: "bottom", offset: [0, -34] });
 const markerCallout = new maplibregl.Marker({ element: calloutRingWrapEl, anchor: "center" });
 
@@ -2082,6 +2083,23 @@ function validateTagLine(line, lineIndex) {
       issues.push({ line: lineIndex + 1, level: "warn", msg: `${key}="${raw[key]}" ไม่ใช่ค่าที่รองรับ (ตัวเลือกคือ ${allowed.join("/")}) — ระบบจะเดา/ใช้ดีฟอลต์แทนอัตโนมัติแทน ไม่ error` });
     }
   }
+  // คีย์ที่รับ "รูปแบบพิกัด/โครงสร้าง" เฉพาะตัว — เขียนผิดฟอร์แมตแล้วหายเงียบๆแบบเดียวกับ arrows= (เจอจากเทสสคริปต์จริง: callout=ข้อความเปล่าๆ หายไปทั้งอันโดยไม่มี error)
+  // เช็กด้วย parser จริงของแต่ละคีย์เลย (ไม่เขียน logic ซ้ำ) — parse แล้วได้ค่าว่าง = ผู้ใช้เขียนผิดรูปแบบแน่นอน
+  const FORMAT_CHECKS = [
+    { key: "callout", parse: parseCallout, hint: "url:lat,lng:ป้ายชื่อ" },
+    { key: "badge", parse: parseBadge, hint: "flag:us:lat,lng:ป้ายชื่อ หรือ icon:🏛️:lat,lng:ป้ายชื่อ" },
+    { key: "geophoto", parse: parseGeophoto, hint: "url:lat,lng หรือ url:lat,lng:ป้ายชื่อ" },
+    { key: "warmorph", parse: parseWarmorph, hint: "RRGGBB:lat1,lng1:lat2,lng2" },
+    { key: "focuspoint", parse: parseFocusPoint, hint: "lat,lng" },
+  ];
+  for (const { key, parse, hint } of FORMAT_CHECKS) {
+    if (raw[key] && !parse(raw[key])) {
+      issues.push({ line: lineIndex + 1, level: "error", msg: `${key}="${raw[key]}" ผิดรูปแบบ (ต้องเป็น ${hint}) — ${key} ของฉากนี้จะไม่แสดงเลย` });
+    }
+  }
+  if (raw.draw && parseDraw(raw.draw).length < 2) {
+    issues.push({ line: lineIndex + 1, level: "error", msg: `draw="${raw.draw}" ผิดรูปแบบหรือมีจุดไม่ถึง 2 จุด (ต้องเป็น lat,lng;lat,lng;... คั่นจุดด้วย ;) — เส้นวาดของฉากนี้จะไม่แสดง` });
+  }
   return issues;
 }
 
@@ -2675,19 +2693,29 @@ function runKaraoke(text, durationSec, myToken, getElapsedSec) {
 // เตรียมเสียงพากย์ "ทั้งคลิป" ให้เสร็จก่อนเริ่มเล่น กันเสียงมาสะดุดกลางคันตอนเล่นจริง
 // (คืน false ถ้าโดนยกเลิกระหว่างเตรียม เช่นกดหยุดหรือกดเล่นซ้ำ)
 // ttsCache คีย์ด้วยเนื้อหาข้อความจริง (ไม่ใช่ index ฉาก) — แก้สคริปต์แค่ฉาก 4 จะ cache hit ฉาก 1-3,5 ทันที regenerate เฉพาะฉาก 4 โดยอัตโนมัติ (Script Edit Detection)
-async function preloadNarration(myToken) {
-  const startIdx = activeIndex === -1 ? 0 : activeIndex;
-  for (let i = startIdx; i < scenes.length; i++) {
-    if (myToken !== playToken) return false;
-    if (scenes[i].overrideAudioUrl) continue; // ไฟล์เสียงพากย์ที่ผู้ใช้ลากเข้ามาเอง ไม่ต้องสร้าง TTS ซ้ำ
-    const segments = splitSegments(scenes[i].script);
-    for (const seg of segments) {
-      if (myToken !== playToken) return false;
-      el.subtitleText.textContent = `กำลังสร้างเสียงพากย์ (GENERATING VOICE)... ฉาก ${i + 1}/${scenes.length}`;
-      const mood = scenes[i].styleMood;
-      try { await fetchTts(seg, mood && mood.rate, mood && mood.pitch); } catch (e) { console.warn(e); }
+// เตรียมเสียงเป็น "ช่วงฉาก" โดยดึงพร้อมกันหลายเส้น — ใช้ทั้งตอนเตรียมหัวคลิปก่อนเล่น และตอนเตรียมที่เหลือเบื้องหลังระหว่างเล่น
+// (วัดจริง: ดึงทีละเส้นเรียงกัน ผลิตได้เร็วพอๆกับที่เล่นพอดี เหลือ buffer แค่ฉากเดียว พอ TTS ช้าทีก็สะดุดทันที)
+// คิวเรียงตามลำดับฉากเสมอ worker หยิบจากหัวคิว ฉากใกล้ตัวจึงถูกเตรียมก่อนเสมอแม้ทำงานพร้อมกันหลายเส้น
+const PRELOAD_CONCURRENCY = 3;
+async function preloadNarrationRange(myToken, fromIdx, toIdx, showStatus) {
+  const jobs = [];
+  for (let i = fromIdx; i < Math.min(toIdx, scenes.length); i++) {
+    if (scenes[i].overrideAudioUrl) continue; // ใช้ไฟล์เสียงของผู้ใช้เอง ไม่ต้องสร้าง TTS
+    const mood = scenes[i].styleMood;
+    splitSegments(scenes[i].script).forEach((seg) => jobs.push({ seg, mood }));
+  }
+  let cursor = 0;
+  let done = 0;
+  async function worker() {
+    while (cursor < jobs.length) {
+      if (myToken !== playToken) return;
+      const job = jobs[cursor++];
+      try { await fetchTts(job.seg, job.mood && job.mood.rate, job.mood && job.mood.pitch); } catch (e) { console.warn(e); }
+      done++;
+      if (showStatus) el.subtitleText.textContent = `กำลังเตรียมเสียงพากย์ (PREPARING VOICE)... ${done}/${jobs.length}`;
     }
   }
+  await Promise.all(Array.from({ length: PRELOAD_CONCURRENCY }, worker));
   return myToken === playToken;
 }
 
@@ -2752,10 +2780,12 @@ async function narrationLoop() {
         // โหมดเรนเดอร์: ใช้ความยาวที่ render.py วัดจากเสียงจริงมาแล้ว ไม่ต้องพากย์ซ้ำในเบราว์เซอร์
         segments.forEach((seg, i) => clips.push({ text: seg, url: null, duration: renderDurations[idx][i] || DEFAULT_DURATION }));
       } else {
-        el.subtitleText.textContent = "กำลังสร้างเสียง…";
+        // ปกติเสียงถูกเตรียมไว้แล้ว (แคช) = ได้ทันทีไม่ต้องขึ้นข้อความรอเลย — โชว์ "กำลังสร้างเสียง…" เฉพาะตอนช้าจริงเกิน 400ms
+        // (เดิมขึ้นทุกฉากแม้แคชแล้ว ทำให้เห็นข้อความกระพริบคั่นระหว่างฉากโดยไม่จำเป็น)
+        const slowMsgTimer = setTimeout(() => { el.subtitleText.textContent = "กำลังสร้างเสียง…"; }, 400);
         const mood = scene.styleMood;
         for (const seg of segments) {
-          if (myToken !== playToken) return;
+          if (myToken !== playToken) { clearTimeout(slowMsgTimer); return; }
           try {
             clips.push({ text: seg, ...(await fetchTts(seg, mood && mood.rate, mood && mood.pitch)) });
           } catch (e) {
@@ -2763,6 +2793,7 @@ async function narrationLoop() {
             clips.push({ text: seg, url: null, duration: scene.duration / segments.length });
           }
         }
+        clearTimeout(slowMsgTimer);
       }
     }
     if (myToken !== playToken) return;
@@ -2890,8 +2921,17 @@ function setPlaying(next) {
       if (!ok || myToken !== playToken) return;
       const audioOk = await probeExplicitAudioUrls(scenes, myToken);
       if (!audioOk || myToken !== playToken) return;
-      Promise.all([preloadNarration(myToken), preloadImages(scenes, myToken, startIdx)]).then(([ttsReady, imagesReady]) => {
+      // Progressive Preload: เตรียมเสียงแค่ "หัวคลิป" ให้พอเริ่มเล่นก่อน แล้วทยอยเตรียมฉากที่เหลือเบื้องหลังระหว่างเล่น
+      // (เดิมเตรียมครบทุกฉากก่อนถึงจะเริ่ม — สคริปต์ 31 ฉาก/10 นาที ต้องรอถึง 5 นาที 10 วินาทีก่อนภาพแรกจะขึ้น วัดจริงจากการเทส)
+      // ปลอดภัยเพราะสร้างเสียง 1 ฉากใช้เวลาน้อยกว่าเวลาเล่น 1 ฉากมาก การเตรียมเบื้องหลังจึงวิ่งนำหน้าการเล่นอยู่เสมอ
+      // และถ้าเล่นไล่ทันฉากที่ยังไม่พร้อมจริงๆ narrationLoop ก็สร้างเสียงฉากนั้นเองได้ทันที (ทางเดิมที่มีอยู่แล้ว)
+      const headEnd = Math.min(startIdx + PRELOAD_HEAD_SCENES, scenes.length);
+      Promise.all([
+        preloadNarrationRange(myToken, startIdx, headEnd, true),
+        preloadImages(scenes, myToken, startIdx),
+      ]).then(([ttsReady, imagesReady]) => {
         if (!ttsReady || !imagesReady || myToken !== playToken) return;
+        if (headEnd < scenes.length) preloadNarrationRange(myToken, headEnd, scenes.length, false);
         el.subtitleText.textContent = "พร้อมเล่น (READY)";
         startBgm();
         narrationLoop();
