@@ -1992,15 +1992,16 @@ el.btnPlay.addEventListener("click", () => setPlaying(!isPlaying));
 
 async function startExport(aspect) {
   if (!scenes.length) { alert("ยังไม่มีฉาก นำเข้าสคริปต์ก่อน"); return; }
-  currentAspect = aspect;
   lastExportAspect = aspect;
-  fitStage(); // ย่อเวทีเป็นสัดส่วนที่เลือกชั่วคราว เพื่อให้สิ่งที่อัดตรงตามฟอร์แมตปลายทาง
   try {
+    // ขอสิทธิ์แชร์หน้าจอ "ก่อน" ค่อยย่อเวที — ถ้าผู้ใช้ปิด/ไม่ตอบ dialog เอดิเตอร์ต้องไม่ถูกบีบจอทิ้งไว้ค้างแบบกู้คืนไม่ได้
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: { displaySurface: "browser" },
       audio: true,
       preferCurrentTab: true,
     });
+    currentAspect = aspect;
+    fitStage(); // ได้สิทธิ์แน่นอนแล้วค่อยย่อเวทีเป็นสัดส่วนที่เลือก ให้สิ่งที่อัดตรงตามฟอร์แมตปลายทาง
     recordedChunks = [];
     recorder = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp9,opus" });
     recorder.ondataavailable = (e) => { if (e.data.size) recordedChunks.push(e.data); };
