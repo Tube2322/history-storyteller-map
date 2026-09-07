@@ -176,7 +176,7 @@ html, body {
   inset: 0;
   z-index: 8;
   pointer-events: none;
-  background: #000;
+  background: var(--tx-color, #000);
   opacity: 0;
 }
 .transition-overlay.is-flashing {
@@ -186,6 +186,16 @@ html, body {
   0% { opacity: 0; }
   45% { opacity: var(--tx-opacity, 0.5); }
   100% { opacity: 0; }
+}
+/* inserttransition=slide — แถบกวาดผ่านจอสั้นๆแทนแฟลชความทึบ (ใช้ตอนตัดเข้า/ออก insert) */
+.transition-overlay.is-sliding {
+  opacity: var(--tx-opacity, 0.9);
+  animation: transition-slide var(--tx-duration, 250ms) ease-in-out;
+}
+@keyframes transition-slide {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
 }
 .shade-overlay.is-visible { opacity: 1; }
 
@@ -417,6 +427,51 @@ html, body {
 /* การแสดงผล insert ตามแผนกล้อง (กล้องจริงคุมผ่าน MapLibre flyTo/easeTo ใน JS) */
 .mapstage-cutinsert .insert-layer { opacity: 1; pointer-events: auto; }
 .mapstage-insertoverlay .insert-float { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+
+/* insertmode=... — ปรับ "เลย์เอาต์" ของกล่อง insert ที่ cam เดิม (cut-to-insert/insert-overlay) เปิดใช้งานอยู่แล้ว
+   ไม่ใส่ = insertmode default ต่อ cam (full/picture-in-picture) = พฤติกรรมเดิมเป๊ะ ไม่มีการเปลี่ยนแปลงอะไรเลย
+   กันไม่ให้บังพื้นที่ล่างจอ (ซับไตเติล/ไทม์ไลน์) เสมอ — กล่อง insert ทุกโหมดไม่ยื่นเกิน top:60% ของจอ ยกเว้น full/background ที่ตั้งใจเต็มจอ */
+.insertmode-overlay .insert-layer,
+.insertmode-picture-in-picture .insert-layer {
+  inset: auto; left: 50%; top: 30%; transform: translate(-50%, -50%);
+  width: 62%; aspect-ratio: 16 / 10; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: #000;
+}
+.insertmode-overlay .insert-float { width: 78%; aspect-ratio: 16 / 9; top: 38%; }
+.insertmode-split .insert-layer,
+.insertmode-split .insert-float {
+  inset: auto; left: auto; right: 0; top: 0; transform: none;
+  width: 50%; height: 100%; aspect-ratio: auto; border-radius: 0; border: none; border-left: 1px solid rgba(255,255,255,0.18);
+}
+.insertmode-split .insert-layer img, .insertmode-split .insert-float img { object-fit: cover; }
+.insertmode-split.insert-flip .insert-layer,
+.insertmode-split.insert-flip .insert-float { right: auto; left: 0; border-left: none; border-right: 1px solid rgba(255,255,255,0.18); }
+.insertmode-background .insert-layer,
+.insertmode-background .insert-float {
+  background: rgba(0,0,0,0.5);
+}
+.insertmode-background .insert-layer img, .insertmode-background .insert-float img { opacity: 0.65; }
+.insertmode-full .insert-float {
+  inset: 0; left: 0; top: 0; transform: none; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; border: none;
+}
+/* ป้องกันไม่ให้กล่อง overlay/PiP ไปชนกล่อง callout (มุมขวาบนเดิม) — สลับไปฝั่งซ้ายแทนเมื่อฉากมี callout ด้วย */
+.insert-flip .insert-float { left: auto; right: 2%; transform: translateY(-50%); }
+.insert-flip.insertmode-overlay .insert-float,
+.insert-flip.insertmode-picture-in-picture .insert-layer { left: auto; right: 2%; transform: translateY(-50%); }
+
+.insert-evidence-tag {
+  position: absolute;
+  top: 8px; left: 8px;
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  font-family: var(--thai);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0;
+  display: none;
+}
+.insert-evidence-tag.is-visible { display: inline-block; }
 
 /* ---------- แบรนด์/วอเตอร์มาร์ก ---------- */
 

@@ -107,6 +107,8 @@ const STYLE_PRESETS = {
 const el = {
   insertLayerContent: document.getElementById("insertLayerContent"),
   insertFloatContent: document.getElementById("insertFloatContent"),
+  insertLayerEvidence: document.getElementById("insertLayerEvidence"),
+  insertFloatEvidence: document.getElementById("insertFloatEvidence"),
   brandChip: document.getElementById("brandChip"),
   brandText: document.getElementById("brandText"),
   brandInput: document.getElementById("brandInput"),
@@ -1212,16 +1214,19 @@ function resolveTransition(scene, prevScene) {
   if (!prevScene) return "none";
   const prevIsInsert = prevScene.cam === "cut-to-insert" || prevScene.cam === "insert-overlay";
   const curIsInsert = scene.cam === "cut-to-insert" || scene.cam === "insert-overlay";
-  if (curIsInsert && !prevIsInsert) return "dissolve"; // Map → Historical Image
-  if (!curIsInsert && prevIsInsert) return "dissolve"; // Historical Image → Map (รวม returnmap=on ด้วย)
+  // inserttransition=... มีผลเฉพาะจังหวะเข้า/ออก insert เท่านั้น (Map↔Historical Evidence ตามสเปค) — ทับดีฟอลต์ dissolve แต่ยังแพ้ transition= ทั่วไปที่เช็กไปแล้วด้านบน
+  if (curIsInsert && !prevIsInsert) return scene.insertTransition || "dissolve"; // Map → Historical Image
+  if (!curIsInsert && prevIsInsert) return scene.insertTransition || "dissolve"; // Historical Image → Map (รวม returnmap=on ด้วย) — inserttransition= ของฉากปัจจุบัน (ฉากที่กำลังเข้า) เหมือนกัน ให้สอดคล้องกับความหมายของ transition= ทั่วไป
   if (scene.beat === "twist" || scene.beat === "turningpoint") return "cut"; // Turning Point เน้นจังหวะด้วยตัดฉับ
   return "none"; // Map → Map ปกติ
 }
 
 // แฟลชสั้นๆกลบรอยตัดฉาก (ซิงก์กับ CSS ผ่าน custom property ไม่บล็อก JS) — cut/none/match/travel/reveal ไม่มีอะไรเกิดขึ้นเลย
 // (reveal ปล่อยให้ระบบไฮไลต์เขตแดนเดิมเป็นคนจัดการลูกเล่นเผยพื้นที่ของมันเองอยู่แล้ว ไม่ซ้อนทับกัน)
-const TRANSITION_PEAK_OPACITY = { fade: 0.85, dissolve: 0.5, morph: 0.45, whip: 0.6 };
-const TRANSITION_DURATION_MS = { fade: 350, dissolve: 220, morph: 320, whip: 150 };
+const TRANSITION_PEAK_OPACITY = { fade: 0.85, dissolve: 0.5, morph: 0.45, whip: 0.6, flash: 0.8, slide: 0.9 };
+const TRANSITION_DURATION_MS = { fade: 350, dissolve: 220, morph: 320, whip: 150, flash: 130, slide: 260 };
+const TRANSITION_COLOR = { flash: "#fff" }; // ไม่ระบุ = ดำ (ดีฟอลต์เดิม)
+const TRANSITION_ANIM_CLASS = { slide: "is-sliding" }; // ไม่ระบุ = is-flashing (ดีฟอลต์เดิม)
 function playTransitionOverlay(kind, scene) {
   const peak = TRANSITION_PEAK_OPACITY[kind];
   if (!peak) return;
@@ -1230,9 +1235,11 @@ function playTransitionOverlay(kind, scene) {
   const overlay = el.transitionOverlay;
   overlay.style.setProperty("--tx-opacity", String(peak * mul));
   overlay.style.setProperty("--tx-duration", `${TRANSITION_DURATION_MS[kind] || 250}ms`);
-  overlay.classList.remove("is-flashing");
+  overlay.style.setProperty("--tx-color", TRANSITION_COLOR[kind] || "#000");
+  const animClass = TRANSITION_ANIM_CLASS[kind] || "is-flashing";
+  overlay.classList.remove("is-flashing", "is-sliding");
   void overlay.offsetWidth; // บังคับ reflow ให้ retrigger keyframe ได้ทุกครั้งแม้ transition ชนิดเดิมติดกัน
-  overlay.classList.add("is-flashing");
+  overlay.classList.add(animClass);
 }
 
 // ---------- แปลงข้อมูลดิบ → ฉาก ----------
@@ -1485,6 +1492,16 @@ function inferMapMode(script, hasArrows, highlightKey, hasDraw, hasWarmorph, rou
   return "location"; // ดีฟอลต์กลาง — ไม่มีสัญญาณอะไรเลย เน้นตำแหน่งเฉยๆ ตรงตามความหมายของ location ในสเปค
 }
 
+// ---------- Insert System: insertmode / inserttransition / evidence ----------
+// insert=(ข้อความ/URL รูป/รูปอัปโหลด) ยังทำงานเหมือนเดิมทุกจุด ต้องมี cam=cut-to-insert/insert-overlay อยู่ก่อนถึงจะโชว์อะไรเลย
+// (คีย์ใหม่ 3 ตัวนี้ไม่มีผลอะไรถ้าฉากไม่มี insert= — ไม่บังคับให้ทุกฉากต้องมี insert ตามที่ห้ามไว้)
+// evidence= เป็น label ล้วนๆ ห้ามไปสร้าง/เติม url ให้ insert/geophoto/callout เองเด็ดขาด — ผู้ใช้ต้องใส่เนื้อหาเองเสมอ
+const INSERTMODE_VALUES = ["full", "overlay", "picture-in-picture", "split", "background"];
+const DEFAULT_INSERTMODE_FOR_CAM = { "cut-to-insert": "full", "insert-overlay": "picture-in-picture" };
+const INSERTTRANSITION_VALUES = ["cut", "fade", "dissolve", "match", "slide", "flash"];
+const EVIDENCE_VALUES = ["photo", "painting", "document", "newspaper", "portrait", "artifact", "archive", "map"];
+const EVIDENCE_LABELS_TH = { photo: "ภาพถ่าย", painting: "จิตรกรรม", document: "เอกสาร", newspaper: "หนังสือพิมพ์", portrait: "ภาพเหมือน", artifact: "โบราณวัตถุ", archive: "จดหมายเหตุ", map: "แผนที่เก่า" };
+
 function finalizeScene(raw) {
   const {
     place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
@@ -1497,6 +1514,7 @@ function finalizeScene(raw) {
     shot: shotRaw, cameraaction: cameraactionRaw, focuspoint, motion: motionRaw, motioncurve: motioncurveRaw,
     continuity, visualbridge, transition: transitionRaw, returnmap,
     mapmode: mapmodeRaw,
+    insertmode, inserttransition, evidence,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1547,6 +1565,12 @@ function finalizeScene(raw) {
   // ---------- resolve mapmode: label ล้วนๆ ไม่เพิ่ม arrows/highlight/draw/warmorph/route ให้เองเด็ดขาด ----------
   const mapmodeValid = MAPMODE_VALUES.includes(mapmodeRaw) ? mapmodeRaw : null;
   const mapmodeKey = mapmodeValid || inferMapMode(script, !!arrows, highlightKey, !!draw, !!warmorph, route === "road", narrativeKey);
+
+  // ---------- resolve insertmode/inserttransition/evidence: label + เลย์เอาต์เท่านั้น ไม่แตะ insert/geophoto/callout เดิม ----------
+  const insertmodeValid = INSERTMODE_VALUES.includes(insertmode) ? insertmode : null;
+  const insertModeKey = insertmodeValid || DEFAULT_INSERTMODE_FOR_CAM[camKey] || "full";
+  const insertTransitionValid = INSERTTRANSITION_VALUES.includes(inserttransition) ? inserttransition : null;
+  const evidenceValid = EVIDENCE_VALUES.includes(evidence) ? evidence : null;
 
   // ---------- resolve shot/cameraaction/motion/motioncurve: label ดีฟอลต์ตาม cam เดิม แต่ผลจริงใช้เฉพาะตอนผู้ใช้ระบุเอง ----------
   const shotValid = SHOT_VALUES.includes(shotRaw) ? shotRaw : null;
@@ -1647,6 +1671,10 @@ function finalizeScene(raw) {
     returnMap: returnMapVal,
     mapmode: mapmodeKey,
     mapmodeSource: mapmodeValid ? "user" : "auto",
+    insertMode: insertModeKey,
+    insertModeSource: insertmodeValid ? "user" : "auto",
+    insertTransition: insertTransitionValid,
+    evidenceType: evidenceValid,
   };
 }
 
@@ -1698,6 +1726,9 @@ const TAG_KEY_ALIASES = {
   transition: "transition", การเปลี่ยนฉาก: "transition",
   returnmap: "returnmap", กลับแผนที่: "returnmap",
   mapmode: "mapmode", โหมดแผนที่: "mapmode",
+  insertmode: "insertmode", โหมดแทรก: "insertmode",
+  inserttransition: "inserttransition", การเปลี่ยนภาพแทรก: "inserttransition",
+  evidence: "evidence", หลักฐาน: "evidence",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1898,10 +1929,18 @@ function goToScene(index, durationOverride) {
   el.camBadge.querySelector(".cam-dot").style.background = CAM_DOT_VAR[scene.cam];
   el.subtitleText.textContent = splitSegments(scene.script).join(" ");
 
-  el.mapStage.className = `map-stage ${CAM_STAGE_CLASS[scene.cam] || ""}`.trim();
+  // insertmode=... ปรับเลย์เอาต์กล่อง insert; insert-flip กันกล่อง overlay/PiP ไปชนกล่อง callout/badge มุมเดิม (ระบบป้องกันการบัง)
+  const insertFlipClass = (scene.callout || scene.badge) && scene.insertMode !== "full" && scene.insertMode !== "background" ? "insert-flip" : "";
+  el.mapStage.className = `map-stage ${CAM_STAGE_CLASS[scene.cam] || ""} insertmode-${scene.insertMode} ${insertFlipClass}`.trim();
 
   renderInsertContent(el.insertLayerContent, scene.insert);
   renderInsertContent(el.insertFloatContent, scene.insert);
+  // evidence=... ป้ายบอกประเภทหลักฐาน (label ล้วนๆ ไม่เคยสร้าง url เอง) โชว์เฉพาะตอนมี insert= จริงและระบุ evidence เอง
+  const evidenceLabel = scene.insert && scene.evidenceType ? EVIDENCE_LABELS_TH[scene.evidenceType] : "";
+  el.insertLayerEvidence.textContent = evidenceLabel;
+  el.insertLayerEvidence.classList.toggle("is-visible", !!evidenceLabel);
+  el.insertFloatEvidence.textContent = evidenceLabel;
+  el.insertFloatEvidence.classList.toggle("is-visible", !!evidenceLabel);
 
   // หมุดปลายทาง
   pinToEl.querySelector(".pin-icon").setAttribute("data-glyph", ICON_GLYPHS[scene.icon]);

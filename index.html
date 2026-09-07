@@ -27,8 +27,8 @@
             <div class="callout-media"><img id="calloutImg" alt="" /></div>
             <div class="callout-label" id="calloutLabel"></div>
           </div>
-          <div id="insertLayer" class="insert-layer"><span id="insertLayerContent"></span></div>
-          <div id="insertFloat" class="insert-float"><span id="insertFloatContent"></span></div>
+          <div id="insertLayer" class="insert-layer"><span id="insertLayerContent"></span><span class="insert-evidence-tag" id="insertLayerEvidence"></span></div>
+          <div id="insertFloat" class="insert-float"><span id="insertFloatContent"></span><span class="insert-evidence-tag" id="insertFloatEvidence"></span></div>
         </section>
 
         <!-- ป้ายแบรนด์/โลโก้ -->
@@ -254,7 +254,10 @@
             <br><strong>transition</strong>: <code>cut / fade / dissolve / match / travel / morph / reveal / whip / none</code> — ลูกเล่นเปลี่ยนฉาก (แฟลชสั้นๆกลบรอยตัด) ไม่ใส่ = engine เดาเอง (ฉากแผนที่ต่อฉากแผนที่ปกติ = ไม่มีอะไรเลย, ตัดเข้า/ออกภาพแทรกจริง = <code>dissolve</code> นุ่มๆ) — importance สูงลดความหวือหวาของ transition ให้อัตโนมัติ
             <br><strong>returnmap</strong>: <code>on</code> — หลัง insert ภาพจริงจบ ฉากที่กลับมาเป็นแผนที่จะสืบทอดตำแหน่ง/ซูม/มุมกล้องจาก "ฉากแผนที่จริงล่าสุดก่อนตัดเข้า insert" แทนเริ่มใหม่ (ข้ามระยะทาง ใช้ได้แม้ insert อยู่คนละพิกัด)
             <br><br><strong>mapmode</strong>: <code>location / journey / movement / expansion / retreat / encirclement / invasion / territorial-change / comparison / before-after / timeline</code> — ป้ายกำกับ "โหมดแผนที่" ของฉากนี้ (metadata เท่านั้น ไม่เพิ่ม arrows/highlight/draw/warmorph/route ให้เองเด็ดขาด) ไม่ใส่ = engine เดาจากคำในสคริปต์ก่อน แล้วดูจากองค์ประกอบที่มีอยู่แล้วในฉาก (arrows→movement, warmorph→territorial-change, route=road→journey, draw→encirclement) เดาไม่ออกเลย = <code>location</code>
-            <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
+            <br><strong>insertmode</strong>: <code>full / overlay / picture-in-picture / split / background</code> — เลย์เอาต์กล่อง insert ไม่ใส่ = ดีฟอลต์ตาม cam เดิม (cut-to-insert→full, insert-overlay→picture-in-picture) เหมือนเดิมทุกจุด
+            <br><strong>inserttransition</strong>: <code>cut / fade / dissolve / match / slide / flash</code> — เปลี่ยนฉากตอนเข้า/ออก insert เท่านั้น ทับดีฟอลต์ dissolve อัตโนมัติ (แพ้ transition= ทั่วไปถ้าตั้งไว้ด้วย)
+            <br><strong>evidence</strong>: <code>photo / painting / document / newspaper / portrait / artifact / archive / map</code> — ป้ายบอกประเภทหลักฐานบนกล่อง insert (ห้ามสร้าง url เอง ต้องมี insert= จริงถึงจะโชว์)
+            <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay — มีระบบป้องกันการบังอัตโนมัติ (กล่อง overlay/PiP สลับฝั่งเองถ้าฉากมี callout=/badge= ด้วย)
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>
           </details>
