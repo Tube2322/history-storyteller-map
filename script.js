@@ -1211,6 +1211,27 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
 
 // Transition Intelligence: ผู้ใช้ระบุ transition= เองทับเสมอ; ไม่ระบุ → เดาจากประเภทฉากก่อนหน้า/ปัจจุบัน
 // Map→Map ปกติ = "none" (ไม่ใส่อะไรเลย พฤติกรรมเดิม) กันไม่ให้ transition โผล่ทุกฉากตามที่ห้ามไว้
+// travelmode= ที่ผู้ใช้ตั้งเองทับเสมอ; ไม่ตั้ง = คำนวณจากระยะทางจริงระหว่างฉากก่อนหน้ากับฉากนี้ (Distance-Aware Navigation)
+function resolveTravelMode(scene, prevScene) {
+  if (scene.travelModeValid) return scene.travelModeValid;
+  if (!prevScene) return "local";
+  const distM = haversine([prevScene.lng, prevScene.lat], [scene.lng, scene.lat]);
+  if (distM < TRAVELMODE_LOCAL_MAX_M) return "local";
+  if (distM < TRAVELMODE_REGIONAL_MAX_M) return "regional";
+  return "global";
+}
+
+// Smooth Geographic Navigation: ตัดสินใจว่าฉากนี้ควร "ซูมออก→เผยบริบท→เดินทาง→ซูมเข้า" ก่อนเข้ากล้องจริงหรือไม่ และเข้มข้นแค่ไหน (ตาม travelmode)
+// ลำดับ priority: visualbridge=on/off ที่ตั้งเองชัดเจน (Part 20 เดิม ห้ามลบ) > navigation=smooth/direct ที่ตั้งเอง > navigation=auto (ดีฟอลต์ใหม่ตาม travelmode)
+function resolveNavigationBridge(scene, prevScene) {
+  if (!prevScene || scene.cam === "fly-to") return { bridge: false, tier: "local" }; // fly-to มีการเดินทางโค้งในตัวอยู่แล้ว ไม่ต้องซ้อน
+  if (scene.visualBridgeExplicit) return { bridge: scene.visualBridge, tier: resolveTravelMode(scene, prevScene) };
+  if (scene.navigation === "direct") return { bridge: false, tier: resolveTravelMode(scene, prevScene) };
+  const tier = resolveTravelMode(scene, prevScene);
+  if (scene.navigation === "smooth") return { bridge: true, tier };
+  return { bridge: tier !== "local", tier }; // navigation=auto (ดีฟอลต์): local ไม่ bridge, regional/global bridge อัตโนมัติ
+}
+
 function resolveTransition(scene, prevScene) {
   if (scene.transition) return scene.transition; // ผู้ใช้ตั้งเองทับ auto เสมอ
   if (!prevScene) return "none";
@@ -1444,6 +1465,14 @@ const MOTIONCURVE_EASE_FN = {
   "ease-in-out": EASE_CINEMATIC,
 };
 
+// ---------- Smooth Geographic Navigation: navigation / travelmode ----------
+// ต่อยอด visualbridge เดิม (Part 20) ไม่ลบ/ไม่เปลี่ยนชื่อ — เปลี่ยนดีฟอลต์ให้ฉากไกลๆ (regional/global) ได้ pull-back อัตโนมัติ
+// โดยไม่ต้องพิมพ์ visualbridge=on เองแล้ว (เหตุผลชัดเจนตามที่กำหนด: กันภาพกระโดด/เวียนหัว) — visualbridge=on/off ที่ตั้งเองชัดเจนยัง priority สูงสุดเหมือนเดิม
+const NAVIGATION_VALUES = ["auto", "smooth", "direct"];
+const TRAVELMODE_VALUES = ["local", "regional", "global"];
+const TRAVELMODE_LOCAL_MAX_M = 150000; // <150กม. = local
+const TRAVELMODE_REGIONAL_MAX_M = 1500000; // <1500กม. = regional, มากกว่านี้ = global
+
 // ---------- Scene Connection System: continuity / visualbridge / transition / returnmap ----------
 // ต่อยอดจาก Geographic Camera Continuity (moveCamera) — ให้ผู้ใช้บังคับ/ปิดเอง หรือเพิ่มสะพานภาพ/เปลี่ยนฉากที่นุ่มนวลขึ้น
 const CONTINUITY_VALUES = ["on", "off"];
@@ -1553,6 +1582,7 @@ function finalizeScene(raw) {
     mapmode: mapmodeRaw,
     insertmode, inserttransition, evidence,
     pace: paceRaw, pacing, density, attention, emphasis, intensity, composition,
+    navigation, travelmode,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1672,8 +1702,14 @@ function finalizeScene(raw) {
   // ---------- resolve continuity/visualbridge/transition/returnmap ----------
   const continuityKey = CONTINUITY_VALUES.includes(continuity) ? continuity : "auto"; // auto = heuristic ระยะทางเดิมจาก Part 19
   const visualBridgeVal = visualbridge === "on" || visualbridge === "true";
+  // แยก "ตั้งเองชัดเจน" (on หรือ off ก็นับ) ออกจาก "ไม่ได้ตั้งอะไรเลย" — ต้องรู้ให้ได้ว่าผู้ใช้ตั้งใจปิดเองหรือแค่ไม่ได้พิมพ์ ไปใช้กับ Smooth Navigation ด้านล่าง (ยังคง field เดิม visualBridge ไว้เป๊ะ ไม่เปลี่ยน)
+  const visualBridgeExplicit = ["on", "off", "true", "false"].includes(visualbridge);
   const returnMapVal = returnmap === "on" || returnmap === "true";
   const transitionValid = TRANSITION_VALUES.includes(transitionRaw) ? transitionRaw : null;
+
+  // ---------- resolve navigation/travelmode: Smooth Geographic Navigation (ต่อยอด visualbridge เดิม ไม่ลบ/ไม่เปลี่ยนชื่อ) ----------
+  const navigationKey = NAVIGATION_VALUES.includes(navigation) ? navigation : "auto";
+  const travelModeValid = TRAVELMODE_VALUES.includes(travelmode) ? travelmode : null;
 
   return {
     place,
@@ -1741,6 +1777,10 @@ function finalizeScene(raw) {
     bearingExplicit,
     continuity: continuityKey,
     visualBridge: visualBridgeVal,
+    visualBridgeExplicit,
+    navigation: navigationKey,
+    navigationSource: NAVIGATION_VALUES.includes(navigation) ? "user" : "auto",
+    travelModeValid,
     transition: transitionValid,
     transitionSource: transitionValid ? "user" : "auto",
     returnMap: returnMapVal,
@@ -1829,6 +1869,8 @@ const TAG_KEY_ALIASES = {
   emphasis: "emphasis", เน้นย้ำ: "emphasis",
   intensity: "intensity", ความเข้มข้น: "intensity",
   composition: "composition", องค์ประกอบภาพ: "composition",
+  navigation: "navigation", การเคลื่อนที่: "navigation",
+  travelmode: "travelmode", โหมดเดินทาง: "travelmode",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1976,6 +2018,8 @@ function sceneStyleTags(s) {
   if (s.transitionSource === "user") tags.push(`transition:${s.transition}`);
   if (s.returnMap) tags.push("returnmap");
   if (s.mapmodeSource === "user" || s.mapmode !== "location") tags.push(`mapmode:${s.mapmode}${s.mapmodeSource === "auto" ? " (auto)" : ""}`);
+  if (s.navigationSource === "user") tags.push(`navigation:${s.navigation}`);
+  if (s.travelModeValid) tags.push(`travelmode:${s.travelModeValid}`);
   if (s.paceSource === "user") tags.push(`pace:${s.pace}`);
   if (s.pacingSource === "user" || s.pacing === "release") tags.push(`pacing:${s.pacing}${s.pacingSource === "auto" ? " (auto)" : ""}`);
   if (s.densitySource === "user") tags.push(`density:${s.density}`);
@@ -2249,16 +2293,19 @@ function goToScene(index, durationOverride) {
   el.timeline.classList.toggle("hs-hidden", isCapturing && hideSet.has("timeline"));
   el.brandChip.classList.toggle("hs-hidden", hideSet.has("brand"));
 
-  // visualbridge=on: ฉากที่ไม่ใช่ fly-to (ซึ่งมีเส้นทาง/การบินข้ามพื้นที่อยู่แล้วในตัว) ถ้ากระโดดไกลจากฉากก่อนหน้ามาก
-  // ให้ซูมออกเห็นทั้งสองจุดสั้นๆก่อน แล้วค่อยเข้ากล้องจริงของฉากนี้ต่อ กันความรู้สึก "รีเซ็ตแผนที่เริ่มใหม่" (Berlin→France ตัวอย่างจากสเปค)
+  // Smooth Geographic Navigation (+ visualbridge=on เดิม): ฉากที่ไม่ใช่ fly-to (มีเส้นทาง/บินข้ามพื้นที่อยู่แล้วในตัว) ถ้ากระโดดไกลจากฉากก่อนหน้า
+  // ให้ซูมออกเห็นบริบทภูมิศาสตร์สั้นๆก่อน แล้วค่อยเข้ากล้องจริงของฉากนี้ต่อ กันความรู้สึก "รีเซ็ตแผนที่เริ่มใหม่"/เวียนหัว (ดีฟอลต์ใหม่: ระยะ regional/global ทำอัตโนมัติ ไม่ต้องพิมพ์ visualbridge=on เองแล้ว)
   const doMoveCamera = () => moveCamera(scene, durationOverride, battleFrame || flyFrame, prevScene);
-  const farFromPrev = prevScene && haversine([prevScene.lng, prevScene.lat], [scene.lng, scene.lat]) >= GEO_CONTINUITY_THRESHOLD_M;
-  if (scene.visualBridge && prevScene && scene.cam !== "fly-to" && farFromPrev) {
+  const navDecision = resolveNavigationBridge(scene, prevScene);
+  if (navDecision.bridge) {
     const bounds = new maplibregl.LngLatBounds([prevScene.lng, prevScene.lat], [prevScene.lng, prevScene.lat]).extend([scene.lng, scene.lat]);
     const bridgeCam = map.cameraForBounds(bounds, { padding: 80 });
     if (bridgeCam) {
-      const bridgeMs = 500;
-      map.easeTo({ center: bridgeCam.center, zoom: Math.max(bridgeCam.zoom - 0.5, 3), duration: bridgeMs, easing: EASE_CINEMATIC });
+      // global เผยบริบทกว้างกว่า regional (ซูมออกมากกว่า+นานกว่านิดหน่อย) แต่ยังกันไม่ให้ซูมออกไกลเกินจำเป็น (เพดานต่ำสุด zoom 2)
+      const isGlobal = navDecision.tier === "global";
+      const bridgeMs = isGlobal ? 650 : 500;
+      const zoomFloor = isGlobal ? 2 : 3;
+      map.easeTo({ center: bridgeCam.center, zoom: Math.max(bridgeCam.zoom - (isGlobal ? 1 : 0.5), zoomFloor), duration: bridgeMs, easing: EASE_CINEMATIC });
       setTimeout(doMoveCamera, bridgeMs);
     } else {
       doMoveCamera();
@@ -2435,6 +2482,7 @@ function runKaraoke(text, durationSec, myToken, getElapsedSec) {
 
 // เตรียมเสียงพากย์ "ทั้งคลิป" ให้เสร็จก่อนเริ่มเล่น กันเสียงมาสะดุดกลางคันตอนเล่นจริง
 // (คืน false ถ้าโดนยกเลิกระหว่างเตรียม เช่นกดหยุดหรือกดเล่นซ้ำ)
+// ttsCache คีย์ด้วยเนื้อหาข้อความจริง (ไม่ใช่ index ฉาก) — แก้สคริปต์แค่ฉาก 4 จะ cache hit ฉาก 1-3,5 ทันที regenerate เฉพาะฉาก 4 โดยอัตโนมัติ (Script Edit Detection)
 async function preloadNarration(myToken) {
   const startIdx = activeIndex === -1 ? 0 : activeIndex;
   for (let i = startIdx; i < scenes.length; i++) {
@@ -2442,11 +2490,52 @@ async function preloadNarration(myToken) {
     const segments = splitSegments(scenes[i].script);
     for (const seg of segments) {
       if (myToken !== playToken) return false;
-      el.subtitleText.textContent = `กำลังเตรียมเสียงพากย์ทั้งคลิป... (ฉาก ${i + 1}/${scenes.length})`;
+      el.subtitleText.textContent = `กำลังสร้างเสียงพากย์ (GENERATING VOICE)... ฉาก ${i + 1}/${scenes.length}`;
       const mood = scenes[i].styleMood;
       try { await fetchTts(seg, mood && mood.rate, mood && mood.pitch); } catch (e) { console.warn(e); }
     }
   }
+  return myToken === playToken;
+}
+
+// ---------- Full Scene Preload / Media Preparation: เตรียมรูปภาพทุกฉาก (geophoto/callout/badge ธง/insert ที่เป็นรูป) ก่อนเล่น ----------
+// ไม่มีรูปในสคริปต์เลย (ส่วนใหญ่ของสคริปต์ปกติ) = ลูป map ว่างเปล่า resolve ทันที ไม่กระทบพฤติกรรมเดิมเลย
+const imagePreloadCache = new Map(); // url -> Promise<boolean> (โหลดสำเร็จ/ไม่สำเร็จ) กัน preload ซ้ำถ้ารูปเดิมใช้ซ้ำหลายฉาก
+function preloadOneImage(url) {
+  if (!url) return Promise.resolve(true);
+  if (imagePreloadCache.has(url)) return imagePreloadCache.get(url);
+  const p = new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+  imagePreloadCache.set(url, p);
+  return p;
+}
+
+function collectSceneImageUrls(scene) {
+  const urls = [];
+  if (scene.geophoto) urls.push(scene.geophoto.url);
+  if (scene.callout) urls.push(scene.callout.url);
+  if (scene.badge && scene.badge.type === "flag") urls.push(`/api/flag?code=${encodeURIComponent(scene.badge.value)}`);
+  if (scene.insert && isImageUrl(scene.insert)) urls.push(scene.insert);
+  return urls;
+}
+
+async function preloadImages(list, myToken, startIdx) {
+  const urls = new Set();
+  for (let i = startIdx; i < list.length; i++) collectSceneImageUrls(list[i]).forEach((u) => urls.add(u));
+  if (!urls.size) return true; // สคริปต์นี้ไม่มีรูปเลย — ผ่านทันที เหมือนเดิมทุกจุด
+  let done = 0;
+  await Promise.all(
+    [...urls].map((u) =>
+      preloadOneImage(u).then(() => {
+        done++;
+        if (myToken === playToken) el.subtitleText.textContent = `กำลังเตรียมภาพประกอบ (IMAGE PREPARATION)... ${done}/${urls.size}`;
+      })
+    )
+  );
   return myToken === playToken;
 }
 
@@ -2533,12 +2622,16 @@ function setPlaying(next) {
       narrationLoop();
       return;
     }
-    // เตรียมเสียงพากย์ทั้งคลิปให้เสร็จก่อน แล้วค่อยเริ่มเล่น+เพลงพร้อมกันทีเดียว กันเสียงสะดุดกลางคัน
+    // เตรียมสื่อ "ทั้ง Timeline" ให้ครบก่อนเล่น (เสียงพากย์ + รูปประกอบ ทำคู่ขนานกัน) แล้วค่อยเริ่มเล่น+เพลงพร้อมกันทีเดียว
+    // กันเสียง/ภาพมาสะดุดกลางคัน ตรงตาม Preparation Phase (SCRIPT→SCENE ANALYSIS→MEDIA PLANNING→...→READY→PLAY)
     const myToken = ++playToken;
+    const startIdx = activeIndex === -1 ? 0 : activeIndex;
     isPlaying = true;
     el.btnPlay.textContent = "⏸";
-    preloadNarration(myToken).then((completed) => {
-      if (!completed || myToken !== playToken) return;
+    el.subtitleText.textContent = "กำลังเตรียมพร้อม (PREPARING)...";
+    Promise.all([preloadNarration(myToken), preloadImages(scenes, myToken, startIdx)]).then(([ttsReady, imagesReady]) => {
+      if (!ttsReady || !imagesReady || myToken !== playToken) return;
+      el.subtitleText.textContent = "พร้อมเล่น (READY)";
       startBgm();
       narrationLoop();
     });
