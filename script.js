@@ -134,6 +134,12 @@ const el = {
   wikidataQuery: document.getElementById("wikidataQuery"),
   btnWikidataSearch: document.getElementById("btnWikidataSearch"),
   wikidataResult: document.getElementById("wikidataResult"),
+  audioSearchQuery: document.getElementById("audioSearchQuery"),
+  btnAudioSearch: document.getElementById("btnAudioSearch"),
+  audioSearchResult: document.getElementById("audioSearchResult"),
+  archiveSearchQuery: document.getElementById("archiveSearchQuery"),
+  btnArchiveSearch: document.getElementById("btnArchiveSearch"),
+  archiveSearchResult: document.getElementById("archiveSearchResult"),
   fileImportXlsx: document.getElementById("fileImportXlsx"),
   mapStage: document.getElementById("mapStage"),
   ttsPlayer: document.getElementById("ttsPlayer"),
@@ -1659,7 +1665,7 @@ function finalizeScene(raw) {
     pace: paceRaw, pacing, density, attention, emphasis, intensity, composition,
     navigation, travelmode,
     image: imageRaw, video: videoRaw, audio: audioRaw,
-    autoimage, year: yearRaw,
+    autoimage, year: yearRaw, videourl, audiourl,
   } = raw;
   if (!place || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1899,6 +1905,11 @@ function finalizeScene(raw) {
     autoImagePref: ["on", "off"].includes(autoimage) ? autoimage : null,
     // year=1941 — ปีของเหตุการณ์ฉากนี้ (ค.ศ.) ใช้ช่วยดึงภาพประกอบอัตโนมัติให้ตรงยุค ไม่ใส่ = เดาจากบทพากย์เอง (ดูฟังก์ชัน extractYearHint)
     yearHint: /^\d{4}$/.test((yearRaw || "").trim()) ? yearRaw.trim() : null,
+    // videourl=<url> — วางลิงก์วิดีโอ (เช่นจากเครื่องมือค้น Internet Archive พาท 37) ตรงๆ เหมือน geophoto= ไม่ผ่าน asset manifest ของ Smart Import
+    videoAsset: (videourl || "").trim() ? { url: videourl.trim(), duration: 0, label: "" } : null,
+    // audiourl=<url> — วางลิงก์เสียง (เช่นจากเครื่องมือค้น Wikimedia Commons Audio พาท 37) ตรงๆ ข้าม TTS ของฉากนี้เหมือน override เสียงพากย์เดิม
+    // ไม่รู้ duration ตอน parse (ต้องโหลดไฟล์จริงก่อนถึงจะวัดได้) — โปรแกรมจะ probe ให้เองตอนเตรียมเล่น (ดู probeExplicitAudioUrls)
+    overrideAudioUrl: (audiourl || "").trim() || null,
   };
 }
 
@@ -1968,6 +1979,8 @@ const TAG_KEY_ALIASES = {
   audio: "audio", เสียง: "audio",
   autoimage: "autoimage", ดึงภาพอัตโนมัติ: "autoimage",
   year: "year", ปี: "year",
+  videourl: "videourl", ลิงก์วิดีโอ: "videourl",
+  audiourl: "audiourl", ลิงก์เสียง: "audiourl",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -2844,6 +2857,18 @@ async function autoFetchMissingImages(list, myToken) {
   return true;
 }
 
+// audiourl= วางลิงก์ตรงๆไว้ตั้งแต่ parse (finalizeScene) แต่ยังไม่รู้ duration จริง (ต้องโหลดไฟล์ก่อนถึงจะวัดได้)
+// probe ให้ครบก่อนเข้า narrationLoop เสมอ กัน duration=0 ทำให้ข้ามฉากเร็วผิดจังหวะ (fallback เป็น scene.duration เดิมถ้าโหลดไม่สำเร็จ เหมือน Part26/27)
+async function probeExplicitAudioUrls(list, myToken) {
+  const targets = list.filter((s) => s.overrideAudioUrl && !s.overrideAudioDuration);
+  for (const scene of targets) {
+    if (myToken !== playToken) return false;
+    scene.overrideAudioDuration = await probeMediaDuration(scene.overrideAudioUrl, "audio") || scene.duration;
+    if (myToken !== playToken) return false;
+  }
+  return true;
+}
+
 function setPlaying(next) {
   if (next) {
     if (isRenderMode) {
@@ -2863,6 +2888,8 @@ function setPlaying(next) {
       // autoFetchMissingImages ตัดสินใจเองต่อฉาก (autoimage=on/off รายฉาก ทับ toggle รวม) — เรียกเสมอ ไม่มีเป้าหมายก็ return ทันทีเงียบๆ
       const ok = await autoFetchMissingImages(scenes, myToken);
       if (!ok || myToken !== playToken) return;
+      const audioOk = await probeExplicitAudioUrls(scenes, myToken);
+      if (!audioOk || myToken !== playToken) return;
       Promise.all([preloadNarration(myToken), preloadImages(scenes, myToken, startIdx)]).then(([ttsReady, imagesReady]) => {
         if (!ttsReady || !imagesReady || myToken !== playToken) return;
         el.subtitleText.textContent = "พร้อมเล่น (READY)";
@@ -3056,16 +3083,83 @@ el.btnWikidataSearch.addEventListener("click", async () => {
       </div>
       <p class="import-hint">⚠ เช็กคำอธิบายด้านบนให้ตรงกับเหตุการณ์ที่ต้องการก่อนนำไปใช้เสมอ — ไม่ตรง = อย่าคัดลอก ลองพิมพ์คำค้นใหม่ให้เจาะจงขึ้น</p>`;
     const copyEl = document.getElementById("wikidataCopyTarget");
-    if (copyEl) {
-      copyEl.addEventListener("click", () => {
-        navigator.clipboard.writeText(tagSnippet).catch(() => {});
-        const old = copyEl.textContent;
-        copyEl.textContent = "คัดลอกแล้ว!";
-        setTimeout(() => { copyEl.textContent = old; }, 1200);
-      });
-    }
+    if (copyEl) copyOnClick(copyEl, tagSnippet);
   } catch (err) {
     el.wikidataResult.innerHTML = `<div class="upload-item">ค้นหาไม่สำเร็จ: ${escapeHtml(err.message)} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ</div>`;
+  }
+});
+
+// คลิกแล้วคัดลอกข้อความไป clipboard พร้อมเปลี่ยนป้ายชั่วคราวยืนยัน — ใช้ร่วมกันทุกเครื่องมือค้นสื่อภายนอก (รูปแบบเดียวกับ addUploadListItem เดิม)
+function copyOnClick(elNode, text) {
+  elNode.style.cursor = "pointer";
+  elNode.addEventListener("click", () => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    const old = elNode.textContent;
+    elNode.textContent = "คัดลอกแล้ว!";
+    setTimeout(() => { elNode.textContent = old; }, 1200);
+  });
+}
+
+// ---------- ค้นเสียงประกอบ/SFX จาก Wikimedia Commons (พาท 37) — เหมือนค้นภาพ พาท 26 แค่กรอง filetype:audio ----------
+el.btnAudioSearch.addEventListener("click", async () => {
+  const q = el.audioSearchQuery.value.trim();
+  if (!q) return;
+  el.audioSearchResult.innerHTML = `<div class="upload-item">กำลังค้นหา...</div>`;
+  try {
+    const res = await fetch(`/api/audiosearch?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(`ค้นหาไม่สำเร็จ (${res.status})`);
+    const { results } = await res.json();
+    if (!results || !results.length) {
+      el.audioSearchResult.innerHTML = `<div class="upload-item">ไม่พบไฟล์เสียง ลองคำค้นภาษาอังกฤษอื่น</div>`;
+      return;
+    }
+    el.audioSearchResult.innerHTML = results.map((r, i) => `
+      <div class="upload-item">
+        <span class="up-path" id="audioResult${i}">${escapeHtml(r.title)}</span>
+      </div>`).join("");
+    results.forEach((r, i) => copyOnClick(document.getElementById(`audioResult${i}`), `audiourl=${r.url}`));
+  } catch (err) {
+    el.audioSearchResult.innerHTML = `<div class="upload-item">ค้นหาไม่สำเร็จ: ${escapeHtml(err.message)} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ</div>`;
+  }
+});
+
+// ---------- ค้นวิดีโอประวัติศาสตร์จาก Internet Archive (พาท 37) — ค้น 2 ขั้น (ค้นรายการ → ดึงไฟล์เล่นได้ต่อรายการที่เลือก) ----------
+el.btnArchiveSearch.addEventListener("click", async () => {
+  const q = el.archiveSearchQuery.value.trim();
+  if (!q) return;
+  el.archiveSearchResult.innerHTML = `<div class="upload-item">กำลังค้นหา...</div>`;
+  try {
+    const res = await fetch(`/api/archivesearch?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(`ค้นหาไม่สำเร็จ (${res.status})`);
+    const { results } = await res.json();
+    if (!results || !results.length) {
+      el.archiveSearchResult.innerHTML = `<div class="upload-item">ไม่พบคลิป ลองคำค้นภาษาอังกฤษที่เจาะจงกว่านี้</div>`;
+      return;
+    }
+    el.archiveSearchResult.innerHTML = results.map((r, i) => `
+      <div class="upload-item" style="display:block;">
+        <strong>${escapeHtml(r.title)}</strong><br>
+        <span style="font-size:11px;color:var(--ink-dim)">${escapeHtml(r.description || "(ไม่มีคำอธิบาย)")}</span><br>
+        <button class="ghost-btn" type="button" data-archive-id="${escapeHtml(r.identifier)}" style="margin-top:4px;font-size:11px;padding:4px 8px;">ดึงลิงก์เล่นได้</button>
+        <span class="up-path" id="archiveFileResult${i}"></span>
+      </div>`).join("");
+    el.archiveSearchResult.querySelectorAll("button[data-archive-id]").forEach((btn, i) => {
+      btn.addEventListener("click", async () => {
+        const target = document.getElementById(`archiveFileResult${i}`);
+        target.textContent = "กำลังโหลด...";
+        try {
+          const fres = await fetch(`/api/archivefile?id=${encodeURIComponent(btn.dataset.archiveId)}`);
+          const { result } = await fres.json();
+          if (!result) { target.textContent = "ไม่พบไฟล์วิดีโอเล่นได้ในรายการนี้"; return; }
+          target.textContent = `videourl=${result.url} (${result.sizeMb}MB)`;
+          copyOnClick(target, `videourl=${result.url}`);
+        } catch (err) {
+          target.textContent = `โหลดไม่สำเร็จ: ${err.message}`;
+        }
+      });
+    });
+  } catch (err) {
+    el.archiveSearchResult.innerHTML = `<div class="upload-item">ค้นหาไม่สำเร็จ: ${escapeHtml(err.message)} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ</div>`;
   }
 });
 

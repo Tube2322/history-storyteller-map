@@ -250,6 +250,108 @@ def fetch_image_search(query: str, limit: int = 5) -> list:
     return results
 
 
+# ---------- ค้นเสียงประกอบ/SFX จาก Wikimedia Commons (endpoint เดิม แค่กรอง filetype:audio — ไฟล์เสียงก็อยู่ namespace 6 เหมือนรูป) ----------
+_audiosearch_cache = {}
+
+
+def fetch_audio_search(query: str, limit: int = 5) -> list:
+    key = (query.lower(), limit)
+    if key in _audiosearch_cache:
+        return _audiosearch_cache[key]
+    qs = urllib.parse.urlencode({
+        "action": "query",
+        "generator": "search",
+        "gsrsearch": f"filetype:audio {query}",
+        "gsrnamespace": 6,
+        "gsrlimit": limit,
+        "prop": "imageinfo",
+        "iiprop": "url|mime",
+        "format": "json",
+    })
+    url = f"https://commons.wikimedia.org/w/api.php?{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool)"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    pages = (data.get("query") or {}).get("pages") or {}
+    results = []
+    for page in pages.values():
+        infos = page.get("imageinfo") or []
+        if not infos:
+            continue
+        info = infos[0]
+        audio_url = info.get("url")
+        if audio_url:
+            results.append({"title": page.get("title", ""), "url": audio_url, "mime": info.get("mime", "")})
+    _audiosearch_cache[key] = results
+    return results
+
+
+# ---------- Internet Archive (archive.org) — คลังฟิล์ม/newsreel สาธารณสมบัติ ฟรี ไม่ต้องมีคีย์ ----------
+# ค้นแล้วต้องเรียก metadata อีกรอบต่อ identifier เพื่อหาไฟล์ mp4 จริงที่เล่นได้ (2 ขั้นตอนเหมือน Wikidata)
+_archivesearch_cache = {}
+_archivefile_cache = {}
+
+
+def fetch_archive_search(query: str, limit: int = 6) -> list:
+    key = (query.lower(), limit)
+    if key in _archivesearch_cache:
+        return _archivesearch_cache[key]
+    # fl[] ต้องส่งซ้ำได้หลายค่า — ใช้ list of tuples แทน dict ให้ urlencode ส่งคีย์ซ้ำได้
+    qs = urllib.parse.urlencode([
+        ("q", f"({query}) AND mediatype:(movies)"),
+        ("fl[]", "identifier"),
+        ("fl[]", "title"),
+        ("fl[]", "description"),
+        ("rows", limit),
+        ("output", "json"),
+    ])
+    url = f"https://archive.org/advancedsearch.php?{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool)"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    docs = ((data.get("response") or {}).get("docs")) or []
+    results = []
+    for d in docs:
+        desc = d.get("description")
+        if isinstance(desc, list):
+            desc = desc[0] if desc else ""
+        results.append({
+            "identifier": d.get("identifier", ""),
+            "title": d.get("title", ""),
+            "description": (desc or "")[:200],
+        })
+    _archivesearch_cache[key] = results
+    return results
+
+
+def fetch_archive_file(identifier: str):
+    if identifier in _archivefile_cache:
+        return _archivefile_cache[identifier]
+    req = urllib.request.Request(
+        f"https://archive.org/metadata/{urllib.parse.quote(identifier)}",
+        headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool)"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    files = data.get("files") or []
+    # เลือกไฟล์ .mp4 ที่ไม่ใช่ "Preservation Master" (มักใหญ่มากเป็น GB ไม่เหมาะฝัง <video> ตรงๆ) เอาไฟล์เล็กสุดที่พอเล่นได้
+    mp4_files = [f for f in files if f.get("name", "").lower().endswith(".mp4") and "preservation" not in f.get("name", "").lower()]
+    if not mp4_files:
+        mp4_files = [f for f in files if f.get("name", "").lower().endswith(".mp4")]
+    if not mp4_files:
+        _archivefile_cache[identifier] = None
+        return None
+    mp4_files.sort(key=lambda f: int(f.get("size") or 0))
+    chosen = mp4_files[0]
+    result = {
+        "url": f"https://archive.org/download/{identifier}/{urllib.parse.quote(chosen['name'])}",
+        "sizeMb": round(int(chosen.get("size") or 0) / 1024 / 1024, 1),
+        "duration": float(chosen.get("length")) if chosen.get("length") else None,
+    }
+    _archivefile_cache[identifier] = result
+    return result
+
+
 # ---------- Wikidata (ฟรี ไม่ต้องมีคีย์) — ชื่อภาษาอังกฤษ/พิกัด/ปี ของสถานที่หรือเหตุการณ์ประวัติศาสตร์ จากฐานข้อมูลที่มีอ้างอิงจริง ----------
 # ใช้แก้ปัญหา 2 อย่าง: (1) ค้นภาพ Wikimedia Commons ด้วยชื่อไทยมักไม่เจอ/ได้รูปผิดยุค — ได้ชื่ออังกฤษ+ปีจริงมาค้นแทน
 # (2) year= ที่เดาจากบทพากย์ (พาท 33) ไม่มีก็ได้ปีจริงจาก Wikidata แทนได้ ไม่ใช่การเดา
@@ -378,6 +480,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith("/api/wikidata"):
             self.handle_wikidata()
             return
+        if self.path.startswith("/api/audiosearch"):
+            self.handle_audiosearch()
+            return
+        if self.path.startswith("/api/archivesearch"):
+            self.handle_archivesearch()
+            return
+        if self.path.startswith("/api/archivefile"):
+            self.handle_archivefile()
+            return
         path_only = self.path.split("?", 1)[0]
         if path_only in ("/", "/index.html"):
             self.handle_index()
@@ -434,6 +545,75 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             results = fetch_image_search(query)
             body = json.dumps({"results": results}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
+
+    def handle_audiosearch(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            query = (qs.get("q", [""])[0] or "").strip()
+            if not query:
+                self.send_error(400, "missing q")
+                return
+            results = fetch_audio_search(query)
+            body = json.dumps({"results": results}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
+
+    def handle_archivesearch(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            query = (qs.get("q", [""])[0] or "").strip()
+            if not query:
+                self.send_error(400, "missing q")
+                return
+            results = fetch_archive_search(query)
+            body = json.dumps({"results": results}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
+
+    def handle_archivefile(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            identifier = (qs.get("id", [""])[0] or "").strip()
+            if not identifier:
+                self.send_error(400, "missing id")
+                return
+            result = fetch_archive_file(identifier)
+            body = json.dumps({"result": result}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

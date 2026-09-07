@@ -210,6 +210,26 @@
             </div>
             <div id="wikidataResult"></div>
           </div>
+
+          <div class="brand-settings">
+            <h3>🔊 ค้นเสียงประกอบ/SFX จาก Wikimedia Commons (ฟรี ไม่ต้องมีคีย์)</h3>
+            <p class="import-hint">ค้นไฟล์เสียงจริง (เสียงไซเรน/ระเบิด/ฝูงชน/คำปราศรัยประวัติศาสตร์ ฯลฯ) พิมพ์ภาษาอังกฤษแม่นกว่า เช่น <code>air raid siren</code> — เจอแล้วกดคัดลอกลิงก์ไปวางในคีย์ <code>audiourl=</code> ของฉากนั้น (ข้าม TTS ใช้ไฟล์นี้แทนเสียงพากย์ทั้งฉาก)</p>
+            <div class="brand-row">
+              <input id="audioSearchQuery" class="brand-input" type="text" placeholder="เช่น air raid siren" style="flex:1" />
+              <button id="btnAudioSearch" class="ghost-btn" type="button">ค้นหา</button>
+            </div>
+            <div id="audioSearchResult" class="upload-list"></div>
+          </div>
+
+          <div class="brand-settings">
+            <h3>🎬 ค้นวิดีโอประวัติศาสตร์จาก Internet Archive (ฟรี ไม่ต้องมีคีย์)</h3>
+            <p class="import-hint">คลังฟิล์ม/newsreel สาธารณสมบัติจริง พิมพ์ภาษาอังกฤษเจาะจงเหตุการณ์ เช่น <code>pearl harbor newsreel 1941</code> — กด "ดึงลิงก์เล่นได้" แล้วเช็กชื่อ/คำอธิบายให้ตรงก่อนคัดลอกไปวางในคีย์ <code>videourl=</code> (ไฟล์อาจใหญ่โหลดช้า ลองเล่นดูก่อนใช้จริงเสมอ)</p>
+            <div class="brand-row">
+              <input id="archiveSearchQuery" class="brand-input" type="text" placeholder="เช่น pearl harbor newsreel 1941" style="flex:1" />
+              <button id="btnArchiveSearch" class="ghost-btn" type="button">ค้นหา</button>
+            </div>
+            <div id="archiveSearchResult" class="upload-list"></div>
+          </div>
           </div>
 
           <div class="tab-panel" data-tab="script">
@@ -248,6 +268,7 @@
             <br><strong>mainland</strong>: <code>on</code> — ตัดเกาะ/ดินแดนไกลออกไปทิ้งตอนคำนวณกรอบกล้อง (ใช้คู่กับ highlight)
             <br><strong>labelfont / labelsize / labelweight</strong>: ปรับฟอนต์/ขนาด/น้ำหนักตัวอักษรป้ายชื่อหมุดเฉพาะฉากนั้น
             <br><strong>photosize</strong>: <code>120</code> — ปรับขนาด (px) การ์ดภาพ <code>geophoto=</code>/Smart Import/วิดีโอปักพิกัดของฉากนั้น (สี่เหลี่ยมจัตุรัส) ไม่ใส่ = ดีฟอลต์ 84px เดิม
+            <br><strong>videourl</strong> / <strong>audiourl</strong>: วางลิงก์วิดีโอ/เสียงตรงๆ (เช่นจากเครื่องมือค้น Internet Archive/Wikimedia Commons Audio ด้านล่างในแท็บ "สร้างฉากง่ายๆ") — <code>videourl=</code> ปักการ์ดวิดีโอที่ฉากเหมือน Smart Import, <code>audiourl=</code> ข้าม TTS ใช้ไฟล์นี้พากย์แทนทั้งฉาก
             <br><strong>caption / captionpos</strong>: <code>caption=ข้อความ | captionpos=top/center/bottom</code> — ข้อความลอยกลางจอ ไม่ผูกกับหมุด (ทำหัวข้อ/คำโปรย)
             <br><strong>geophoto</strong>: <code>url:lat,lng</code> หรือ <code>url:lat,lng:ป้ายชื่อ</code> — ปักรูปจริง (จากที่อัปโหลดไว้/ค้นอัตโนมัติ) ตามพิกัดจริงบนแผนที่ ใส่ป้ายชื่อเพิ่มได้
             <br><strong>draw / drawcolor</strong>: <code>draw=lat,lng;lat,lng;...</code> — ลากเส้นอิสระตามพิกัดที่พิมพ์เอง (ขีดเส้นทาง/วงล้อม) สีกำหนดด้วย <code>drawcolor=RRGGBB</code>
