@@ -133,6 +133,55 @@
               </label>
               <input id="builderSpeed" class="brand-input" type="number" min="1" placeholder="ความเร็วจริง กม./ชม. (ไม่ใส่ = ใช้ความยาวฉากคำนวณเอง)" style="flex:1" />
             </div>
+            <div class="brand-row">
+              <select id="builderStyle" class="brand-select" style="flex:1">
+                <option value="">ไม่ใช้พรีเซ็ตสไตล์ (ตั้งเอฟเฟกต์/สีเอง)</option>
+                <optgroup label="🎬 สารคดี">
+                  <option value="doc-classic">คลาสสิก นิ่งสงบ</option>
+                  <option value="doc-epic">มหากาพย์ สปอตไลต์</option>
+                  <option value="doc-royal">ราชวงศ์ มงกุฎทอง</option>
+                  <option value="doc-war">สงคราม แดงเข้ม</option>
+                  <option value="doc-discovery">การค้นพบ เขียวสด</option>
+                  <option value="doc-ruins">ซากปรักหักพัง</option>
+                </optgroup>
+                <optgroup label="🚗 วล็อกเดินทาง">
+                  <option value="vlog-roadtrip">ทริปถนน สดใส</option>
+                  <option value="vlog-city">ในเมือง คึกคัก</option>
+                  <option value="vlog-nature">ธรรมชาติ เขียวสบาย</option>
+                  <option value="vlog-coastal">ชายฝั่ง ฟ้าใส</option>
+                  <option value="vlog-adventure">ผจญภัย ตื่นเต้น</option>
+                  <option value="vlog-food">กิน-เที่ยว สนุก</option>
+                </optgroup>
+                <optgroup label="📰 ข่าว/เหตุการณ์">
+                  <option value="news-breaking">ข่าวด่วน</option>
+                  <option value="news-analysis">วิเคราะห์เชิงลึก</option>
+                  <option value="news-timeline">ไทม์ไลน์เหตุการณ์</option>
+                  <option value="news-conflict">ความขัดแย้ง</option>
+                  <option value="news-diplomacy">การทูต</option>
+                  <option value="news-disaster">ภัยพิบัติ</option>
+                </optgroup>
+                <optgroup label="⚔️ มหากาพย์/สงคราม">
+                  <option value="epic-battle">สมรภูมิรบ</option>
+                  <option value="epic-siege">การล้อมเมือง</option>
+                  <option value="epic-conquest">การพิชิตดินแดน</option>
+                  <option value="epic-legend">ตำนานวีรบุรุษ</option>
+                  <option value="epic-empire">จักรวรรดิ</option>
+                  <option value="epic-revolution">การปฏิวัติ</option>
+                </optgroup>
+                <optgroup label="👻 เรื่องผี/ลึกลับ">
+                  <option value="ghost-haunted">สถานที่ผีสิง</option>
+                  <option value="ghost-legend">ตำนานหลอน</option>
+                  <option value="ghost-ritual">พิธีกรรมลึกลับ</option>
+                  <option value="ghost-vanish">การหายตัวปริศนา</option>
+                  <option value="ghost-whisper">เสียงกระซิบยามค่ำ</option>
+                  <option value="ghost-shadow">เงาในความมืด</option>
+                </optgroup>
+              </select>
+              <label class="check-row" style="flex:1">
+                <input id="builderAutoImage" type="checkbox" />
+                ดึงภาพประกอบอัตโนมัติ (Wikimedia Commons)
+              </label>
+            </div>
             <textarea id="builderScript" class="import-textarea" style="flex:0 0 80px" placeholder="บทพากย์/คำบรรยายฉากนี้"></textarea>
             <div class="import-actions">
               <input id="builderDur" class="brand-input" type="number" min="1" placeholder="วินาที (ปล่อยว่าง = 5)" style="flex:1" />
@@ -159,8 +208,8 @@
             <br><br><strong>แบบ column เดิม (เรียงตำแหน่งตายตัว):</strong>
             <br><code>สถานที่ | lat,lng | แผนกล้อง | สคริปต์เสียง | วินาที | ไอคอน | เอฟเฟกต์ | insert</code>
             <br><br>แผนกล้อง: <code>establishing / fly-to / push-in / zoom-out / orbit / cut-to-insert / insert-overlay / battle-map</code>
-            <br>ไอคอน: <code>city / castle / ship / battle / flag / mountain / camp</code> (ไม่ใส่ = 📍)
-            <br>เอฟเฟกต์: <code>storm / fire / battle / none</code> — สติ๊กเกอร์อนิเมชันปักบนพิกัด
+            <br>ไอคอน: <code>city / castle / ship / battle / flag / mountain / camp / temple / tomb / crown</code> (ไม่ใส่ = 📍)
+            <br>เอฟเฟกต์: <code>storm / fire / battle / ghost / fog / candle / lightning / ruins / crown / none</code> — สติ๊กเกอร์อนิเมชันปักบนพิกัด
             <br><strong>tilt</strong>: 0-60 (องศาเอียงกล้อง 3D) · <strong>bearing</strong>: 0-360 (ทิศเริ่มช็อต ไม่หมุนต่อเนื่อง) — ใช้ได้เฉพาะ tag-mode
             <br><strong>highlight</strong>: <code>country / province / place / none</code> — ไฮไลต์เขตแดนจริงจาก OpenStreetMap ตามพิกัด พร้อมป้ายชื่อขึ้นกลางจอ + ปรับซูมให้พอดีขนาดพื้นที่อัตโนมัติ (เฉพาะ tag-mode)
             <br><strong>cam=battle-map</strong>: มุมมองสไตล์ RTS (เอียงเบาๆ ไม่หมุน) ใช้คู่กับ <strong>arrows</strong> เพื่อวาดลูกศรเดินทัพหลายเส้นพร้อมกัน แยกสีตามฝ่าย
@@ -175,7 +224,7 @@
             <br><strong>mainland</strong>: <code>on</code> — ตัดเกาะ/ดินแดนไกลออกไปทิ้งตอนคำนวณกรอบกล้อง (ใช้คู่กับ highlight)
             <br><strong>labelfont / labelsize / labelweight</strong>: ปรับฟอนต์/ขนาด/น้ำหนักตัวอักษรป้ายชื่อหมุดเฉพาะฉากนั้น
             <br><strong>caption / captionpos</strong>: <code>caption=ข้อความ | captionpos=top/center/bottom</code> — ข้อความลอยกลางจอ ไม่ผูกกับหมุด (ทำหัวข้อ/คำโปรย)
-            <br><strong>geophoto</strong>: <code>url:lat,lng</code> — ปักรูปจริง (จากที่อัปโหลดไว้) ตามพิกัดจริงบนแผนที่
+            <br><strong>geophoto</strong>: <code>url:lat,lng</code> หรือ <code>url:lat,lng:ป้ายชื่อ</code> — ปักรูปจริง (จากที่อัปโหลดไว้/ค้นอัตโนมัติ) ตามพิกัดจริงบนแผนที่ ใส่ป้ายชื่อเพิ่มได้
             <br><strong>draw / drawcolor</strong>: <code>draw=lat,lng;lat,lng;...</code> — ลากเส้นอิสระตามพิกัดที่พิมพ์เอง (ขีดเส้นทาง/วงล้อม) สีกำหนดด้วย <code>drawcolor=RRGGBB</code>
             <br><strong>persist</strong>: <code>persist=2</code> — ให้เขตแดนที่ไฮไลต์ไว้ค้างอยู่ต่ออีก N ฉากถัดไป แม้ฉากถัดไปไม่ได้ตั้ง highlight
             <br><strong>focus</strong>: <code>focus=on</code> — ทำพื้นหลังทั้งจอเป็นขาวดำ เหลือแค่เขตที่ไฮไลต์เป็นสีสดจัด (ต้องมี highlight ด้วย)
@@ -185,6 +234,7 @@
             <br><strong>route</strong>: <code>route=road</code> — เส้นทางระหว่างฉากนี้กับฉากก่อนหน้าวิ่งตามถนนจริง (ผ่าน OSRM) แทนเส้นโค้งจำลอง เหมาะกับฉากท่องเที่ยว/เดินทางในพื้นที่เดียวกัน
             <br><strong>follow</strong>: <code>follow=on</code> — กล้องติดตามไอคอนพาหนะไปตลอดเส้นทาง (ใช้กับ cam=fly-to) แทนการซูมเห็นเส้นทางทั้งหมดนิ่งๆ
             <br><strong>speed</strong>: <code>speed=80</code> — ความเร็วเดินทางจริง (กม./ชม.) เอนจิ้นคำนวณเวลาที่ไอคอนใช้วิ่งจากระยะทางจริง/ความเร็วแทนการเดาความยาวฉากเอง (ใช้กับ cam=fly-to)
+            <br><strong>style</strong>: <code>style=doc-classic</code> — พรีเซ็ตลุกเล่นการนำเสนอ (30 แบบ 5 หมวด: สารคดี/วล็อก/ข่าว/มหากาพย์/ผี) ตั้งเอฟเฟกต์+สีไฮไลต์+สปอตไลต์+ลักษณะเผยพื้นที่+โทนพากย์เสียงให้อัตโนมัติ (ทับเฉพาะค่าที่ยังไม่ได้ตั้งเองใน tag อื่น) — ดูรายชื่อทั้งหมดในดรอปดาวน์ "สร้างฉากง่ายๆ" ด้านบน
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>

@@ -36,12 +36,21 @@ const ICON_GLYPHS = {
   flag: "🚩",
   mountain: "⛰️",
   camp: "⛺",
+  temple: "🛕",
+  tomb: "⚰️",
+  crown: "👑",
   default: "📍",
 };
 const EFFECT_GLYPHS = {
   storm: "⛈️",
   fire: "🔥",
   battle: "⚔️",
+  ghost: "👻",
+  fog: "🌫️",
+  candle: "🕯️",
+  lightning: "⚡",
+  ruins: "🏚️",
+  crown: "👑",
 };
 const TRANSPORT_GLYPHS = {
   plane: "✈️",
@@ -49,6 +58,50 @@ const TRANSPORT_GLYPHS = {
   ship: "⛴️",
   train: "🚂",
   walk: "🚶",
+};
+
+// ลื่นไหลเวลาเพนกล้อง: easeInOutCubic ใช้ร่วมทุกจุดที่ easeTo/flyTo กันกล้องกระชากช่วงเริ่ม/จบ
+const EASE_CINEMATIC = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+// style=... — พรีเซ็ตลุกเล่นการนำเสนอ (เอฟเฟกต์+สีไฮไลต์+สปอตไลต์+ลักษณะเผยพื้นที่+โทนพากย์เสียง)
+// ทับเฉพาะฟิลด์ที่ผู้ใช้ไม่ได้ระบุเองใน tag อื่น ไม่ยุ่งกับ cam/highlight ที่ผู้ใช้เลือกเอง
+// mood ใช้ปรับ rate/pitch ของ edge-tts ให้น้ำเสียงเข้ากับหมวด (สารคดี/วล็อก/ข่าว/มหากาพย์/ผี)
+const STYLE_PRESETS = {
+  // สารคดี — เรียบ นิ่ง มีน้ำหนัก
+  "doc-classic": { effect: "none", highlightColor: "#f2b544", shade: 0, reveal: "fade", captionPos: "top", mood: { rate: "-4%", pitch: "-1Hz" } },
+  "doc-epic": { effect: "none", highlightColor: "#e8ac2e", shade: 260, reveal: "circular", captionPos: "top", mood: { rate: "-6%", pitch: "-2Hz" } },
+  "doc-royal": { effect: "crown", highlightColor: "#d4af37", shade: 220, reveal: "split", captionPos: "top", mood: { rate: "-5%", pitch: "+0Hz" } },
+  "doc-war": { effect: "battle", highlightColor: "#c0392b", shade: 0, reveal: "wipe", captionPos: "bottom", mood: { rate: "-3%", pitch: "-2Hz" } },
+  "doc-discovery": { effect: "none", highlightColor: "#2ecc71", shade: 0, reveal: "fade", captionPos: "top", mood: { rate: "-2%", pitch: "+1Hz" } },
+  "doc-ruins": { effect: "ruins", highlightColor: "#a67c52", shade: 200, reveal: "diamond", captionPos: "bottom", mood: { rate: "-6%", pitch: "-3Hz" } },
+  // วล็อกเดินทาง — ไว สดใส
+  "vlog-roadtrip": { effect: "none", highlightColor: "#3498db", shade: 0, reveal: "wipe", captionPos: "bottom", mood: { rate: "+6%", pitch: "+2Hz" } },
+  "vlog-city": { effect: "none", highlightColor: "#e67e22", shade: 0, reveal: "split", captionPos: "bottom", mood: { rate: "+5%", pitch: "+1Hz" } },
+  "vlog-nature": { effect: "none", highlightColor: "#27ae60", shade: 0, reveal: "fade", captionPos: "bottom", mood: { rate: "+3%", pitch: "+1Hz" } },
+  "vlog-coastal": { effect: "none", highlightColor: "#1abc9c", shade: 0, reveal: "fade", captionPos: "bottom", mood: { rate: "+4%", pitch: "+2Hz" } },
+  "vlog-adventure": { effect: "storm", highlightColor: "#f39c12", shade: 0, reveal: "wipe", captionPos: "bottom", mood: { rate: "+8%", pitch: "+2Hz" } },
+  "vlog-food": { effect: "none", highlightColor: "#e74c3c", shade: 0, reveal: "circular", captionPos: "bottom", mood: { rate: "+6%", pitch: "+3Hz" } },
+  // ข่าว/เหตุการณ์ — กระชับ ชัด
+  "news-breaking": { effect: "lightning", highlightColor: "#e74c3c", shade: 0, reveal: "wipe", captionPos: "top", mood: { rate: "+4%", pitch: "+0Hz" } },
+  "news-analysis": { effect: "none", highlightColor: "#2c3e50", shade: 0, reveal: "fade", captionPos: "top", mood: { rate: "+0%", pitch: "+0Hz" } },
+  "news-timeline": { effect: "none", highlightColor: "#f2b544", shade: 0, reveal: "split", captionPos: "top", mood: { rate: "+1%", pitch: "+0Hz" } },
+  "news-conflict": { effect: "battle", highlightColor: "#c0392b", shade: 0, reveal: "wipe", captionPos: "top", mood: { rate: "+2%", pitch: "-1Hz" } },
+  "news-diplomacy": { effect: "none", highlightColor: "#8e44ad", shade: 0, reveal: "fade", captionPos: "top", mood: { rate: "-1%", pitch: "+0Hz" } },
+  "news-disaster": { effect: "storm", highlightColor: "#7f8c8d", shade: 0, reveal: "wipe", captionPos: "top", mood: { rate: "+2%", pitch: "-1Hz" } },
+  // มหากาพย์/สงคราม — หนักแน่น ดราม่า
+  "epic-battle": { effect: "battle", highlightColor: "#8b0000", shade: 280, reveal: "wipe", captionPos: "bottom", mood: { rate: "-4%", pitch: "-3Hz" } },
+  "epic-siege": { effect: "fire", highlightColor: "#a83232", shade: 260, reveal: "diamond", captionPos: "bottom", mood: { rate: "-5%", pitch: "-3Hz" } },
+  "epic-conquest": { effect: "crown", highlightColor: "#b8860b", shade: 240, reveal: "circular", captionPos: "top", mood: { rate: "-4%", pitch: "-2Hz" } },
+  "epic-legend": { effect: "none", highlightColor: "#f2b544", shade: 220, reveal: "fade", captionPos: "top", mood: { rate: "-5%", pitch: "-1Hz" } },
+  "epic-empire": { effect: "crown", highlightColor: "#d4af37", shade: 240, reveal: "split", captionPos: "top", mood: { rate: "-3%", pitch: "-1Hz" } },
+  "epic-revolution": { effect: "lightning", highlightColor: "#c0392b", shade: 260, reveal: "wipe", captionPos: "bottom", mood: { rate: "-2%", pitch: "-2Hz" } },
+  // ผี/ลึกลับ — ช้า ต่ำ หลอน (หมวดใหม่)
+  "ghost-haunted": { effect: "ghost", highlightColor: "#5b3a8e", shade: 300, reveal: "fade", captionPos: "bottom", mood: { rate: "-10%", pitch: "-6Hz" } },
+  "ghost-legend": { effect: "candle", highlightColor: "#4a3b6b", shade: 280, reveal: "diamond", captionPos: "bottom", mood: { rate: "-9%", pitch: "-5Hz" } },
+  "ghost-ritual": { effect: "candle", highlightColor: "#2f1b4d", shade: 300, reveal: "circular", captionPos: "bottom", mood: { rate: "-11%", pitch: "-6Hz" } },
+  "ghost-vanish": { effect: "fog", highlightColor: "#3b3b5c", shade: 320, reveal: "fade", captionPos: "bottom", mood: { rate: "-10%", pitch: "-5Hz" } },
+  "ghost-whisper": { effect: "fog", highlightColor: "#44506b", shade: 260, reveal: "fade", captionPos: "bottom", mood: { rate: "-12%", pitch: "-7Hz" } },
+  "ghost-shadow": { effect: "ghost", highlightColor: "#1f1f2e", shade: 320, reveal: "wipe", captionPos: "bottom", mood: { rate: "-9%", pitch: "-6Hz" } },
 };
 
 const el = {
@@ -128,6 +181,8 @@ const el = {
   builderRoadRoute: document.getElementById("builderRoadRoute"),
   builderFollow: document.getElementById("builderFollow"),
   builderSpeed: document.getElementById("builderSpeed"),
+  builderStyle: document.getElementById("builderStyle"),
+  builderAutoImage: document.getElementById("builderAutoImage"),
   builderScript: document.getElementById("builderScript"),
   builderDur: document.getElementById("builderDur"),
   btnBuilderAdd: document.getElementById("btnBuilderAdd"),
@@ -777,7 +832,7 @@ const pinFromEl = makeMarkerEl("map-pin-content is-from", `<span class="pin-dot"
 // ห้ามใส่ CSS animation หรือ style.transform เพิ่มบน element นี้ตรงๆ — ให้ครอบ span ชั้นในแทน
 const arrowWrapEl = makeMarkerEl("arrow-marker-wrap", `<span class="arrow-marker">➤</span>`);
 const effectWrapEl = makeMarkerEl("effect-marker-wrap", "");
-const geoPhotoWrapEl = makeMarkerEl("geo-photo-wrap", `<span class="geo-photo-card"></span>`);
+const geoPhotoWrapEl = makeMarkerEl("geo-photo-wrap", `<span class="geo-photo-card"></span><span class="geo-photo-label"></span>`);
 const badgeWrapEl = makeMarkerEl("badge-wrap", `<span class="badge-circle"></span><span class="badge-pill"></span>`);
 const calloutRingWrapEl = makeMarkerEl("callout-ring-wrap", `<span class="callout-ring"></span>`);
 
@@ -785,8 +840,9 @@ const markerTo = new maplibregl.Marker({ element: pinToEl, anchor: "center" });
 const markerFrom = new maplibregl.Marker({ element: pinFromEl, anchor: "center" });
 const markerArrow = new maplibregl.Marker({ element: arrowWrapEl, anchor: "center", rotationAlignment: "map" });
 const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "bottom" });
-const markerGeoPhoto = new maplibregl.Marker({ element: geoPhotoWrapEl, anchor: "bottom" });
-const markerBadge = new maplibregl.Marker({ element: badgeWrapEl, anchor: "bottom" });
+// offset ยกขึ้น กันป้ายชื่อใต้รูป (geo-photo-label) ไปทับป้ายชื่อหมุดหลัก (pin label) ที่อยู่จุดพิกัดเดียวกัน
+const markerGeoPhoto = new maplibregl.Marker({ element: geoPhotoWrapEl, anchor: "bottom", offset: [0, -34] });
+const markerBadge = new maplibregl.Marker({ element: badgeWrapEl, anchor: "bottom", offset: [0, -34] });
 const markerCallout = new maplibregl.Marker({ element: calloutRingWrapEl, anchor: "center" });
 
 // pool ลูกศรหัวธง + ป้ายชื่อฝ่ายต้นทาง สำหรับแผนที่สนามรบ (จำนวนไม่แน่นอนต่อฉาก จึงสร้าง/รียูสตามจำนวนจริง)
@@ -965,6 +1021,9 @@ function setCaption(scene) {
 function setGeoPhoto(scene) {
   if (scene.geophoto) {
     geoPhotoWrapEl.querySelector(".geo-photo-card").style.backgroundImage = `url("${scene.geophoto.url}")`;
+    const labelEl = geoPhotoWrapEl.querySelector(".geo-photo-label");
+    labelEl.textContent = scene.geophoto.label || "";
+    labelEl.style.display = scene.geophoto.label ? "" : "none";
     markerGeoPhoto.setLngLat([scene.geophoto.lng, scene.geophoto.lat]).addTo(map);
   } else {
     markerGeoPhoto.remove();
@@ -1046,11 +1105,11 @@ function moveCamera(scene, durationSecOverride, frameOverride) {
 
   if (scene.cam === "cut-to-insert" || scene.cam === "insert-overlay") {
     stopOrbit();
-    map.easeTo({ center, duration: 600, bearing: map.getBearing() });
+    map.easeTo({ center, duration: 600, bearing: map.getBearing(), easing: EASE_CINEMATIC });
     return;
   }
   if (scene.cam === "orbit") {
-    map.easeTo({ center, zoom: 8, duration: 800, pitch: pitch || 45, bearing });
+    map.easeTo({ center, zoom: 8, duration: 800, pitch: pitch || 45, bearing, easing: EASE_CINEMATIC });
     setTimeout(() => startOrbit(durationSec, bearing), 800);
     return;
   }
@@ -1061,21 +1120,21 @@ function moveCamera(scene, durationSecOverride, frameOverride) {
   if (scene.cam === "battle-map") {
     // มุมมองแบบเกม RTS: เอียงเล็กน้อยพอเห็นมิติ ไม่หมุน (เว้นแต่ผู้ใช้ตั้ง bearing เอง)
     const zoom = frameOverride ? frameOverride.zoom : 6;
-    map.easeTo({ center, zoom, duration: 1000, bearing, pitch: pitch || 35 });
+    map.easeTo({ center, zoom, duration: 1000, bearing, pitch: pitch || 35, easing: EASE_CINEMATIC });
   } else if (scene.cam === "fly-to") {
     const zoom = frameOverride ? frameOverride.zoom : 6.2;
     if (scene.follow) {
       // follow=on: กล้องแค่ขยับไปตั้งต้นที่จุดเริ่มเร็วๆ แล้วปล่อยให้ startPathIcon() เป็นคนลากกล้องตามไอคอนเองทุกเฟรม
-      map.easeTo({ center, zoom, duration: 700, bearing, pitch: pitch || 30 });
+      map.easeTo({ center, zoom, duration: 700, bearing, pitch: pitch || 30, easing: EASE_CINEMATIC });
     } else {
-      map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch });
+      map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch, easing: EASE_CINEMATIC });
     }
   } else if (scene.cam === "push-in") {
-    map.easeTo({ center, zoom: 10, duration: 1200, bearing, pitch });
+    map.easeTo({ center, zoom: 10, duration: 1200, bearing, pitch, easing: EASE_CINEMATIC });
   } else if (scene.cam === "zoom-out") {
-    map.easeTo({ center, zoom: 4.2, duration: 1200, bearing, pitch });
+    map.easeTo({ center, zoom: 4.2, duration: 1200, bearing, pitch, easing: EASE_CINEMATIC });
   } else {
-    map.easeTo({ center, zoom: 4.3, duration: 1200, bearing, pitch });
+    map.easeTo({ center, zoom: 4.3, duration: 1200, bearing, pitch, easing: EASE_CINEMATIC });
   }
 }
 
@@ -1116,15 +1175,26 @@ function parseWarmorph(str) {
   return { color: `#${colorRaw}`, p1: [p1[1], p1[0]], p2: [p2[1], p2[0]] };
 }
 
-// geophoto=url:lat,lng — ปักรูปจริงตามพิกัด
+// geophoto=url:lat,lng หรือ geophoto=url:lat,lng:ป้ายชื่อ — ปักรูปจริงตามพิกัด (ป้ายชื่อใส่หรือไม่ก็ได้)
+// เดาจากท้าย: ถ้าส่วนท้ายสุดแยกด้วย , แล้วเป็นตัวเลข 2 ตัว = ไม่มีป้าย, ถ้าไม่ใช่ = ส่วนท้ายสุดคือป้าย ก่อนหน้าคือ lat,lng
 function parseGeophoto(str) {
   if (!str) return null;
-  const idx = str.lastIndexOf(":");
-  if (idx < 0) return null;
-  const url = str.slice(0, idx).trim();
-  const latlng = str.slice(idx + 1).split(",").map((n) => Number(n.trim()));
+  const parts = str.split(":");
+  if (parts.length < 2) return null;
+  const tailAsLatLng = parts[parts.length - 1].split(",").map((n) => Number(n.trim()));
+  let latlng, label, urlParts;
+  if (tailAsLatLng.length === 2 && !tailAsLatLng.some(Number.isNaN)) {
+    latlng = tailAsLatLng;
+    label = "";
+    urlParts = parts.slice(0, parts.length - 1);
+  } else {
+    label = parts[parts.length - 1].trim();
+    latlng = parts[parts.length - 2].split(",").map((n) => Number(n.trim()));
+    urlParts = parts.slice(0, parts.length - 2);
+  }
+  const url = urlParts.join(":").trim();
   if (!url || latlng.length !== 2 || latlng.some(Number.isNaN)) return null;
-  return { url, lat: latlng[0], lng: latlng[1] };
+  return { url, lat: latlng[0], lng: latlng[1], label };
 }
 
 // draw=lat,lng;lat,lng;... — เส้นวาดอิสระตามพิกัดที่พิมพ์เอง (ตรง/โค้ง/วงกลม แล้วแต่จำนวนจุด)
@@ -1172,19 +1242,25 @@ function finalizeScene(raw) {
     reveal, trace, warmorph, mainland,
     labelfont, labelsize, labelweight,
     caption, captionpos, geophoto, draw, drawcolor, persist,
-    focus, highlightcolor, badge, callout, route, follow, speed,
+    focus, highlightcolor, badge, callout, route, follow, speed, style,
   } = raw;
   if (!place || !cam || !script) return null;
+  const preset = STYLE_PRESETS[style] || null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
   const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
-  const effect = EFFECT_GLYPHS[effectRaw] ? effectRaw : "none";
+  const effect = EFFECT_GLYPHS[effectRaw] ? effectRaw : (preset && preset.effect) || "none";
   const highlightKey = ["country", "province", "place"].includes(highlight) ? highlight : "none";
   // ไม่ดีฟอลต์เป็น plane เพราะฉากประวัติศาสตร์ก่อนยุคเครื่องบินจะโชว์ไอคอนผิดยุค — ไม่ระบุ = ไม่มีไอคอนวิ่ง
   const transport = TRANSPORT_GLYPHS[transportRaw] ? transportRaw : "none";
-  const revealKey = ["fade", "wipe", "split", "circular", "iris", "diamond"].includes(reveal) ? (reveal === "iris" ? "circular" : reveal) : "fade";
+  const revealKey = ["fade", "wipe", "split", "circular", "iris", "diamond"].includes(reveal)
+    ? (reveal === "iris" ? "circular" : reveal)
+    : (preset && preset.reveal) || "fade";
   const traceKey = ["one", "two", "tworeverse", "four"].includes(trace) ? trace : "one";
-  const captionPosKey = ["top", "center", "bottom"].includes(captionpos) ? captionpos : "top";
+  const captionPosKey = ["top", "center", "bottom"].includes(captionpos) ? captionpos : (preset && preset.captionPos) || "top";
   const drawColorKey = /^[0-9a-fA-F]{6}$/.test(drawcolor || "") ? `#${drawcolor}` : "#f2b544";
+  const shadeRaw = shade === "on" || (Number(shade) > 0 ? Number(shade) : 0)
+    ? (Number(shade) > 0 ? Number(shade) : 200)
+    : (preset ? preset.shade || 0 : 0);
 
   let lat, lng;
   if (latlng && latlng.includes(",")) {
@@ -1208,7 +1284,7 @@ function finalizeScene(raw) {
     highlight: highlightKey,
     arrows: parseArrows(arrows),
     transport,
-    shade: shade === "on" || (Number(shade) > 0 ? Number(shade) : 0) ? (Number(shade) > 0 ? Number(shade) : 200) : 0,
+    shade: shadeRaw,
     hide: (hide || "").split(",").map((s) => s.trim()).filter(Boolean),
     landfill: landfill === "flag" ? "flag" : "color",
     reveal: revealKey,
@@ -1225,12 +1301,14 @@ function finalizeScene(raw) {
     drawColor: drawColorKey,
     persist: Number(persist) > 0 ? Math.floor(Number(persist)) : 0,
     focus: focus === "on" || focus === "true",
-    highlightColor: /^[0-9a-fA-F]{6}$/.test(highlightcolor || "") ? `#${highlightcolor}` : "",
+    highlightColor: /^[0-9a-fA-F]{6}$/.test(highlightcolor || "") ? `#${highlightcolor}` : (preset && preset.highlightColor) || "",
     badge: parseBadge(badge),
     callout: parseCallout(callout),
     routeRoad: route === "road",
     follow: follow === "on" || follow === "true",
     speedKmh: Number(speed) > 0 ? Number(speed) : 0,
+    style: preset ? style : "",
+    styleMood: preset ? preset.mood : null,
   };
 }
 
@@ -1267,6 +1345,7 @@ const TAG_KEY_ALIASES = {
   route: "route", เส้นทาง: "route",
   follow: "follow", ตามกล้อง: "follow",
   speed: "speed", ความเร็ว: "speed",
+  style: "style", สไตล์: "style",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1330,6 +1409,7 @@ function parseImportText() {
 // (ตอบโจทย์ "วางแผนว่าฉากไหน/นาทีไหนจะใช้ลูกเล่นแบบไหน" โดยไม่ต้องไล่อ่าน tag ในกล่องข้อความ)
 function sceneStyleTags(s) {
   const tags = [];
+  if (s.style) tags.push(`สไตล์:${s.style}`);
   if (s.highlight !== "none") tags.push(`ไฮไลต์เขต:${s.highlight}`);
   if (s.focus) tags.push("โฟกัสขาวดำ");
   if (s.highlightColor) tags.push(`สีไฮไลต์ ${s.highlightColor}`);
@@ -1394,6 +1474,7 @@ el.importPreview.addEventListener("click", (e) => {
   el.builderRoadRoute.checked = s.routeRoad;
   el.builderFollow.checked = s.follow;
   el.builderSpeed.value = s.speedKmh || "";
+  el.builderStyle.value = STYLE_PRESETS[s.style] ? s.style : "";
   el.builderScript.value = s.script;
   el.builderDur.value = s.duration || "";
   el.btnBuilderAdd.textContent = `บันทึกการแก้ไขฉากที่ ${idx + 1}`;
@@ -1416,6 +1497,8 @@ function cancelBuilderEdit() {
   el.builderRoadRoute.checked = false;
   el.builderFollow.checked = false;
   el.builderSpeed.value = "";
+  el.builderStyle.value = "";
+  el.builderAutoImage.checked = false;
 }
 
 function renderTimeline() {
@@ -1601,13 +1684,16 @@ function updateChipDuration(idx) {
 
 const ttsCache = new Map();
 
-async function fetchTts(text) {
-  const key = `${voiceSettings.voice}::${voiceSettings.rate}::${voiceSettings.pitch}::${text}`;
+// rate/pitchOverride: มาจาก style= ของฉาก (โทนพากย์ตามหมวด สารคดี/วล็อก/ข่าว/มหากาพย์/ผี) ไม่ใส่ = ใช้ค่ากลางที่ผู้ใช้ตั้งไว้
+async function fetchTts(text, rateOverride, pitchOverride) {
+  const rate = rateOverride || voiceSettings.rate;
+  const pitch = pitchOverride || voiceSettings.pitch;
+  const key = `${voiceSettings.voice}::${rate}::${pitch}::${text}`;
   if (ttsCache.has(key)) return ttsCache.get(key);
   const res = await fetch("/api/tts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, voice: voiceSettings.voice, rate: voiceSettings.rate, pitch: voiceSettings.pitch }),
+    body: JSON.stringify({ text, voice: voiceSettings.voice, rate, pitch }),
   });
   if (!res.ok) throw new Error(`TTS server error (${res.status}) — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`);
   const blob = await res.blob();
@@ -1655,7 +1741,8 @@ async function preloadNarration(myToken) {
     for (const seg of segments) {
       if (myToken !== playToken) return false;
       el.subtitleText.textContent = `กำลังเตรียมเสียงพากย์ทั้งคลิป... (ฉาก ${i + 1}/${scenes.length})`;
-      try { await fetchTts(seg); } catch (e) { console.warn(e); }
+      const mood = scenes[i].styleMood;
+      try { await fetchTts(seg, mood && mood.rate, mood && mood.pitch); } catch (e) { console.warn(e); }
     }
   }
   return myToken === playToken;
@@ -1678,10 +1765,11 @@ async function narrationLoop() {
       segments.forEach((seg, i) => clips.push({ text: seg, url: null, duration: renderDurations[idx][i] || DEFAULT_DURATION }));
     } else {
       el.subtitleText.textContent = "กำลังสร้างเสียง…";
+      const mood = scene.styleMood;
       for (const seg of segments) {
         if (myToken !== playToken) return;
         try {
-          clips.push({ text: seg, ...(await fetchTts(seg)) });
+          clips.push({ text: seg, ...(await fetchTts(seg, mood && mood.rate, mood && mood.pitch)) });
         } catch (e) {
           console.warn(e);
           clips.push({ text: seg, url: null, duration: scene.duration / segments.length });
@@ -1697,11 +1785,15 @@ async function narrationLoop() {
     }
     goToScene(idx, scene.duration);
 
-    for (const clip of clips) {
+    for (let ci = 0; ci < clips.length; ci++) {
+      const clip = clips[ci];
       if (myToken !== playToken) return;
       el.subtitleText.textContent = clip.text;
       if (clip.url) await playAudioClip(clip.url, myToken);
       else await wait(clip.duration * 1000);
+      if (myToken !== playToken) return;
+      // หายใจสั้นๆ ระหว่างประโยคในฉากเดียวกัน (เฉพาะตอนมีหลายช่วง ;;) ให้พากย์ฟังเป็นธรรมชาติ ไม่รัวติดกัน
+      if (ci < clips.length - 1) await wait(180);
     }
     if (myToken !== playToken) return;
 
@@ -2130,7 +2222,7 @@ function sanitizeTagValue(str) {
   return (str || "").replace(/\|/g, "/");
 }
 
-function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transport, routeRoad, follow, speed }) {
+function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transport, routeRoad, follow, speed, style, geophoto }) {
   const parts = [
     `place=${sanitizeTagValue(place)}`,
     `latlng=${lat.toFixed(4)},${lng.toFixed(4)}`,
@@ -2143,11 +2235,36 @@ function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transp
   if (routeRoad) parts.push("route=road");
   if (follow) parts.push("follow=on");
   if (speed) parts.push(`speed=${speed}`);
+  if (style) parts.push(`style=${style}`);
+  if (geophoto) parts.push(`geophoto=${geophoto}`);
   return parts.join(" | ");
 }
 
-el.btnBuilderAdd.addEventListener("click", () => {
+// ค้นภาพประกอบจากคลังภาพเสรี Wikimedia Commons อัตโนมัติตามชื่อสถานที่ (ผ่าน server.py /api/imagesearch)
+async function searchAutoImage(query) {
+  try {
+    const res = await fetch(`/api/imagesearch?q=${encodeURIComponent(query)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && data.results && data.results[0] ? data.results[0] : null;
+  } catch (e) {
+    console.warn("ค้นภาพอัตโนมัติไม่สำเร็จ", e);
+    return null;
+  }
+}
+
+el.btnBuilderAdd.addEventListener("click", async () => {
   if (!builderToPick) { alert("ค้นหาแล้วเลือกจุดหมาย (ไป) ก่อน"); return; }
+
+  let geophoto = "";
+  if (el.builderAutoImage.checked) {
+    el.btnBuilderAdd.disabled = true;
+    el.btnBuilderAdd.textContent = "กำลังค้นภาพประกอบ...";
+    const found = await searchAutoImage(builderToPick.name);
+    if (found) geophoto = `${found.url}:${builderToPick.lat.toFixed(4)},${builderToPick.lng.toFixed(4)}:${builderToPick.name}`;
+    el.btnBuilderAdd.disabled = false;
+  }
+
   const newRow = buildSceneTagRow({
     place: builderToPick.name,
     lat: builderToPick.lat,
@@ -2160,6 +2277,8 @@ el.btnBuilderAdd.addEventListener("click", () => {
     routeRoad: el.builderRoadRoute.checked,
     follow: el.builderFollow.checked,
     speed: el.builderSpeed.value.trim(),
+    style: el.builderStyle.value,
+    geophoto,
   });
 
   if (editingSceneIndex !== null) {

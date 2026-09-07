@@ -213,6 +213,43 @@ def fetch_route(lat1: float, lng1: float, lat2: float, lng2: float) -> list:
     return coords
 
 
+# ---------- ค้นภาพประกอบอัตโนมัติจาก Wikimedia Commons (ฟรี ไม่ต้องมีคีย์) ----------
+_imagesearch_cache = {}
+
+
+def fetch_image_search(query: str, limit: int = 5) -> list:
+    key = (query.lower(), limit)
+    if key in _imagesearch_cache:
+        return _imagesearch_cache[key]
+    qs = urllib.parse.urlencode({
+        "action": "query",
+        "generator": "search",
+        "gsrsearch": query,
+        "gsrnamespace": 6,  # namespace 6 = File:
+        "gsrlimit": limit,
+        "prop": "imageinfo",
+        "iiprop": "url",
+        "iiurlwidth": 800,
+        "format": "json",
+    })
+    url = f"https://commons.wikimedia.org/w/api.php?{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool)"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    pages = (data.get("query") or {}).get("pages") or {}
+    results = []
+    for page in pages.values():
+        infos = page.get("imageinfo") or []
+        if not infos:
+            continue
+        info = infos[0]
+        img_url = info.get("thumburl") or info.get("url")
+        if img_url:
+            results.append({"title": page.get("title", ""), "url": img_url})
+    _imagesearch_cache[key] = results
+    return results
+
+
 _RATE_RE = re.compile(r"^[+-]\d{1,3}%$")
 _PITCH_RE = re.compile(r"^[+-]\d{1,3}Hz$")
 
@@ -267,6 +304,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith("/api/route"):
             self.handle_route()
             return
+        if self.path.startswith("/api/imagesearch"):
+            self.handle_imagesearch()
+            return
         path_only = self.path.split("?", 1)[0]
         if path_only in ("/", "/index.html"):
             self.handle_index()
@@ -299,6 +339,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(400, "missing q")
                 return
             results = fetch_geocode(query)
+            body = json.dumps({"results": results}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
+
+    def handle_imagesearch(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            query = (qs.get("q", [""])[0] or "").strip()
+            if not query:
+                self.send_error(400, "missing q")
+                return
+            results = fetch_image_search(query)
             body = json.dumps({"results": results}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

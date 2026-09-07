@@ -243,7 +243,7 @@ html, body {
 .caption-overlay.pos-bottom { top: auto; bottom: 22%; }
 
 /* geophoto=... — รูปจริงปักหมุดตามพิกัด (เทียบเท่า "Add Image" ของ AnimateMyMap) */
-.geo-photo-wrap { display: flex; }
+.geo-photo-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .geo-photo-card {
   width: 84px;
   height: 84px;
@@ -254,6 +254,16 @@ html, body {
   background: #111 center/cover no-repeat;
   transform-origin: center bottom;
   animation: geo-photo-pop .45s cubic-bezier(.34,1.56,.64,1);
+}
+.geo-photo-label {
+  background: rgba(4,6,9,0.82);
+  color: #fff;
+  font-family: var(--thai);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 @keyframes geo-photo-pop {
   from { transform: scale(0.4); opacity: 0; }
