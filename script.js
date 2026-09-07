@@ -766,7 +766,7 @@ function showBoundary(scene) {
       const cam = map.cameraForBounds(bounds, { padding: 60 });
       // จุดเดียวที่ขยับกล้องให้ฉากไฮไลต์แบบ auto-frame — กัน moveCamera() ชนกันกลางอากาศ (สาเหตุอนิเมชันกระตุก)
       if (cam) {
-        map.easeTo({ center: cam.center, zoom: cam.zoom, bearing: scene.bearing || 0, pitch: scene.tilt || 0, duration: 1100 });
+        map.easeTo({ center: cam.center, zoom: cam.zoom, bearing: scene.bearing || 0, pitch: scene.tilt || 0, duration: 800, easing: EASE_CINEMATIC });
       }
     })
     .catch((e) => console.warn(e));
@@ -1105,36 +1105,38 @@ function moveCamera(scene, durationSecOverride, frameOverride) {
 
   if (scene.cam === "cut-to-insert" || scene.cam === "insert-overlay") {
     stopOrbit();
-    map.easeTo({ center, duration: 600, bearing: map.getBearing(), easing: EASE_CINEMATIC });
+    map.easeTo({ center, duration: 450, bearing: map.getBearing(), easing: EASE_CINEMATIC });
     return;
   }
   if (scene.cam === "orbit") {
-    map.easeTo({ center, zoom: 8, duration: 800, pitch: pitch || 45, bearing, easing: EASE_CINEMATIC });
-    setTimeout(() => startOrbit(durationSec, bearing), 800);
+    map.easeTo({ center, zoom: 8, duration: 650, pitch: pitch || 45, bearing, easing: EASE_CINEMATIC });
+    setTimeout(() => startOrbit(durationSec, bearing), 650);
     return;
   }
   stopOrbit();
   // ถ้าฉากนี้ไฮไลต์เขตแดนแบบ auto-frame ให้ showBoundary() เป็นเจ้าของการขยับกล้องเพียงจุดเดียว
   // (กันสองอนิเมชันชนกันกลางอากาศตอนขอบเขตโหลดมาช้ากว่ากล้อง ทำให้ดูกระตุก)
   if (scene.highlight !== "none" && AUTO_FRAME_CAMS.has(scene.cam)) return;
+  // ระยะเวลากล้องขยับสั้นลงกว่าเดิม (จาก 1000-1200ms เหลือ 650-850ms) ให้ฟีลตัดต่อไวขึ้นแบบคลิปสั้น/เจนซี
+  // กล้องเข้าที่เร็วขึ้น เหลือเวลาให้เนื้อหา/ซับไตเติลมากขึ้นในแต่ละฉาก
   if (scene.cam === "battle-map") {
     // มุมมองแบบเกม RTS: เอียงเล็กน้อยพอเห็นมิติ ไม่หมุน (เว้นแต่ผู้ใช้ตั้ง bearing เอง)
     const zoom = frameOverride ? frameOverride.zoom : 6;
-    map.easeTo({ center, zoom, duration: 1000, bearing, pitch: pitch || 35, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom, duration: 800, bearing, pitch: pitch || 35, easing: EASE_CINEMATIC });
   } else if (scene.cam === "fly-to") {
     const zoom = frameOverride ? frameOverride.zoom : 6.2;
     if (scene.follow) {
       // follow=on: กล้องแค่ขยับไปตั้งต้นที่จุดเริ่มเร็วๆ แล้วปล่อยให้ startPathIcon() เป็นคนลากกล้องตามไอคอนเองทุกเฟรม
-      map.easeTo({ center, zoom, duration: 700, bearing, pitch: pitch || 30, easing: EASE_CINEMATIC });
+      map.easeTo({ center, zoom, duration: 550, bearing, pitch: pitch || 30, easing: EASE_CINEMATIC });
     } else {
       map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch, easing: EASE_CINEMATIC });
     }
   } else if (scene.cam === "push-in") {
-    map.easeTo({ center, zoom: 10, duration: 1200, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: 10, duration: 850, bearing, pitch, easing: EASE_CINEMATIC });
   } else if (scene.cam === "zoom-out") {
-    map.easeTo({ center, zoom: 4.2, duration: 1200, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: 4.2, duration: 850, bearing, pitch, easing: EASE_CINEMATIC });
   } else {
-    map.easeTo({ center, zoom: 4.3, duration: 1200, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: 4.3, duration: 850, bearing, pitch, easing: EASE_CINEMATIC });
   }
 }
 
@@ -1731,6 +1733,71 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ---------- ซับไตเติลคาราโอเกะ: ไฮไลต์ทีละคำตามจังหวะพูดจริง (ฟีลคลิปสไตล์เจนซี/TikTok) ----------
+// edge-tts ไม่ให้ timestamp ระดับคำมาตรงๆ จึงประมาณเวลาต่อคำจากสัดส่วนความยาวตัวอักษรเทียบกับความยาวคลิปจริง
+// ภาษาไทยไม่มีเว้นวรรคระหว่างคำ split(" ") ธรรมดาจะได้แค่ก้อนประโยคใหญ่ๆ ไม่ใช่ "คำ" จริง
+// ใช้ Intl.Segmenter('th', {granularity:'word'}) ของเบราว์เซอร์ (ตัดคำไทยด้วย ICU dictionary) แทน
+const thSegmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter("th", { granularity: "word" }) : null;
+
+function renderKaraokeText(text) {
+  el.subtitleText.innerHTML = "";
+  const wordEls = [];
+  if (thSegmenter) {
+    for (const { segment, isWordLike } of thSegmenter.segment(text)) {
+      if (isWordLike) {
+        const span = document.createElement("span");
+        span.className = "sub-word";
+        span.textContent = segment;
+        el.subtitleText.appendChild(span);
+        wordEls.push(span);
+      } else {
+        el.subtitleText.appendChild(document.createTextNode(segment));
+      }
+    }
+    return wordEls;
+  }
+  // เบราว์เซอร์เก่าไม่มี Intl.Segmenter: fallback แบ่งตามช่องว่าง (ใช้ได้ดีเฉพาะข้อความอังกฤษ)
+  const tokens = text.split(/(\s+)/).filter((t) => t !== "");
+  tokens.forEach((t) => {
+    if (/^\s+$/.test(t)) {
+      el.subtitleText.appendChild(document.createTextNode(t));
+    } else {
+      const span = document.createElement("span");
+      span.className = "sub-word";
+      span.textContent = t;
+      el.subtitleText.appendChild(span);
+      wordEls.push(span);
+    }
+  });
+  return wordEls;
+}
+
+function runKaraoke(wordEls, durationSec, myToken, getElapsedSec) {
+  if (!wordEls.length || durationSec <= 0) return;
+  const weights = wordEls.map((w) => w.textContent.length + 1);
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  const thresholds = [];
+  let acc = 0;
+  for (const w of weights) {
+    acc += w;
+    thresholds.push((acc / totalWeight) * durationSec);
+  }
+  let activeIdx = -1;
+  function tick() {
+    if (myToken !== playToken) return;
+    const elapsed = getElapsedSec();
+    let idx = thresholds.findIndex((t) => elapsed < t);
+    if (idx === -1) idx = wordEls.length - 1;
+    if (idx !== activeIdx) {
+      if (activeIdx >= 0 && wordEls[activeIdx]) wordEls[activeIdx].classList.remove("active");
+      if (wordEls[idx]) wordEls[idx].classList.add("active");
+      activeIdx = idx;
+    }
+    if (elapsed < durationSec && myToken === playToken) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
 // เตรียมเสียงพากย์ "ทั้งคลิป" ให้เสร็จก่อนเริ่มเล่น กันเสียงมาสะดุดกลางคันตอนเล่นจริง
 // (คืน false ถ้าโดนยกเลิกระหว่างเตรียม เช่นกดหยุดหรือกดเล่นซ้ำ)
 async function preloadNarration(myToken) {
@@ -1788,7 +1855,10 @@ async function narrationLoop() {
     for (let ci = 0; ci < clips.length; ci++) {
       const clip = clips[ci];
       if (myToken !== playToken) return;
-      el.subtitleText.textContent = clip.text;
+      const wordEls = renderKaraokeText(clip.text);
+      const clipStartMs = performance.now();
+      const getElapsedSec = clip.url ? () => el.ttsPlayer.currentTime : () => (performance.now() - clipStartMs) / 1000;
+      runKaraoke(wordEls, clip.duration, myToken, getElapsedSec);
       if (clip.url) await playAudioClip(clip.url, myToken);
       else await wait(clip.duration * 1000);
       if (myToken !== playToken) return;
