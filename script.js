@@ -1669,7 +1669,13 @@ function goToScene(index, durationOverride) {
     btn.classList.toggle("is-active", i === activeIndex);
   });
   const activeChip = el.timelineTrack.children[activeIndex];
-  if (activeChip) activeChip.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" });
+  // scrollIntoView ไต่ขึ้นไปหาทุก ancestor ที่ scroll ได้ รวมถึง main#stageEl (overflow:hidden แต่ยังนับเป็น scroll
+  // container ได้ ไม่มี scrollbar โชว์ให้เห็น) — พอฉากเปลี่ยนบ่อยๆ มันขยับ scrollLeft ของ #stageEl สะสมไปเรื่อยๆ
+  // ทำให้จอทั้งหน้าดูเหมือน "เลื่อนไปทางซ้าย" ทีละนิด แก้ด้วยการ scroll เฉพาะ timelineTrack เองตรงๆแทน
+  if (activeChip) {
+    const target = activeChip.offsetLeft - (el.timelineTrack.clientWidth - activeChip.clientWidth) / 2;
+    el.timelineTrack.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }
 }
 
 function goToSceneManual(index) {
