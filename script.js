@@ -1130,7 +1130,7 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
 
   // importance/mood (Story System) × cameraaction/motion (Camera System) คุมแค่ "ความเร็ว" ของการขยับกล้องที่มีอยู่แล้ว
   // (ไม่เพิ่มการขยับใหม่) — ไม่ตั้งอะไรเลยทั้ง 4 คีย์ = คูณกันได้ 1 = พฤติกรรมเดิมเป๊ะ
-  const paceMul = (scene.camPaceMul || 1) * (scene.camActionMotionMul || 1);
+  const paceMul = (scene.camPaceMul || 1) * (scene.camActionMotionMul || 1) * (scene.docPaceMul || 1);
   // motioncurve/motion=accelerate/decelerate ที่ผู้ใช้ระบุเอง แทน easing เริ่มต้น; ไม่ระบุ = EASE_CINEMATIC เดิมของระบบ ไม่เปลี่ยนอะไร
   const easingFn = scene.motioncurveFn || EASE_CINEMATIC;
   // shot=... ที่ผู้ใช้ระบุเอง ปรับซูมจาก baseline เดิมของ cam นั้น (ชนะสูงสุด) รองลงมาคือซูมสืบทอด (ถ้า continuous);
@@ -1230,7 +1230,7 @@ const TRANSITION_ANIM_CLASS = { slide: "is-sliding" }; // ไม่ระบุ 
 function playTransitionOverlay(kind, scene) {
   const peak = TRANSITION_PEAK_OPACITY[kind];
   if (!peak) return;
-  const mul = TRANSITION_IMPORTANCE_MUL[scene.importance] || 1;
+  const mul = (TRANSITION_IMPORTANCE_MUL[scene.importance] || 1) * (scene.emphasisTransitionMul ?? 1);
   if (mul <= 0) return;
   const overlay = el.transitionOverlay;
   overlay.style.setProperty("--tx-opacity", String(peak * mul));
@@ -1502,6 +1502,41 @@ const INSERTTRANSITION_VALUES = ["cut", "fade", "dissolve", "match", "slide", "f
 const EVIDENCE_VALUES = ["photo", "painting", "document", "newspaper", "portrait", "artifact", "archive", "map"];
 const EVIDENCE_LABELS_TH = { photo: "ภาพถ่าย", painting: "จิตรกรรม", document: "เอกสาร", newspaper: "หนังสือพิมพ์", portrait: "ภาพเหมือน", artifact: "โบราณวัตถุ", archive: "จดหมายเหตุ", map: "แผนที่เก่า" };
 
+// ---------- Documentary Editor Intelligence: pace / pacing / density / attention / emphasis / intensity / composition ----------
+// Layer บนของทุกระบบเดิม (Story/Camera/Scene Connection/Insert) ไม่เพิ่มกลไกเรนเดอร์ใหม่ — คูณเข้ากับ camPaceMul/holdBonusMs/
+// transition-peak ที่มีอยู่แล้วเท่านั้น + auto-suppress เฉพาะองค์ประกอบที่มาจาก style preset (auto-generated) ไม่แตะของที่ผู้ใช้พิมพ์เอง
+const PACE_VALUES = ["very-slow", "slow", "normal", "fast", "very-fast"];
+const PACING_VALUES = ["build", "accelerate", "decelerate", "release", "pause"];
+const DENSITY_VALUES = ["minimal", "low", "medium", "high"];
+const ATTENTION_VALUES = ["primary", "secondary", "background"];
+const EMPHASIS_VALUES = ["none", "subtle", "medium", "strong"];
+const INTENSITY_VALUES = ["low", "medium", "high"];
+const COMPOSITION_VALUES = ["auto", "left", "right", "center", "top", "bottom"];
+
+const PACE_MUL = { "very-slow": 1.5, slow: 1.2, normal: 1, fast: 0.75, "very-fast": 0.55 };
+const PACING_MUL = { build: 1.1, accelerate: 0.75, decelerate: 1.25, release: 1.3, pause: 1.4 };
+const PACING_HOLD_BONUS = { release: 500, pause: 800 };
+const DENSITY_MUL = { minimal: 0.9, low: 1, medium: 1, high: 1.2 }; // high = ลด camera movement (กฎข้อ 4) + เพิ่มเวลาอ่าน (holdBonus ด้านล่าง)
+const DENSITY_HOLD_BONUS = { high: 500 };
+const INTENSITY_MUL = { low: 1.2, medium: 1, high: 0.8 };
+// emphasis คูณเข้ากับ "peak opacity" ของ transition ที่ resolve ไว้แล้วเท่านั้น (ไม่สร้าง transition เองจากศูนย์) กันไม่ให้มากเกินไปด้วยเพดาน 1.5
+const EMPHASIS_TRANSITION_MUL = { none: 0, subtle: 0.6, medium: 1, strong: 1.5 };
+
+// กฎ 12: หลัง narrative=climax ควรมีช่วง release/deceleration — ต้องรู้จักฉากก่อนหน้า จึงทำเป็น post-process หลัง parse ทั้งสคริปต์เสร็จ
+// (ต่างจากกฎอื่นๆที่ resolve ได้ในตัวฉากเดียวใน finalizeScene) ปรับเฉพาะฉากที่ยังไม่ได้ตั้ง pace=/pacing= เองเท่านั้น (User Value > Auto เสมอ)
+function applyPostClimaxRelease(list) {
+  for (let i = 1; i < list.length; i++) {
+    const prevScene = list[i - 1];
+    const cur = list[i];
+    if (prevScene.narrative === "climax" && cur.paceSource !== "user" && cur.pacingSource !== "user") {
+      cur.docPaceMul *= PACING_MUL.release;
+      cur.holdBonusMs = Math.max(cur.holdBonusMs, PACING_HOLD_BONUS.release);
+      cur.pacing = "release";
+      cur.pacingSource = "auto";
+    }
+  }
+}
+
 function finalizeScene(raw) {
   const {
     place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
@@ -1515,12 +1550,15 @@ function finalizeScene(raw) {
     continuity, visualbridge, transition: transitionRaw, returnmap,
     mapmode: mapmodeRaw,
     insertmode, inserttransition, evidence,
+    pace: paceRaw, pacing, density, attention, emphasis, intensity, composition,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
   const camKey = CAM_LABELS[cam] ? cam : "establishing";
   const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
   const effect = EFFECT_GLYPHS[effectRaw] ? effectRaw : (preset && preset.effect) || "none";
+  // ผู้ใช้พิมพ์ effect= เองตรงๆ = "user" (ห้ามลบ); มาจาก style preset ล้วนๆ = "auto" (Anti-Overediting ลดได้ถ้าจำเป็น)
+  const effectSource = EFFECT_GLYPHS[effectRaw] ? "user" : effect !== "none" ? "auto" : "none";
   const highlightKey = ["country", "province", "place"].includes(highlight) ? highlight : "none";
   // ไม่ดีฟอลต์เป็น plane เพราะฉากประวัติศาสตร์ก่อนยุคเครื่องบินจะโชว์ไอคอนผิดยุค — ไม่ระบุ = ไม่มีไอคอนวิ่ง
   const transport = TRANSPORT_GLYPHS[transportRaw] ? transportRaw : "none";
@@ -1557,7 +1595,41 @@ function finalizeScene(raw) {
   const pace = IMPORTANCE_PACE[importanceKey] || IMPORTANCE_PACE.medium;
   const moodPaceMul = MOOD_PACE_MUL[moodKey] || 1;
   const camPaceMul = pace.camMul * moodPaceMul;
-  const holdBonusMs = Math.max(pace.holdBonusMs, BEAT_HOLD_BONUS[beatKey] || 0);
+
+  // ---------- Documentary Editor Intelligence: pace/pacing/density/attention/emphasis/intensity/composition ----------
+  // Layer เพิ่มเติมบน camPaceMul/holdBonusMs เดิม (คูณ/เสริมเข้าไป ไม่แทนที่) — ไม่ตั้งอะไรเลยทั้ง 7 คีย์ = คูณ 1 บวก 0 = พฤติกรรมเดิมเป๊ะ
+  const paceValid = PACE_VALUES.includes(paceRaw) ? paceRaw : null;
+  const pacingValid = PACING_VALUES.includes(pacing) ? pacing : null;
+  const densityValid = DENSITY_VALUES.includes(density) ? density : null;
+  const attentionValid = ATTENTION_VALUES.includes(attention) ? attention : null;
+  const emphasisValid = EMPHASIS_VALUES.includes(emphasis) ? emphasis : null;
+  const intensityValid = INTENSITY_VALUES.includes(intensity) ? intensity : null;
+  const compositionValid = COMPOSITION_VALUES.includes(composition) ? composition : null;
+
+  // narrative=climax เดาให้ pace/intensity เร็วขึ้นถ้าไม่ได้ตั้งเอง (กฎ 11); narrative=conclusion/beat=twist,turningpoint เดา emphasis ให้เบาๆถ้าไม่ได้ตั้งเอง (กฎ 10)
+  const paceKey = paceValid || (narrativeKey === "climax" ? "fast" : "normal");
+  const densityKey = densityValid || "medium";
+  const intensityKey = intensityValid || (narrativeKey === "climax" ? "high" : "medium");
+  // ดีฟอลต์ "medium" (คูณ 1 ไม่เปลี่ยนอะไร) ไม่ใช่ "none" — กัน transition ที่ resolve ไว้แล้ว (เช่น dissolve อัตโนมัติตอนตัด insert) โดนคูณ 0 หายไปเงียบๆ
+  const emphasisKey = emphasisValid || (beatKey === "twist" || beatKey === "turningpoint" ? "subtle" : "medium");
+  const attentionKey = attentionValid || "primary";
+  const compositionKey = compositionValid || "auto";
+  const pacingKey = pacingValid || "auto";
+
+  let docPaceMul = (PACE_MUL[paceKey] || 1) * (PACING_MUL[pacingKey] || 1) * (DENSITY_MUL[densityKey] || 1) * (INTENSITY_MUL[intensityKey] || 1);
+  // กฎ 5: ฉากมี caption สำคัญ (caption= จริง) + importance high/critical → ลด motion ลงอีกนิด (คูณเพิ่ม ไม่ทับค่าอื่น)
+  if (caption && (importanceKey === "high" || importanceKey === "critical")) docPaceMul *= 1.1;
+  const docHoldBonusMs = Math.max(PACING_HOLD_BONUS[pacingKey] || 0, DENSITY_HOLD_BONUS[densityKey] || 0);
+
+  // Anti-Overediting: นับองค์ประกอบที่ active พร้อมกัน (insert/caption/arrows/highlight/effect) เกิน 4 → ลด effect เฉพาะที่มาจาก style
+  // preset เอง (effectSource==="auto") เท่านั้น ห้ามลบของที่ผู้ใช้พิมพ์ effect= เองตรงๆ (effectSource==="user" ไม่ถูกแตะเด็ดขาด)
+  const activeElementCount = [!!insert, !!caption, !!arrows, highlightKey !== "none", effect !== "none"].filter(Boolean).length;
+  const overedited = activeElementCount >= 4;
+  const effectSuppressed = effectSource === "auto" && (densityKey === "high" || attentionKey === "background" || overedited);
+  const effectRender = effectSuppressed ? "none" : effect; // ใช้ตัวนี้ตอนเรนเดอร์จริง — effect เดิมยังคงค่าที่ resolve ไว้ให้ preview/debug อ้างอิงเหมือนเดิม
+  const emphasisTransitionMul = EMPHASIS_TRANSITION_MUL[emphasisKey] ?? 1;
+
+  const holdBonusMs = Math.max(pace.holdBonusMs, BEAT_HOLD_BONUS[beatKey] || 0, docHoldBonusMs);
   // โทนพากย์: mood ที่ผู้ใช้ตั้งเอง ทับทุกอย่างรวมถึง style preset; ไม่ตั้ง mood แต่ตั้ง style ใช้โทนของ style เดิม (ไม่เปลี่ยนพฤติกรรมเดิม);
   // ไม่ตั้งทั้งคู่แต่ auto เดาโทนได้จากเนื้อหา ใช้เป็นโทนแนะนำเบาๆ; ไม่มีอะไรเลย = null เหมือนเดิมทุกประการ
   const resolvedMoodTts = moodValid ? MOOD_TTS[moodKey] : preset ? preset.mood : moodGuess ? MOOD_TTS[moodGuess] : null;
@@ -1578,7 +1650,8 @@ function finalizeScene(raw) {
   const motionValid = MOTION_VALUES.includes(motionRaw) ? motionRaw : null;
   const motioncurveValid = MOTIONCURVE_VALUES.includes(motioncurveRaw) ? motioncurveRaw : null;
 
-  const shotKey = shotValid || DEFAULT_SHOT_FOR_CAM[camKey] || "wide";
+  // กฎ 13: narrative=conclusion เดา shot ให้เป็น wide (เห็นภาพรวม) ถ้าไม่ได้ตั้งเอง — label เท่านั้น ไม่มีผลเลขจริงจนกว่าจะตั้ง shot= เอง (เหมือนดีฟอลต์อื่นทุกจุด)
+  const shotKey = shotValid || (narrativeKey === "conclusion" ? "wide" : null) || DEFAULT_SHOT_FOR_CAM[camKey] || "wide";
   const cameraactionKey = cameraactionValid || DEFAULT_CAMERAACTION_FOR_CAM[camKey] || "gentle";
   const motionKey = motionValid || DEFAULT_MOTION_FOR_CAM[camKey] || "normal";
   const resolvedMotioncurveName = motioncurveValid || (motionValid && MOTION_IMPLIED_CURVE[motionValid]) || DEFAULT_MOTIONCURVE_FOR_CAM[camKey] || "ease-in-out";
@@ -1675,6 +1748,24 @@ function finalizeScene(raw) {
     insertModeSource: insertmodeValid ? "user" : "auto",
     insertTransition: insertTransitionValid,
     evidenceType: evidenceValid,
+    pace: paceKey,
+    paceSource: paceValid ? "user" : "auto",
+    pacing: pacingKey,
+    pacingSource: pacingValid ? "user" : "auto",
+    density: densityKey,
+    densitySource: densityValid ? "user" : "auto",
+    attention: attentionKey,
+    attentionSource: attentionValid ? "user" : "auto",
+    emphasis: emphasisKey,
+    emphasisSource: emphasisValid ? "user" : "auto",
+    intensity: intensityKey,
+    intensitySource: intensityValid ? "user" : "auto",
+    composition: compositionKey,
+    compositionSource: compositionValid ? "user" : "auto",
+    docPaceMul,
+    effectRender,
+    effectSuppressed,
+    emphasisTransitionMul,
   };
 }
 
@@ -1729,6 +1820,13 @@ const TAG_KEY_ALIASES = {
   insertmode: "insertmode", โหมดแทรก: "insertmode",
   inserttransition: "inserttransition", การเปลี่ยนภาพแทรก: "inserttransition",
   evidence: "evidence", หลักฐาน: "evidence",
+  pace: "pace", ความไว: "pace",
+  pacing: "pacing", จังหวะรวม: "pacing",
+  density: "density", ความหนาแน่น: "density",
+  attention: "attention", ความเด่น: "attention",
+  emphasis: "emphasis", เน้นย้ำ: "emphasis",
+  intensity: "intensity", ความเข้มข้น: "intensity",
+  composition: "composition", องค์ประกอบภาพ: "composition",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1782,6 +1880,7 @@ function parseImportText() {
   if (!pairs.length) return;
   scenes = pairs.map((p) => p.scene);
   sceneRawLines = pairs.map((p) => p.line);
+  applyPostClimaxRelease(scenes);
   renderTimeline();
   renderPreview();
   goToScene(0);
@@ -1807,6 +1906,14 @@ function sceneStyleTags(s) {
   if (s.transitionSource === "user") tags.push(`transition:${s.transition}`);
   if (s.returnMap) tags.push("returnmap");
   if (s.mapmodeSource === "user" || s.mapmode !== "location") tags.push(`mapmode:${s.mapmode}${s.mapmodeSource === "auto" ? " (auto)" : ""}`);
+  if (s.paceSource === "user") tags.push(`pace:${s.pace}`);
+  if (s.pacingSource === "user" || s.pacing === "release") tags.push(`pacing:${s.pacing}${s.pacingSource === "auto" ? " (auto)" : ""}`);
+  if (s.densitySource === "user") tags.push(`density:${s.density}`);
+  if (s.attentionSource === "user") tags.push(`attention:${s.attention}`);
+  if (s.emphasisSource === "user" || s.emphasis === "subtle") tags.push(`emphasis:${s.emphasis}${s.emphasisSource === "auto" ? " (auto)" : ""}`);
+  if (s.intensitySource === "user" || s.intensity === "high") tags.push(`intensity:${s.intensity}${s.intensitySource === "auto" ? " (auto)" : ""}`);
+  if (s.compositionSource === "user") tags.push(`composition:${s.composition}`);
+  if (s.effectSuppressed) tags.push("effect ลดอัตโนมัติ (anti-overediting)");
   if (s.highlight !== "none") tags.push(`ไฮไลต์เขต:${s.highlight}`);
   if (s.focus) tags.push("โฟกัสขาวดำ");
   if (s.highlightColor) tags.push(`สีไฮไลต์ ${s.highlightColor}`);
@@ -1928,9 +2035,13 @@ function goToScene(index, durationOverride) {
   el.camLabel.textContent = CAM_LABELS[scene.cam];
   el.camBadge.querySelector(".cam-dot").style.background = CAM_DOT_VAR[scene.cam];
   el.subtitleText.textContent = splitSegments(scene.script).join(" ");
+  // attention=background ลดความเด่นซับไตเติลลงนิดหน่อย (ไม่ตั้งเอง = "primary" ดีฟอลต์ = ไม่มีคลาสนี้ = เหมือนเดิมทุกจุด)
+  el.subtitleWrap.classList.toggle("attention-background", scene.attention === "background");
 
   // insertmode=... ปรับเลย์เอาต์กล่อง insert; insert-flip กันกล่อง overlay/PiP ไปชนกล่อง callout/badge มุมเดิม (ระบบป้องกันการบัง)
-  const insertFlipClass = (scene.callout || scene.badge) && scene.insertMode !== "full" && scene.insertMode !== "background" ? "insert-flip" : "";
+  // composition=left/right ที่ผู้ใช้ตั้งเอง ทับ heuristic อัตโนมัติได้ (composition=right = ฝั่งเดิม/ไม่ flip, left = flip)
+  const canFlip = scene.insertMode !== "full" && scene.insertMode !== "background";
+  const insertFlipClass = canFlip && (scene.compositionSource === "user" ? scene.composition === "left" : scene.callout || scene.badge) ? "insert-flip" : "";
   el.mapStage.className = `map-stage ${CAM_STAGE_CLASS[scene.cam] || ""} insertmode-${scene.insertMode} ${insertFlipClass}`.trim();
 
   renderInsertContent(el.insertLayerContent, scene.insert);
@@ -1951,9 +2062,10 @@ function goToScene(index, durationOverride) {
   pinLabelEl.style.fontWeight = scene.labelWeight || "";
   markerTo.setLngLat([scene.lng, scene.lat]).addTo(map);
 
-  // เอฟเฟกต์เหตุการณ์
-  if (scene.effect !== "none") {
-    effectWrapEl.innerHTML = `<span class="effect-marker">${EFFECT_GLYPHS[scene.effect]}</span>`;
+  // เอฟเฟกต์เหตุการณ์ — ใช้ effectRender (หลัง Anti-Overediting suppress ถ้าเข้าเงื่อนไข) ไม่ใช่ effect ดิบ
+  // effect ที่ผู้ใช้พิมพ์เองตรงๆ (effectSource==="user") ไม่มีทางถูก suppress ไม่ว่ากรณีไหน
+  if (scene.effectRender !== "none") {
+    effectWrapEl.innerHTML = `<span class="effect-marker">${EFFECT_GLYPHS[scene.effectRender]}</span>`;
     markerEffect.setLngLat([scene.lng, scene.lat]).addTo(map);
   } else {
     markerEffect.remove();

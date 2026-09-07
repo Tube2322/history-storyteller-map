@@ -160,6 +160,19 @@
 - **ระบบป้องกันการบัง**: กล่อง insert ทุกโหมด (ยกเว้น full/background ที่ตั้งใจเต็มจอ) ไม่ยื่นเกินครึ่งบนของจอ โครงสร้างเดิมกันไม่ให้ทับซับไตเติล/ไทม์ไลน์อยู่แล้ว; ถ้าฉากมี `callout=`/`badge=` ด้วย กล่อง overlay/PiP จะสลับไปฝั่งตรงข้ามอัตโนมัติ (`insert-flip`) กันชนกล่อง callout เดิม — ทดสอบแล้ว: ฉากมี callout ได้ class `insert-flip` ถูกต้อง (ขอบเขตที่ทำจริง: ป้องกันระดับโครงสร้าง/เลย์เอาต์ ไม่ใช่ real-time pixel-collision กับหมุด/ลูกศรที่กำลังเคลื่อนไหวบนจอ)
 - ทดสอบเต็มรูปแบบ (4 ฉากผสม cut-to-insert/insert-overlay + insertmode/inserttransition/evidence/callout ทุกแบบ) เล่นจบไม่มี error console เลย
 
+**พาท 23 — Documentary Editor Intelligence: pace/pacing/density/attention/emphasis/intensity/composition + Auto Documentary Rules (layer บนของทุกระบบเดิม)**
+- Layer บนของ Story/Camera/Scene Connection/Insert System ทั้งหมด ไม่เพิ่มกลไกเรนเดอร์ใหม่ — คูณ/เสริมเข้ากับ `camPaceMul`/`holdBonusMs`/transition-peak ที่มีอยู่แล้วเท่านั้น ตรวจแล้ว: สคริปต์ไม่มี 7 คีย์นี้เลยได้ `docPaceMul=1, holdBonusMs=0(ไม่บวกเพิ่ม), effectSuppressed=false` = พฤติกรรมเดิม 100%
+- **`pace`**: `very-slow/slow/normal/fast/very-fast` — ความไวกล้อง (1.5×-0.55×) narrative=climax เดาเป็น fast อัตโนมัติ (กฎ 11)
+- **`pacing`**: `build/accelerate/decelerate/release/pause` — จังหวะรวม release/pause เสริมเวลาพักก่อนตัดฉาก — **หลัง narrative=climax ฉากถัดไปได้ pacing=release อัตโนมัติถ้ายังไม่ตั้งเอง** (กฎ 12, เป็น post-process หลัง parse ทั้งสคริปต์เพราะต้องรู้จักฉากก่อนหน้า) — ทดสอบแล้ว: ฉากหลัง climax ได้ `docPaceMul` ช้าลง+`holdBonusMs=500` ถูกต้อง
+- **`density`**: `minimal/low/medium/high` — ดีฟอลต์ medium; `high` ลดความเร็วกล้อง (กฎ 4) + เพิ่มเวลาอ่าน + ลด effect ที่มาจาก **style preset เท่านั้น** ไม่แตะ `effect=` ที่พิมพ์เอง
+- **`attention`**: `primary/secondary/background` — ดีฟอลต์ primary; `background` ลดความเด่นซับไตเติล (opacity 0.72) + ลด effect ที่มาจาก style preset เหมือน density=high
+- **`emphasis`**: `none/subtle/medium/strong` — คูณเข้ากับ **transition ที่ resolve ไว้แล้วเท่านั้น** ไม่สร้าง transition เองจากศูนย์ (กันเกินตามกฎ 10) ดีฟอลต์ medium (คูณ 1 ไม่เปลี่ยนอะไร ไม่ใช่ "none" เพื่อกัน dissolve อัตโนมัติของ insert หายไปเงียบๆ) beat=twist/turningpoint เดาเป็น subtle อัตโนมัติ เพดานสูงสุด strong=1.5× ตามที่ห้าม "มากเกินไป"
+- **`intensity`**: `low/medium/high` — ความเข้มข้นกล้อง ดีฟอลต์ medium; climax เดาเป็น high อัตโนมัติ (กฎ 11)
+- **`composition`**: `auto/left/right/center/top/bottom` — `left/right` ทับ heuristic ป้องกันการบัง insert อัตโนมัติของพาท 22 ได้โดยตรง
+- **Anti-Overediting**: นับองค์ประกอบ active พร้อมกัน (insert/caption/arrows/highlight/effect) ตั้งแต่ 4 ขึ้นไป → ลด effect ที่มาจาก style preset อัตโนมัติ (`effectSource==="user"` ไม่ถูกแตะเด็ดขาดไม่ว่ากรณีไหน) — ทดสอบแล้ว: ฉาก style+insert+caption+arrows+highlight (5 อย่าง) + density=high ได้ `effectSuppressed=true` แต่ฉากที่พิมพ์ `effect=fire` เองได้ `effectRender="fire"` เหมือนเดิมเป๊ะ
+- **Auto Scene Planning**: ฉากที่มีแค่ place/cam/script (ไม่ตั้งคีย์ metadata อะไรเลย) engine วิเคราะห์ narrative/beat/mapmode/pace/mood/importance/shot/cameraaction/transition/continuity ให้เองทั้งหมดจากระบบ auto-analysis ที่มีอยู่แล้ว (พาท 18-23 รวมกัน) — ค่าที่ auto วิเคราะห์เป็นแค่ default เสมอ ผู้ใช้ตั้งค่าไหนเองก็ทับค่านั้นทันที
+- ทดสอบเต็มรูปแบบ (climax→resolution ต่อกัน + anti-overediting + effect ที่ตั้งเอง) เล่นจบไม่มี error console เลย
+
 ## เปิดใช้งาน
 
 ต้องรัน `server.py` (ไม่ใช่ `python -m http.server` เฉยๆ) เพราะต้องมี endpoint `/api/tts` สำหรับเสียงพากย์:

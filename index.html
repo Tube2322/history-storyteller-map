@@ -258,6 +258,15 @@
             <br><strong>inserttransition</strong>: <code>cut / fade / dissolve / match / slide / flash</code> — เปลี่ยนฉากตอนเข้า/ออก insert เท่านั้น ทับดีฟอลต์ dissolve อัตโนมัติ (แพ้ transition= ทั่วไปถ้าตั้งไว้ด้วย)
             <br><strong>evidence</strong>: <code>photo / painting / document / newspaper / portrait / artifact / archive / map</code> — ป้ายบอกประเภทหลักฐานบนกล่อง insert (ห้ามสร้าง url เอง ต้องมี insert= จริงถึงจะโชว์)
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay — มีระบบป้องกันการบังอัตโนมัติ (กล่อง overlay/PiP สลับฝั่งเองถ้าฉากมี callout=/badge= ด้วย)
+            <br><br><strong>Documentary Editor Intelligence (ทั้งหมด optional — คูณ/เสริมเข้ากับจังหวะเดิม ไม่ใส่ = พฤติกรรมเดิม 100%):</strong>
+            <br><strong>pace</strong>: <code>very-slow / slow / normal / fast / very-fast</code> — ความไวของกล้อง ไม่ใส่ = normal (climax เดาเป็น fast ให้อัตโนมัติ)
+            <br><strong>pacing</strong>: <code>build / accelerate / decelerate / release / pause</code> — จังหวะรวมของฉาก (release/pause เสริมเวลาพักก่อนตัดฉากถัดไปให้อัตโนมัติ) — หลัง narrative=climax ฉากถัดไปจะได้ pacing=release อัตโนมัติถ้ายังไม่ได้ตั้งเอง
+            <br><strong>density</strong>: <code>minimal / low / medium / high</code> — ความหนาแน่นข้อมูล ดีฟอลต์ medium; high ลดความเร็วกล้อง+เพิ่มเวลาอ่าน+ลด effect ที่มาจาก style preset (ไม่แตะ effect= ที่พิมพ์เอง)
+            <br><strong>attention</strong>: <code>primary / secondary / background</code> — ความเด่นของฉาก ดีฟอลต์ primary; background ลดความเด่นซับไตเติล+ลด effect ที่มาจาก style preset
+            <br><strong>emphasis</strong>: <code>none / subtle / medium / strong</code> — คูณเข้ากับความเข้มของ transition ที่ resolve ไว้แล้ว (ไม่สร้าง transition เองจากศูนย์) ดีฟอลต์ medium (ไม่เปลี่ยนอะไร) — beat=twist/turningpoint เดาเป็น subtle ให้อัตโนมัติ
+            <br><strong>intensity</strong>: <code>low / medium / high</code> — ความเข้มข้นของกล้อง ดีฟอลต์ medium (climax เดาเป็น high อัตโนมัติ)
+            <br><strong>composition</strong>: <code>auto / left / right / center / top / bottom</code> — ตำแหน่งกล่อง insert (left/right ทับ heuristic ป้องกันการบังอัตโนมัติได้)
+            <br><strong>Anti-Overediting</strong>: ฉากที่มี insert+caption+arrows+highlight+effect พร้อมกันตั้งแต่ 4 อย่างขึ้นไป จะลด effect ที่มาจาก style preset (ไม่ใช่ที่พิมพ์เอง) ให้อัตโนมัติ กันฉากรกเกินไป
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>
           </details>
