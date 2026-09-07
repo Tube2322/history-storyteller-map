@@ -1450,6 +1450,41 @@ function parseFocusPoint(str) {
   return { lat: parts[0], lng: parts[1] };
 }
 
+// ---------- Map System: mapmode ----------
+// เครื่องมือแผนที่เดิมทั้งหมด (highlight/arrows/warmorph/draw/persist/route/follow/speed/shade/hide/landfill/
+// reveal/trace/mainland/focus/highlightcolor/badge/callout/geophoto/timeline) ยังทำงานเหมือนเดิมทุกตัว ไม่แตะเลย
+// mapmode เป็น metadata label ล้วนๆ (คล้าย narrative) — ไม่เพิ่ม arrows/highlight/draw ฯลฯ ให้เองเด็ดขาดตามที่ห้ามไว้
+const MAPMODE_VALUES = ["location", "journey", "movement", "expansion", "retreat", "encirclement", "invasion", "territorial-change", "comparison", "before-after", "timeline"];
+
+// จับคีย์เวิร์ดในสคริปต์ก่อน (สัญญาณแน่นอนสุด) แล้วค่อยดูองค์ประกอบอื่นที่ผู้ใช้ใส่ไว้แล้ว (arrows/highlight/draw/warmorph/route)
+// เป็นสัญญาณเสริม — สังเกตองค์ประกอบที่มีอยู่แล้วเท่านั้น ไม่ได้เพิ่มอะไรใหม่ ตกไป "location" เป็นดีฟอลต์กลางสุดท้าย
+const MAPMODE_KEYWORD_RULES = [
+  { words: ["ล้อม", "ล้อมเมือง", "ปิดล้อม", "encircle", "besiege", "siege"], mapmode: "encirclement" },
+  { words: ["บุก", "รุกราน", "invasion", "invade"], mapmode: "invasion" },
+  { words: ["ขยายอำนาจ", "ขยายอาณาเขต", "ขยายดินแดน", "expand", "expansion"], mapmode: "expansion" },
+  { words: ["ถอย", "ล่าถอย", "retreat", "withdraw"], mapmode: "retreat" },
+  { words: ["เปลี่ยนเขตแดน", "แบ่งเขต", "ยกดินแดน", "territorial", "border change"], mapmode: "territorial-change" },
+  { words: ["เปรียบเทียบ", "ก่อนและหลัง", "ก่อน-หลัง", "before and after", "compare"], mapmode: "before-after" },
+  { words: ["เดินทาง", "มุ่งหน้า", "มุ่งสู่", "journey", "travel to"], mapmode: "journey" },
+  { words: ["เคลื่อนทัพ", "เคลื่อนเข้าสู่", "เคลื่อนพล", "advance", "march"], mapmode: "movement" },
+  { words: ["ไทม์ไลน์", "ตามกาลเวลา", "timeline", "over time"], mapmode: "timeline" },
+];
+
+function inferMapMode(script, hasArrows, highlightKey, hasDraw, hasWarmorph, routeRoad, narrativeKey) {
+  const text = script || "";
+  for (const rule of MAPMODE_KEYWORD_RULES) {
+    if (rule.words.some((w) => text.includes(w))) return rule.mapmode;
+  }
+  // ไม่เจอคีย์เวิร์ด: ดูจากองค์ประกอบที่ผู้ใช้ใส่ไว้แล้วในฉากนี้เอง (ไม่ใช่การเพิ่มองค์ประกอบใหม่ แค่ตั้งชื่อโหมดให้ตรงกับสิ่งที่มีอยู่)
+  if (hasWarmorph) return "territorial-change";
+  if (hasArrows) return "movement";
+  if (routeRoad) return "journey";
+  if (hasDraw) return "encirclement";
+  if (narrativeKey === "conflict" || narrativeKey === "escalation") return "invasion";
+  if (highlightKey !== "none") return "location";
+  return "location"; // ดีฟอลต์กลาง — ไม่มีสัญญาณอะไรเลย เน้นตำแหน่งเฉยๆ ตรงตามความหมายของ location ในสเปค
+}
+
 function finalizeScene(raw) {
   const {
     place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
@@ -1461,6 +1496,7 @@ function finalizeScene(raw) {
     narrative: narrativeRaw, beat: beatRaw, importance: importanceRaw, mood: moodRaw,
     shot: shotRaw, cameraaction: cameraactionRaw, focuspoint, motion: motionRaw, motioncurve: motioncurveRaw,
     continuity, visualbridge, transition: transitionRaw, returnmap,
+    mapmode: mapmodeRaw,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1507,6 +1543,10 @@ function finalizeScene(raw) {
   // โทนพากย์: mood ที่ผู้ใช้ตั้งเอง ทับทุกอย่างรวมถึง style preset; ไม่ตั้ง mood แต่ตั้ง style ใช้โทนของ style เดิม (ไม่เปลี่ยนพฤติกรรมเดิม);
   // ไม่ตั้งทั้งคู่แต่ auto เดาโทนได้จากเนื้อหา ใช้เป็นโทนแนะนำเบาๆ; ไม่มีอะไรเลย = null เหมือนเดิมทุกประการ
   const resolvedMoodTts = moodValid ? MOOD_TTS[moodKey] : preset ? preset.mood : moodGuess ? MOOD_TTS[moodGuess] : null;
+
+  // ---------- resolve mapmode: label ล้วนๆ ไม่เพิ่ม arrows/highlight/draw/warmorph/route ให้เองเด็ดขาด ----------
+  const mapmodeValid = MAPMODE_VALUES.includes(mapmodeRaw) ? mapmodeRaw : null;
+  const mapmodeKey = mapmodeValid || inferMapMode(script, !!arrows, highlightKey, !!draw, !!warmorph, route === "road", narrativeKey);
 
   // ---------- resolve shot/cameraaction/motion/motioncurve: label ดีฟอลต์ตาม cam เดิม แต่ผลจริงใช้เฉพาะตอนผู้ใช้ระบุเอง ----------
   const shotValid = SHOT_VALUES.includes(shotRaw) ? shotRaw : null;
@@ -1605,6 +1645,8 @@ function finalizeScene(raw) {
     transition: transitionValid,
     transitionSource: transitionValid ? "user" : "auto",
     returnMap: returnMapVal,
+    mapmode: mapmodeKey,
+    mapmodeSource: mapmodeValid ? "user" : "auto",
   };
 }
 
@@ -1655,6 +1697,7 @@ const TAG_KEY_ALIASES = {
   visualbridge: "visualbridge", เชื่อมภาพ: "visualbridge",
   transition: "transition", การเปลี่ยนฉาก: "transition",
   returnmap: "returnmap", กลับแผนที่: "returnmap",
+  mapmode: "mapmode", โหมดแผนที่: "mapmode",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1732,6 +1775,7 @@ function sceneStyleTags(s) {
   if (s.visualBridge) tags.push("visualbridge");
   if (s.transitionSource === "user") tags.push(`transition:${s.transition}`);
   if (s.returnMap) tags.push("returnmap");
+  if (s.mapmodeSource === "user" || s.mapmode !== "location") tags.push(`mapmode:${s.mapmode}${s.mapmodeSource === "auto" ? " (auto)" : ""}`);
   if (s.highlight !== "none") tags.push(`ไฮไลต์เขต:${s.highlight}`);
   if (s.focus) tags.push("โฟกัสขาวดำ");
   if (s.highlightColor) tags.push(`สีไฮไลต์ ${s.highlightColor}`);

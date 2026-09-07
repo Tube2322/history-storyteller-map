@@ -147,6 +147,11 @@
 - **`returnmap`**: `on` — ติดตาม "สถานะกล้องแผนที่จริงล่าสุด" แยกจากสถานะกล้องทั่วไป (ข้าม insert scene ที่ไม่ใช่ตำแหน่งกล้องแผนที่จริง) ฉากที่กลับมาเป็นแผนที่จะสืบทอด zoom/tilt/bearing จากจุดนั้นแทนเริ่มใหม่ แม้พิกัดจริงของฉากนั้นจะอยู่ไกลคนละทวีปก็ตาม (ทดสอบแล้ว: A push-in zoom10/tilt25 → B insert (คนละทวีป) → C returnmap=on ที่ญี่ปุ่น ได้ zoom10/tilt25 กลับมาถูกต้อง)
 - ทดสอบเต็มรูปแบบ (6 ฉากผสม establishing/push-in/cut-to-insert/fly-to + highlight/style/effect/visualbridge/returnmap ทุกแบบ) เล่นจบไม่มี error console เลย
 
+**พาท 21 — Map System: mapmode (เพิ่มความสามารถล้วนๆ ไม่กระทบเครื่องมือแผนที่เดิมเลยแม้แต่ตัวเดียว)**
+- เครื่องมือแผนที่เดิมทั้งหมด — `highlight/arrows/warmorph/draw/persist/route/follow/speed/shade/hide/landfill/reveal/trace/mainland/focus/highlightcolor/badge/callout/geophoto/timeline` — ไม่ถูกแตะเลยแม้แต่บรรทัดเดียว ตรวจแล้ว: ฉากที่ใช้เครื่องมือเดิมครบ 15 ตัวพร้อมกัน (arrows/warmorph/draw/badge/callout/geophoto/highlight/route/persist/shade/reveal/trace/mainland/focus/highlightcolor) resolve ค่าถูกต้องทุกตัวเหมือนเดิมเป๊ะ
+- **`mapmode`**: `location/journey/movement/expansion/retreat/encirclement/invasion/territorial-change/comparison/before-after/timeline` — ป้ายกำกับ "โหมดแผนที่" ของฉาก เป็น metadata ล้วนๆ (คล้าย `narrative`) **ไม่เพิ่ม arrows/highlight/draw/warmorph/route ให้เองเด็ดขาด** ตามที่ห้ามไว้ — ผู้ใช้ระบุเองเป็น priority สูงสุดเสมอ
+- **Auto Map Mode**: ไม่ระบุ = เดาจากคำในสคริปต์ก่อน (สัญญาณแน่นอนสุด) แล้วดูจากองค์ประกอบที่ผู้ใช้ใส่ไว้แล้วในฉากนั้นเป็นสัญญาณเสริม (`warmorph`→territorial-change, `arrows`→movement, `route=road`→journey, `draw`→encirclement, `narrative=conflict/escalation`→invasion) ไม่มีสัญญาณอะไรเลย = `location` (ดีฟอลต์กลาง) — ทดสอบตรงตามตัวอย่างในสเปคทั้ง 3 ข้อ: `"กองทัพเคลื่อนเข้าสู่กรุงปารีส"` → `movement`, `"จักรวรรดิขยายอำนาจไปทั่วทะเลเมดิเตอร์เรเนียน"` → `expansion`, `"กองทัพถูกล้อมที่เมืองสตาลินกราด"` → `encirclement`
+
 ## เปิดใช้งาน
 
 ต้องรัน `server.py` (ไม่ใช่ `python -m http.server` เฉยๆ) เพราะต้องมี endpoint `/api/tts` สำหรับเสียงพากย์:
