@@ -193,6 +193,26 @@ const el = {
   btnBuilderAdd: document.getElementById("btnBuilderAdd"),
   btnBuilderCancelEdit: document.getElementById("btnBuilderCancelEdit"),
   builderDetails: document.getElementById("builderDetails"),
+  dropZoneImages: document.getElementById("dropZoneImages"),
+  fileDropImages: document.getElementById("fileDropImages"),
+  dropImagesStatus: document.getElementById("dropImagesStatus"),
+  dropZoneAudio: document.getElementById("dropZoneAudio"),
+  fileDropAudio: document.getElementById("fileDropAudio"),
+  dropAudioStatus: document.getElementById("dropAudioStatus"),
+  zeroCostToggle: document.getElementById("zeroCostToggle"),
+  smartDropImages: document.getElementById("smartDropImages"),
+  smartFileImages: document.getElementById("smartFileImages"),
+  smartDropVideos: document.getElementById("smartDropVideos"),
+  smartFileVideos: document.getElementById("smartFileVideos"),
+  smartDropAudio: document.getElementById("smartDropAudio"),
+  smartFileAudio: document.getElementById("smartFileAudio"),
+  smartAssetCounts: document.getElementById("smartAssetCounts"),
+  btnSmartAnalyze: document.getElementById("btnSmartAnalyze"),
+  btnSmartReset: document.getElementById("btnSmartReset"),
+  smartReviewWrap: document.getElementById("smartReviewWrap"),
+  smartDiagnostics: document.getElementById("smartDiagnostics"),
+  smartReviewList: document.getElementById("smartReviewList"),
+  btnSmartApprove: document.getElementById("btnSmartApprove"),
 };
 
 let scenes = [];
@@ -838,6 +858,8 @@ const pinFromEl = makeMarkerEl("map-pin-content is-from", `<span class="pin-dot"
 const arrowWrapEl = makeMarkerEl("arrow-marker-wrap", `<span class="arrow-marker">➤</span>`);
 const effectWrapEl = makeMarkerEl("effect-marker-wrap", "");
 const geoPhotoWrapEl = makeMarkerEl("geo-photo-wrap", `<span class="geo-photo-card"></span><span class="geo-photo-label"></span>`);
+// Smart Documentary Production Import (พาท 27) — วิดีโอปักพิกัดคู่กับ geophoto ได้ (คนละ marker คนละ offset ไม่ทับกัน)
+const geoVideoWrapEl = makeMarkerEl("geo-photo-wrap", `<span class="geo-video-card"><video muted loop playsinline></video></span><span class="geo-photo-label"></span>`);
 const badgeWrapEl = makeMarkerEl("badge-wrap", `<span class="badge-circle"></span><span class="badge-pill"></span>`);
 const calloutRingWrapEl = makeMarkerEl("callout-ring-wrap", `<span class="callout-ring"></span>`);
 
@@ -847,6 +869,7 @@ const markerArrow = new maplibregl.Marker({ element: arrowWrapEl, anchor: "cente
 const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "bottom" });
 // offset ยกขึ้น กันป้ายชื่อใต้รูป (geo-photo-label) ไปทับป้ายชื่อหมุดหลัก (pin label) ที่อยู่จุดพิกัดเดียวกัน
 const markerGeoPhoto = new maplibregl.Marker({ element: geoPhotoWrapEl, anchor: "bottom", offset: [0, -34] });
+const markerGeoVideo = new maplibregl.Marker({ element: geoVideoWrapEl, anchor: "bottom", offset: [96, -34] });
 const markerBadge = new maplibregl.Marker({ element: badgeWrapEl, anchor: "bottom", offset: [0, -34] });
 const markerCallout = new maplibregl.Marker({ element: calloutRingWrapEl, anchor: "center" });
 
@@ -1032,6 +1055,22 @@ function setGeoPhoto(scene) {
     markerGeoPhoto.setLngLat([scene.geophoto.lng, scene.geophoto.lat]).addTo(map);
   } else {
     markerGeoPhoto.remove();
+  }
+}
+
+// videoAsset — มาจาก Smart Documentary Production Import (พาท 27) เท่านั้น ไม่ใช่ tag ที่พิมพ์เอง (คล้าย geophoto แต่เล่นวิดีโอแทนรูปนิ่ง ปักข้างๆ geophoto ถ้ามีทั้งคู่)
+function setGeoVideo(scene) {
+  const videoEl = geoVideoWrapEl.querySelector("video");
+  if (scene.videoAsset && scene.videoAsset.url) {
+    if (videoEl.src !== scene.videoAsset.url) videoEl.src = scene.videoAsset.url;
+    videoEl.play().catch(() => {});
+    const labelEl = geoVideoWrapEl.querySelector(".geo-photo-label");
+    labelEl.textContent = scene.videoAsset.label || "";
+    labelEl.style.display = scene.videoAsset.label ? "" : "none";
+    markerGeoVideo.setLngLat([scene.lng, scene.lat]).addTo(map);
+  } else {
+    videoEl.pause();
+    markerGeoVideo.remove();
   }
 }
 
@@ -1300,6 +1339,13 @@ function parseWarmorph(str) {
   const p2 = p2raw.split(",").map(Number);
   if (p1.length !== 2 || p2.length !== 2 || p1.some(Number.isNaN) || p2.some(Number.isNaN)) return null;
   return { color: `#${colorRaw}`, p1: [p1[1], p1[0]], p2: [p2[1], p2[0]] };
+}
+
+// image=01 / image=01,02 / video=01 / audio=01 — เลข sequence อ้างอิง asset ที่ลากเข้า Smart Import (bulk media) ไม่ใช่ url ตรงๆ
+// ตัวเลข/ชื่อ asset จริงจับคู่ทีหลังตอน "วิเคราะห์ & จับคู่" (runAssetMatching) ไม่ใช่ตอน parse บรรทัดนี้ เพราะตอน parse สคริปต์ยังไม่รู้ว่ามี asset อะไรถูกอัพโหลดมาบ้าง
+function parseAssetRefs(str) {
+  if (!str) return [];
+  return str.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 // geophoto=url:lat,lng หรือ geophoto=url:lat,lng:ป้ายชื่อ — ปักรูปจริงตามพิกัด (ป้ายชื่อใส่หรือไม่ก็ได้)
@@ -1583,6 +1629,7 @@ function finalizeScene(raw) {
     insertmode, inserttransition, evidence,
     pace: paceRaw, pacing, density, attention, emphasis, intensity, composition,
     navigation, travelmode,
+    image: imageRaw, video: videoRaw, audio: audioRaw,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1808,6 +1855,10 @@ function finalizeScene(raw) {
     effectRender,
     effectSuppressed,
     emphasisTransitionMul,
+    // Smart Documentary Production Import (พาท 27) — เลข sequence ที่ผู้ใช้/ChatGPT ระบุไว้ในสคริปต์ ยังไม่ใช่ asset จริง
+    imageRefs: parseAssetRefs(imageRaw),
+    videoRefs: parseAssetRefs(videoRaw),
+    audioRefs: parseAssetRefs(audioRaw),
   };
 }
 
@@ -1871,6 +1922,9 @@ const TAG_KEY_ALIASES = {
   composition: "composition", องค์ประกอบภาพ: "composition",
   navigation: "navigation", การเคลื่อนที่: "navigation",
   travelmode: "travelmode", โหมดเดินทาง: "travelmode",
+  image: "image", รูป: "image",
+  video: "video", วิดีโอ: "video",
+  audio: "audio", เสียง: "audio",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -2037,6 +2091,9 @@ function sceneStyleTags(s) {
   if (s.mainlandOnly) tags.push("แผ่นดินใหญ่");
   if (s.caption) tags.push("คำบรรยาย");
   if (s.geophoto) tags.push("รูปปักพิกัด");
+  if (s.overrideAudioUrl) tags.push("เสียงพากย์อัพโหลดเอง");
+  if (s.videoAsset) tags.push("วิดีโอปักพิกัด");
+  if ((s.imageRefs && s.imageRefs.length) || (s.videoRefs && s.videoRefs.length) || (s.audioRefs && s.audioRefs.length)) tags.push("Smart Import ref");
   if (s.badge) tags.push("ป้ายวงกลม");
   if (s.callout) tags.push("กล่องแทรก+เส้นโยง");
   if (s.draw && s.draw.length) tags.push("วาดเส้นอิสระ");
@@ -2198,6 +2255,7 @@ function goToScene(index, durationOverride) {
 
   setCaption(scene);
   setGeoPhoto(scene);
+  setGeoVideo(scene);
   setFreeformDraw(scene);
   setBadge(scene);
   setCallout(scene);
@@ -2487,6 +2545,7 @@ async function preloadNarration(myToken) {
   const startIdx = activeIndex === -1 ? 0 : activeIndex;
   for (let i = startIdx; i < scenes.length; i++) {
     if (myToken !== playToken) return false;
+    if (scenes[i].overrideAudioUrl) continue; // ไฟล์เสียงพากย์ที่ผู้ใช้ลากเข้ามาเอง ไม่ต้องสร้าง TTS ซ้ำ
     const segments = splitSegments(scenes[i].script);
     for (const seg of segments) {
       if (myToken !== playToken) return false;
@@ -2548,22 +2607,27 @@ async function narrationLoop() {
   while (isPlaying && myToken === playToken && activeIndex < scenes.length) {
     const idx = activeIndex;
     const scene = scenes[idx];
-    const segments = splitSegments(scene.script);
 
-    const clips = [];
-    if (isRenderMode && renderDurations && renderDurations[idx]) {
-      // โหมดเรนเดอร์: ใช้ความยาวที่ render.py วัดจากเสียงจริงมาแล้ว ไม่ต้องพากย์ซ้ำในเบราว์เซอร์
-      segments.forEach((seg, i) => clips.push({ text: seg, url: null, duration: renderDurations[idx][i] || DEFAULT_DURATION }));
+    let clips = [];
+    if (scene.overrideAudioUrl) {
+      // ไฟล์เสียงพากย์ที่ผู้ใช้ลากเข้ามาเอง (แบ่งฉากอัตโนมัติตามลำดับไฟล์) — เล่นคลิปเดียวทั้งฉาก ไม่ผ่าน TTS
+      clips.push({ text: scene.script, url: scene.overrideAudioUrl, duration: scene.overrideAudioDuration || scene.duration });
     } else {
-      el.subtitleText.textContent = "กำลังสร้างเสียง…";
-      const mood = scene.styleMood;
-      for (const seg of segments) {
-        if (myToken !== playToken) return;
-        try {
-          clips.push({ text: seg, ...(await fetchTts(seg, mood && mood.rate, mood && mood.pitch)) });
-        } catch (e) {
-          console.warn(e);
-          clips.push({ text: seg, url: null, duration: scene.duration / segments.length });
+      const segments = splitSegments(scene.script);
+      if (isRenderMode && renderDurations && renderDurations[idx]) {
+        // โหมดเรนเดอร์: ใช้ความยาวที่ render.py วัดจากเสียงจริงมาแล้ว ไม่ต้องพากย์ซ้ำในเบราว์เซอร์
+        segments.forEach((seg, i) => clips.push({ text: seg, url: null, duration: renderDurations[idx][i] || DEFAULT_DURATION }));
+      } else {
+        el.subtitleText.textContent = "กำลังสร้างเสียง…";
+        const mood = scene.styleMood;
+        for (const seg of segments) {
+          if (myToken !== playToken) return;
+          try {
+            clips.push({ text: seg, ...(await fetchTts(seg, mood && mood.rate, mood && mood.pitch)) });
+          } catch (e) {
+            console.warn(e);
+            clips.push({ text: seg, url: null, duration: scene.duration / segments.length });
+          }
         }
       }
     }
@@ -2856,6 +2920,8 @@ function saveProject() {
     sceneGapSec,
     subtitleStyle,
     landClipEnabled,
+    assetManifest,
+    assetSeqCounters,
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -2902,6 +2968,11 @@ function applyProjectData(data) {
     landClipEnabled = data.landClipEnabled;
     el.landClipToggle.checked = landClipEnabled;
     boundaryCache.clear();
+  }
+  if (Array.isArray(data.assetManifest)) {
+    assetManifest = data.assetManifest;
+    assetSeqCounters = data.assetSeqCounters || { image: 0, video: 0, audio: 0 };
+    updateSmartAssetCounts();
   }
   if (data.subtitleStyle) {
     subtitleStyle = { pos: "bottom", color: "", size: 0, weight: "", ...data.subtitleStyle };
@@ -2972,6 +3043,364 @@ el.fileUploadImage.addEventListener("change", async (e) => {
     }
   }
   e.target.value = "";
+});
+
+// ---------- ลากไฟล์รูป/เสียงเข้ามาแบ่งตามฉากอัตโนมัติ: จับคู่ตามลำดับไฟล์ = ลำดับฉาก ----------
+// เรียงชื่อไฟล์แบบ natural sort (scene2.jpg มาก่อน scene10.jpg) กันเลขลำดับสลับ
+function sortFilesNatural(files) {
+  return [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+}
+
+async function uploadFileForDrop(file) {
+  const dataUrl = await fileToDataUrl(file);
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: file.name, data: dataUrl }),
+  });
+  if (!res.ok) throw new Error(`อัพโหลดไม่สำเร็จ (${res.status})`);
+  const { url } = await res.json();
+  return url;
+}
+
+function probeAudioDuration(url, fallback) {
+  return new Promise((resolve) => {
+    const probe = new Audio(url);
+    probe.addEventListener("loadedmetadata", () => resolve(Number.isFinite(probe.duration) && probe.duration > 0 ? probe.duration : fallback));
+    probe.addEventListener("error", () => resolve(fallback));
+  });
+}
+
+async function assignDroppedMedia(fileList, kind) {
+  const files = [...fileList].filter((f) => f);
+  if (!files.length) return;
+  const statusEl = kind === "image" ? el.dropImagesStatus : el.dropAudioStatus;
+  if (!scenes.length) {
+    statusEl.textContent = "นำเข้าสคริปต์ก่อนถึงจะลากไฟล์แบ่งฉากอัตโนมัติได้";
+    return;
+  }
+  const sorted = sortFilesNatural(files);
+  const n = Math.min(sorted.length, scenes.length);
+  for (let i = 0; i < n; i++) {
+    const file = sorted[i];
+    statusEl.textContent = `กำลังอัพโหลด... ${i + 1}/${n}`;
+    try {
+      const url = await uploadFileForDrop(file);
+      if (kind === "image") {
+        scenes[i].geophoto = scenes[i].geophoto
+          ? { ...scenes[i].geophoto, url }
+          : { url, lat: scenes[i].lat, lng: scenes[i].lng, label: "" };
+      } else {
+        scenes[i].overrideAudioUrl = url;
+        scenes[i].overrideAudioDuration = await probeAudioDuration(url, scenes[i].duration);
+      }
+    } catch (err) {
+      console.warn(err);
+      statusEl.textContent = `ฉาก ${i + 1}: อัพโหลด "${file.name}" ไม่สำเร็จ — ${err.message}`;
+      return;
+    }
+  }
+  const extra = sorted.length > scenes.length ? ` (ไฟล์เกิน ${sorted.length - scenes.length} ไฟล์ไม่ได้ใช้ เพราะฉากมีแค่ ${scenes.length})` : "";
+  statusEl.textContent = `จับคู่แล้ว ${n}/${scenes.length} ฉาก${extra}`;
+  renderTimeline();
+  // รีเฟรชพรีวิวฉากปัจจุบันถ้าเพิ่งจับคู่รูปให้ฉากที่กำลังดูอยู่ (ไม่เรียก goToScene เพราะจะกระตุ้นกล้อง/ทรานซิชันซ้ำ)
+  if (kind === "image" && activeIndex >= 0 && activeIndex < scenes.length) setGeoPhoto(scenes[activeIndex]);
+}
+
+function wireDropZone(zoneEl, inputEl, kind) {
+  zoneEl.addEventListener("click", () => inputEl.click());
+  inputEl.addEventListener("change", (e) => {
+    assignDroppedMedia(e.target.files, kind);
+    e.target.value = "";
+  });
+  ["dragenter", "dragover"].forEach((evt) => {
+    zoneEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      zoneEl.classList.add("is-dragover");
+    });
+  });
+  ["dragleave", "dragend", "drop"].forEach((evt) => {
+    zoneEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      zoneEl.classList.remove("is-dragover");
+    });
+  });
+  zoneEl.addEventListener("drop", (e) => {
+    if (e.dataTransfer && e.dataTransfer.files.length) assignDroppedMedia(e.dataTransfer.files, kind);
+  });
+}
+
+wireDropZone(el.dropZoneImages, el.fileDropImages, "image");
+wireDropZone(el.dropZoneAudio, el.fileDropAudio, "audio");
+
+// ---------- Smart Documentary Production Import (พาท 27) ----------
+// Core Loop v1: script (image=/video=/audio= syntax ใหม่ optional) + bulk drop สื่อทั้งหมด + จับคู่อัตโนมัติ (explicit ref > ลำดับไฟล์ ไม่ใช้ AI ภายนอก)
+// + confidence score + review ปรับเองได้ก่อน + อนุมัติแล้วค่อยเขียนเข้า scenes[] ผ่านฟิลด์เดิมที่ engine เดิมรู้จักอยู่แล้ว (geophoto/videoAsset/overrideAudioUrl)
+// ตัดจากสเปกเต็ม 46 ข้อ: ไม่มี AI/vision semantic matching (Zero Additional Cost Mode บังคับ), ไม่มี waveform, ไม่มี sub-scene multi-asset timeline,
+// ไม่มี 3-panel workspace แยกหน้าเต็ม (ใช้แผง import เดิมขยายแทนเพื่อไม่ต้องสร้าง parser/state คู่ขนาน) — ของเหล่านี้เป็นส่วนขยายในอนาคต
+
+let assetManifest = []; // [{id,type,sequence,originalFilename,url,width,height,duration,importedAt,sceneAssignments:[],confidence:0}]
+let assetSeqCounters = { image: 0, video: 0, audio: 0 };
+let zeroCostMode = true;
+let lastMatches = null; // ผลจาก runAssetMatching ล่าสุด ใช้ตอนกด "อนุมัติ"
+
+function assetTypeOfFile(file) {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("audio/")) return "audio";
+  return null;
+}
+
+function probeImageDims(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: 0, height: 0 });
+    img.src = url;
+  });
+}
+
+// รวมของ video/audio ไว้ในฟังก์ชันเดียว (โครงเหมือน probeAudioDuration เดิม แค่สลับ tag element)
+function probeMediaDuration(url, type) {
+  return new Promise((resolve) => {
+    const probe = type === "video" ? document.createElement("video") : new Audio();
+    probe.src = url;
+    probe.addEventListener("loadedmetadata", () => resolve(Number.isFinite(probe.duration) && probe.duration > 0 ? probe.duration : 0));
+    probe.addEventListener("error", () => resolve(0));
+  });
+}
+
+// สร้าง Internal Asset ID เอง — ห้ามใช้ filename เป็นตัวจับคู่หลัก (ข้อ 6 ในสเปก) originalFilename เก็บไว้แค่โชว์ผู้ใช้ดู ไม่เอาไปคำนวณจับคู่เลย
+async function ingestAssetFile(file) {
+  const type = assetTypeOfFile(file);
+  if (!type) return null;
+  const url = await uploadFileForDrop(file);
+  assetSeqCounters[type] += 1;
+  const asset = {
+    id: `asset_${String(assetManifest.length + 1).padStart(4, "0")}`,
+    type,
+    sequence: assetSeqCounters[type],
+    originalFilename: file.name,
+    url,
+    width: null,
+    height: null,
+    duration: null,
+    importedAt: new Date().toISOString(),
+    sceneAssignments: [],
+    confidence: 0,
+  };
+  if (type === "image") {
+    const dims = await probeImageDims(url);
+    asset.width = dims.width;
+    asset.height = dims.height;
+  } else {
+    asset.duration = await probeMediaDuration(url, type);
+  }
+  assetManifest.push(asset);
+  return asset;
+}
+
+function updateSmartAssetCounts() {
+  const n = { image: 0, video: 0, audio: 0 };
+  assetManifest.forEach((a) => { n[a.type]++; });
+  el.smartAssetCounts.textContent = assetManifest.length
+    ? `${n.image} รูป · ${n.video} วิดีโอ · ${n.audio} เสียง (${assetManifest.length} ไฟล์รวม)`
+    : "ยังไม่มีไฟล์สื่อ";
+}
+
+async function ingestFileList(fileList) {
+  const files = [...fileList].filter(Boolean);
+  for (const file of files) {
+    try { await ingestAssetFile(file); } catch (err) { console.warn(`นำเข้าไฟล์ ${file.name} ไม่สำเร็จ`, err); }
+    updateSmartAssetCounts();
+  }
+}
+
+function wireSmartDropZone(zoneEl, inputEl) {
+  zoneEl.addEventListener("click", (e) => { e.preventDefault(); inputEl.click(); });
+  inputEl.addEventListener("change", (e) => { ingestFileList(e.target.files); e.target.value = ""; });
+  ["dragenter", "dragover"].forEach((evt) => zoneEl.addEventListener(evt, (e) => { e.preventDefault(); zoneEl.classList.add("is-dragover"); }));
+  ["dragleave", "dragend", "drop"].forEach((evt) => zoneEl.addEventListener(evt, (e) => { e.preventDefault(); zoneEl.classList.remove("is-dragover"); }));
+  zoneEl.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files.length) ingestFileList(e.dataTransfer.files); });
+}
+wireSmartDropZone(el.smartDropImages, el.smartFileImages);
+wireSmartDropZone(el.smartDropVideos, el.smartFileVideos);
+wireSmartDropZone(el.smartDropAudio, el.smartFileAudio);
+
+el.zeroCostToggle.addEventListener("change", () => { zeroCostMode = el.zeroCostToggle.checked; });
+
+el.btnSmartReset.addEventListener("click", () => {
+  assetManifest = [];
+  assetSeqCounters = { image: 0, video: 0, audio: 0 };
+  lastMatches = null;
+  updateSmartAssetCounts();
+  el.smartReviewWrap.hidden = true;
+});
+
+// ---------- Asset Matching Engine: ข้อ 11 ในสเปก priority 1) Explicit Reference 2) Sequence/ลำดับไฟล์ ----------
+// (ตัด metadata/semantic/date matching ออกเพราะต้องใช้ AI วิเคราะห์เนื้อหาไฟล์จริง ซึ่ง Zero Additional Cost Mode ห้ามเรียกบริการภายนอกเสียเงิน
+// และไม่มี local vision model ให้ใช้ในโปรเจกต์นี้ — ยังคง 2 tier ที่ deterministic 100% ไม่ต้องเดา)
+const CONFIDENCE_SCORE = { EXPLICIT: 100, SEQUENCE: 75, MANUAL: 100, NONE: 0 };
+function confidenceLevel(score) {
+  if (score >= 90) return "HIGH";
+  if (score >= 70) return "MEDIUM";
+  if (score > 0) return "LOW";
+  return "NONE";
+}
+
+function runAssetMatching(sceneList, assets) {
+  assets.forEach((a) => { a.sceneAssignments = []; });
+  const byType = {
+    image: assets.filter((a) => a.type === "image"),
+    video: assets.filter((a) => a.type === "video"),
+    audio: assets.filter((a) => a.type === "audio"),
+  };
+  const usedSeq = { image: new Set(), video: new Set(), audio: new Set() };
+  const matches = sceneList.map((scene, idx) => ({ sceneIndex: idx, image: null, video: null, audio: null }));
+
+  // pass 1: Explicit Reference — image=/video=/audio= ในสคริปต์ (ข้อ 1 priority สูงสุด) ใช้ตัวแรกของ list เป็นหลัก (multi-ref เก็บไว้ดูในสคริปต์ได้แต่ v1 ใช้จริงแค่ตัวแรก)
+  sceneList.forEach((scene, idx) => {
+    ["image", "video", "audio"].forEach((type) => {
+      const refs = scene[`${type}Refs`] || [];
+      if (!refs.length) return;
+      const seq = Number(refs[0]);
+      const asset = byType[type].find((a) => a.sequence === seq);
+      if (asset) {
+        matches[idx][type] = { asset, confidence: CONFIDENCE_SCORE.EXPLICIT, method: "explicit" };
+        usedSeq[type].add(asset.sequence);
+        asset.sceneAssignments.push(idx);
+      } else {
+        matches[idx][type] = { asset: null, confidence: CONFIDENCE_SCORE.NONE, method: "missing-explicit" };
+      }
+    });
+  });
+
+  // pass 2: Sequence Matching — ฉากที่ไม่ได้ระบุเลขเอง ได้ asset ที่เหลือไปเรียงตามลำดับไฟล์ที่อัพโหลด (ข้อ 11 priority ท้ายสุดก่อน default ว่าง)
+  ["image", "video", "audio"].forEach((type) => {
+    let cursor = 0;
+    const pool = byType[type];
+    sceneList.forEach((scene, idx) => {
+      if (matches[idx][type]) return; // มี explicit ref อยู่แล้ว (เจอหรือ missing ก็ตาม) ไม่แตะ
+      while (cursor < pool.length && usedSeq[type].has(pool[cursor].sequence)) cursor++;
+      if (cursor < pool.length) {
+        const asset = pool[cursor];
+        matches[idx][type] = { asset, confidence: CONFIDENCE_SCORE.SEQUENCE, method: "sequence" };
+        usedSeq[type].add(asset.sequence);
+        asset.sceneAssignments.push(idx);
+        cursor++;
+      }
+    });
+  });
+
+  return matches;
+}
+
+function assetLabel(asset) {
+  if (!asset) return "— ไม่มี —";
+  return `${asset.id} (${asset.originalFilename})`;
+}
+
+function buildAssetSelectOptions(type, selectedAssetId) {
+  const pool = assetManifest.filter((a) => a.type === type);
+  let html = `<option value="">— เว้นว่าง —</option>`;
+  pool.forEach((a) => {
+    html += `<option value="${a.id}" ${a.id === selectedAssetId ? "selected" : ""}>${assetLabel(a)}</option>`;
+  });
+  return html;
+}
+
+function renderSmartReview(matches) {
+  const rows = matches.map((m, idx) => {
+    const scene = scenes[idx];
+    const scriptSnippet = (scene.script || "").slice(0, 60);
+    const isMissing = ["image", "video", "audio"].some((t) => m[t] && m[t].method === "missing-explicit");
+    const slots = ["image", "video", "audio"].map((type) => {
+      const slot = m[type];
+      const asset = slot ? slot.asset : null;
+      const confidence = slot ? slot.confidence : 0;
+      const level = slot && slot.method === "missing-explicit" ? "NONE" : confidenceLevel(confidence);
+      const badgeClass = `conf-${level.toLowerCase()}`;
+      const badgeText = slot && slot.method === "missing-explicit" ? "ขาดไฟล์" : (asset ? `${level} ${confidence}%` : "ไม่ใช้");
+      return `
+        <div class="smart-review-slot" data-scene="${idx}" data-type="${type}">
+          <span class="sr-type">${type}</span>
+          <select data-scene="${idx}" data-type="${type}" class="sr-asset-select">${buildAssetSelectOptions(type, asset ? asset.id : "")}</select>
+          <span class="confidence-badge ${badgeClass}">${badgeText}</span>
+        </div>`;
+    }).join("");
+    return `
+      <div class="smart-review-row ${isMissing ? "is-missing" : ""}" data-scene="${idx}">
+        <div class="smart-review-head">
+          <span class="sr-scene">ฉาก ${idx + 1} — ${scene.place}</span>
+          <span class="sr-script">${scriptSnippet}</span>
+        </div>
+        <div class="smart-review-slots">${slots}</div>
+      </div>`;
+  }).join("");
+  el.smartReviewList.innerHTML = rows;
+
+  el.smartReviewList.querySelectorAll(".sr-asset-select").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const idx = Number(sel.dataset.scene);
+      const type = sel.dataset.type;
+      const assetId = sel.value;
+      const asset = assetId ? assetManifest.find((a) => a.id === assetId) : null;
+      lastMatches[idx][type] = asset ? { asset, confidence: CONFIDENCE_SCORE.MANUAL, method: "manual" } : null;
+      renderSmartReview(lastMatches); // รีเฟรช badge/dropdown ทั้งชุดให้ตรงกับ assignment ใหม่ (กัน asset ซ้ำโชว์ผิด state)
+      renderSmartDiagnostics(lastMatches);
+    });
+  });
+}
+
+function renderSmartDiagnostics(matches) {
+  let high = 0, medium = 0, low = 0, missing = 0;
+  matches.forEach((m) => {
+    ["image", "video", "audio"].forEach((type) => {
+      const slot = m[type];
+      if (!slot) return;
+      if (slot.method === "missing-explicit") { missing++; return; }
+      const level = confidenceLevel(slot.confidence);
+      if (level === "HIGH") high++;
+      else if (level === "MEDIUM") medium++;
+      else if (level === "LOW") low++;
+    });
+  });
+  const usedIds = new Set();
+  matches.forEach((m) => ["image", "video", "audio"].forEach((type) => { if (m[type] && m[type].asset) usedIds.add(m[type].asset.id); }));
+  const unused = assetManifest.length - usedIds.size;
+  el.smartDiagnostics.textContent = `${scenes.length} ฉาก · จับคู่ HIGH ${high} · MEDIUM ${medium} · LOW ${low}${missing ? ` · ⚠ ขาดไฟล์ที่ระบุไว้ ${missing}` : ""} · ไฟล์ไม่ได้ใช้ ${unused}/${assetManifest.length}`;
+}
+
+el.btnSmartAnalyze.addEventListener("click", () => {
+  if (!scenes.length) { alert("กด \"แปลงเป็นฉาก\" ให้มีฉากก่อน ถึงจะวิเคราะห์ & จับคู่สื่อได้"); return; }
+  if (!assetManifest.length) { alert("ยังไม่มีไฟล์สื่อ ลากรูป/วิดีโอ/เสียงเข้ามาก่อน"); return; }
+  lastMatches = runAssetMatching(scenes, assetManifest);
+  renderSmartReview(lastMatches);
+  renderSmartDiagnostics(lastMatches);
+  el.smartReviewWrap.hidden = false;
+});
+
+// อนุมัติ: เขียนผลจับคู่เข้า scenes[] ผ่านฟิลด์ที่ engine เดิมรู้จักอยู่แล้วเป๊ะ (geophoto/videoAsset/overrideAudioUrl) แล้วเรียก renderTimeline/goToScene เหมือน parseImportText ปกติ
+el.btnSmartApprove.addEventListener("click", () => {
+  if (!lastMatches) return;
+  lastMatches.forEach((m, idx) => {
+    const scene = scenes[idx];
+    if (m.image && m.image.asset) {
+      const url = m.image.asset.url;
+      scene.geophoto = scene.geophoto ? { ...scene.geophoto, url } : { url, lat: scene.lat, lng: scene.lng, label: "" };
+    }
+    if (m.video && m.video.asset) {
+      scene.videoAsset = { url: m.video.asset.url, duration: m.video.asset.duration || scene.duration, label: "" };
+    }
+    if (m.audio && m.audio.asset) {
+      scene.overrideAudioUrl = m.audio.asset.url;
+      scene.overrideAudioDuration = m.audio.asset.duration || scene.duration;
+    }
+  });
+  renderTimeline();
+  goToScene(0);
+  el.smartReviewWrap.hidden = true;
+  el.smartDiagnostics.textContent = "อนุมัติแล้ว — Timeline พร้อมเล่น (กดปุ่มเล่นด้านบนได้เลย)";
 });
 
 // ---------- ค้นหาสถานที่ (Nominatim forward geocode) — ใช้ร่วมกันทั้งช่องค้นหาเดิมและ "สร้างฉากง่ายๆ" ----------

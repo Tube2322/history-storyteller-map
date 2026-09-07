@@ -288,6 +288,39 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
           </div>
           <div class="import-preview" id="importPreview"></div>
 
+          <details class="import-details" id="smartImportDetails">
+          <summary>🎬 SMART IMPORT — จับคู่รูป/วิดีโอ/เสียงกับฉากอัตโนมัติ</summary>
+          <p class="import-hint">กด "แปลงเป็นฉาก" ด้านบนก่อน 1 ครั้ง แล้วลากสื่อทั้งหมดมาวางที่นี่ทีเดียว — ไม่ต้อง rename ไฟล์ ไม่ต้องลากทีละฉาก ถ้าในสคริปต์มี <code>image=01</code> / <code>video=01</code> / <code>audio=01</code> ระบบจับคู่ตามเลขนั้นก่อนเป็นอันดับแรก (มั่นใจ 100%) ฉากที่ไม่ได้ระบุเลขจะได้ไฟล์ที่เหลือไปเรียงตามลำดับอัพโหลดแทน (มั่นใจ 75%) — ไม่ใส่ <code>image=</code>/<code>video=</code>/<code>audio=</code> เลยสักฉากก็ยังใช้ได้ปกติ (ทำงานเหมือนเดิม 100%)</p>
+
+          <label class="check-row">
+            <input id="zeroCostToggle" type="checkbox" checked />
+            Zero Additional Cost Mode — ห้ามเรียกบริการภายนอกแบบเสียเงินเด็ดขาด (ดีฟอลต์เปิด)
+          </label>
+
+          <div class="smart-drop-grid">
+            <label class="drop-zone" id="smartDropImages">ลากรูปทั้งหมดที่นี่ (หรือคลิกเลือกไฟล์)</label>
+            <input id="smartFileImages" type="file" accept="image/*" multiple hidden />
+            <label class="drop-zone" id="smartDropVideos">ลากวิดีโอทั้งหมดที่นี่ (หรือคลิกเลือกไฟล์)</label>
+            <input id="smartFileVideos" type="file" accept="video/*" multiple hidden />
+            <label class="drop-zone" id="smartDropAudio">ลากไฟล์เสียงทั้งหมดที่นี่ (หรือคลิกเลือกไฟล์)</label>
+            <input id="smartFileAudio" type="file" accept="audio/*" multiple hidden />
+          </div>
+          <p class="import-hint" id="smartAssetCounts">ยังไม่มีไฟล์สื่อ</p>
+
+          <div class="import-actions">
+            <button id="btnSmartAnalyze" class="primary-btn" type="button">วิเคราะห์ &amp; จับคู่ (Analyze &amp; Match)</button>
+            <button id="btnSmartReset" class="ghost-btn" type="button">ล้างสื่อทั้งหมด</button>
+          </div>
+
+          <div id="smartReviewWrap" hidden>
+            <p class="import-hint" id="smartDiagnostics"></p>
+            <div class="smart-review-list" id="smartReviewList"></div>
+            <div class="import-actions">
+              <button id="btnSmartApprove" class="primary-btn" type="button">✓ อนุมัติ &amp; สร้าง Timeline</button>
+            </div>
+          </div>
+          </details>
+
           <details class="import-details">
           <summary>Excel / บันทึกโปรเจกต์</summary>
           <div class="import-actions">
@@ -385,6 +418,17 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
                 <option value="800">หนา 800</option>
               </select>
             </div>
+          </div>
+
+          <div class="brand-settings">
+            <h3>ลากไฟล์แบ่งฉากอัตโนมัติ</h3>
+            <p class="import-hint">ลากไฟล์หลายไฟล์เข้ามาได้ทีเดียว ระบบจับคู่ตามลำดับไฟล์ = ลำดับฉาก (ไฟล์แรก→ฉาก 1, ไฟล์ถัดไป→ฉาก 2, ...) ต้องนำเข้าสคริปต์ก่อน — ถ้ากด "นำเข้า" ใหม่ต้องลากซ้ำ</p>
+            <div class="drop-zone" id="dropZoneImages">ลากรูปภาพเข้ามาที่นี่ (หรือคลิกเลือกไฟล์)</div>
+            <input id="fileDropImages" type="file" accept="image/*" multiple hidden />
+            <p class="import-hint" id="dropImagesStatus"></p>
+            <div class="drop-zone" id="dropZoneAudio">ลากไฟล์เสียงพากย์เข้ามาที่นี่ (หรือคลิกเลือกไฟล์)</div>
+            <input id="fileDropAudio" type="file" accept="audio/*" multiple hidden />
+            <p class="import-hint" id="dropAudioStatus"></p>
           </div>
 
           <div class="brand-settings">

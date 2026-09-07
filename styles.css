@@ -298,6 +298,21 @@ html, body {
   to { transform: scale(1); opacity: 1; }
 }
 
+/* videoAsset (Smart Documentary Production Import) — วิดีโอปักพิกัดคู่กับ geophoto ได้ ใช้เลย์เอาต์เดียวกัน */
+.geo-video-card {
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  border: 3px solid #fff;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+  overflow: hidden;
+  background: #111;
+  transform-origin: center bottom;
+  animation: geo-photo-pop .45s cubic-bezier(.34,1.56,.64,1);
+  display: block;
+}
+.geo-video-card video { width: 100%; height: 100%; object-fit: cover; }
+
 /* badge=flag:xx:lat,lng:ป้าย หรือ badge=icon:🏛️:lat,lng:ป้าย — ไอคอนวงกลม+ป้ายชื่อ (สไตล์ Whyhistory) */
 .badge-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .badge-circle {
@@ -733,6 +748,55 @@ body.is-render-mode .import-panel {
   color: var(--ink-dim);
   line-height: 1.6;
 }
+
+.drop-zone {
+  border: 1.5px dashed var(--panel-border);
+  border-radius: 10px;
+  padding: 16px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-dim);
+  cursor: pointer;
+  margin-top: 8px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.drop-zone:hover { border-color: var(--accent, #7f8cff); color: var(--ink); }
+.drop-zone.is-dragover {
+  border-color: var(--accent, #7f8cff);
+  background: rgba(127,140,255,0.08);
+  color: var(--ink);
+}
+
+/* Smart Documentary Production Import (พาท 27) */
+.smart-drop-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.smart-drop-grid .drop-zone { margin-top: 0; padding: 12px 6px; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.smart-review-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; max-height: 420px; overflow-y: auto; }
+.smart-review-row {
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.smart-review-row.is-missing { border-color: #c0392b; }
+.smart-review-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.smart-review-head .sr-scene { font-weight: 700; color: var(--ink); }
+.smart-review-head .sr-script { color: var(--ink-dim); font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.smart-review-slots { display: flex; flex-direction: column; gap: 4px; }
+.smart-review-slot { display: flex; align-items: center; gap: 6px; }
+.smart-review-slot .sr-type { width: 42px; font-size: 10px; color: var(--ink-dim); text-transform: uppercase; }
+.smart-review-slot select { flex: 1; background: #05070a; color: var(--ink); border: 1px solid var(--panel-border); border-radius: 6px; font-size: 11px; padding: 3px 4px; }
+.confidence-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.confidence-badge.conf-high { background: rgba(52,199,89,0.18); color: #34c759; }
+.confidence-badge.conf-medium { background: rgba(255,184,0,0.18); color: #ffb800; }
+.confidence-badge.conf-low { background: rgba(255,120,60,0.18); color: #ff783c; }
+.confidence-badge.conf-none { background: rgba(192,57,43,0.18); color: #e0574a; }
 .import-hint code {
   font-family: var(--mono);
   background: rgba(255,255,255,0.06);
