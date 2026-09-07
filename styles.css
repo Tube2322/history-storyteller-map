@@ -550,7 +550,7 @@ body.is-render-mode .import-panel {
 .subtitle-wrap {
   position: absolute;
   left: 50%;
-  bottom: 44px;
+  bottom: 110px; /* เดิม 44px ทับแถบไทม์ไลน์ (bottom:0 สูง ~90px) ทำให้ซับไตเติลถูกบังครึ่งล่าง ยกขึ้นให้พ้น */
   transform: translateX(-50%);
   max-width: min(760px, 88vw);
   z-index: 5;
