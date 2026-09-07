@@ -137,6 +137,7 @@ const el = {
   regionLabel: document.getElementById("regionLabel"),
   captionOverlay: document.getElementById("captionOverlay"),
   shadeOverlay: document.getElementById("shadeOverlay"),
+  transitionOverlay: document.getElementById("transitionOverlay"),
   topbar: document.querySelector(".topbar"),
   timeline: document.getElementById("timeline"),
   btnSaveProject: document.getElementById("btnSaveProject"),
@@ -1097,10 +1098,14 @@ function setFreeformDraw(scene) {
   }
 }
 
-// ติดตามกล้องล่าสุดไว้ให้ Geographic Camera Continuity ใช้สืบทอด tilt/bearing ตอนฉากถัดไปอยู่พื้นที่ต่อเนื่องกัน
-// (ผู้ใช้ไม่ได้ตั้ง tilt=/bearing= เองในฉากนั้น) กันกล้อง reset มุมกลับ 0 ทุกครั้งโดยไม่จำเป็น
+// ติดตามกล้องล่าสุดไว้ให้ Geographic/Scene Camera Continuity ใช้สืบทอด tilt/bearing/zoom ตอนฉากถัดไปต่อเนื่องกัน
+// (ผู้ใช้ไม่ได้ตั้ง tilt=/bearing=/shot= เองในฉากนั้น) กันกล้อง reset ทุกครั้งโดยไม่จำเป็น
 let lastCamPitch = 0;
 let lastCamBearing = 0;
+let lastCamZoom = null;
+// สถานะกล้องล่าสุดจาก "ฉากแผนที่จริง" เท่านั้น (ไม่นับ cut-to-insert/insert-overlay) — ใช้กับ returnmap=on
+// ให้กลับไปจุดเดิมก่อนตัดเข้า insert ได้ แม้ฉากก่อนหน้าตรงๆจะเป็น insert scene ที่ไม่มีตำแหน่งกล้องแผนที่จริงของมันเอง
+let lastMapCamState = null;
 const GEO_CONTINUITY_THRESHOLD_M = 60000; // ~60กม. ถือว่า "พื้นที่ต่อเนื่องกัน"
 
 function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
@@ -1108,35 +1113,50 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
   const center = frameOverride ? frameOverride.center : scene.focusPoint ? [scene.focusPoint.lng, scene.focusPoint.lat] : [scene.lng, scene.lat];
   const durationSec = durationSecOverride || scene.duration;
 
-  // Geographic Camera Continuity: ฉากนี้ไม่ได้ตั้ง tilt=/bearing= เอง และอยู่ใกล้ฉากก่อนหน้าพอ (>threshold ถือว่าคนละพื้นที่ ไม่สืบทอด)
-  // → สืบทอดมุมกล้องล่าสุดแทนการ reset กลับ 0 เสมอ; ตั้งเองหรือไม่มีฉากก่อนหน้า/อยู่ไกลกัน = พฤติกรรมเดิมเป๊ะ (tilt||0 / bearing||0)
-  const isGeoContinuous = !!(prevScene && haversine([prevScene.lng, prevScene.lat], [scene.lng, scene.lat]) < GEO_CONTINUITY_THRESHOLD_M);
-  const pitch = scene.tiltExplicit ? scene.tilt : isGeoContinuous ? lastCamPitch : scene.tilt || 0; // tilt=องศา ในสคริปต์ (0-60) ให้มุมกล้อง 3D
-  const bearing = scene.bearingExplicit ? scene.bearing : isGeoContinuous ? lastCamBearing : scene.bearing || 0; // bearing=องศา ตั้งทิศเริ่มต้นของช็อต (ไม่หมุนต่อเนื่อง ยกเว้น orbit)
+  // continuity=on/off ทับ heuristic ระยะทางอัตโนมัติเสมอ (on=สืบทอดไม่ว่าไกลแค่ไหน, off=รีเซ็ตเสมอแม้ใกล้กัน)
+  // returnmap=on: ใช้สถานะกล้องแผนที่จริงล่าสุด (ข้าม insert scene ระหว่างทาง) แทน โดยไม่สนระยะทาง — ให้ "กลับ" มาจุดเดิมได้จริง
+  // ไม่ตั้งอะไรเลย = heuristic ระยะทางเดิมจาก Geographic Camera Continuity (Part 19) ไม่เปลี่ยนพฤติกรรมเดิม
+  const geoNear = !!(prevScene && haversine([prevScene.lng, prevScene.lat], [scene.lng, scene.lat]) < GEO_CONTINUITY_THRESHOLD_M);
+  const useReturnMap = scene.returnMap && lastMapCamState;
+  const isContinuous = useReturnMap ? true : scene.continuity === "on" ? true : scene.continuity === "off" ? false : geoNear;
+  const contSource = useReturnMap ? lastMapCamState : { pitch: lastCamPitch, bearing: lastCamBearing, zoom: lastCamZoom };
+
+  const pitch = scene.tiltExplicit ? scene.tilt : isContinuous ? contSource.pitch : scene.tilt || 0; // tilt=องศา ในสคริปต์ (0-60) ให้มุมกล้อง 3D
+  const bearing = scene.bearingExplicit ? scene.bearing : isContinuous ? contSource.bearing : scene.bearing || 0; // bearing=องศา ตั้งทิศเริ่มต้นของช็อต (ไม่หมุนต่อเนื่อง ยกเว้น orbit)
+  // ซูมสืบทอดใช้แค่ตอนไม่มีอะไรกำหนดซูมของฉากนี้ไว้ชัดเจนอยู่แล้ว (shot=/frameOverride จากเส้นทาง/ไฮไลต์ ยังชนะเสมอ ดูจุดใช้งานด้านล่าง)
+  const inheritedZoom = isContinuous ? contSource.zoom : null;
 
   // importance/mood (Story System) × cameraaction/motion (Camera System) คุมแค่ "ความเร็ว" ของการขยับกล้องที่มีอยู่แล้ว
   // (ไม่เพิ่มการขยับใหม่) — ไม่ตั้งอะไรเลยทั้ง 4 คีย์ = คูณกันได้ 1 = พฤติกรรมเดิมเป๊ะ
   const paceMul = (scene.camPaceMul || 1) * (scene.camActionMotionMul || 1);
   // motioncurve/motion=accelerate/decelerate ที่ผู้ใช้ระบุเอง แทน easing เริ่มต้น; ไม่ระบุ = EASE_CINEMATIC เดิมของระบบ ไม่เปลี่ยนอะไร
   const easingFn = scene.motioncurveFn || EASE_CINEMATIC;
-  // shot=... ที่ผู้ใช้ระบุเอง ปรับซูมจาก baseline เดิมของ cam นั้น; ไม่ระบุ (null) = ใช้ baseline เดิมเป๊ะทุกจุด
+  // shot=... ที่ผู้ใช้ระบุเอง ปรับซูมจาก baseline เดิมของ cam นั้น (ชนะสูงสุด) รองลงมาคือซูมสืบทอด (ถ้า continuous);
+  // ไม่มีทั้งคู่ = ใช้ baseline เดิมเป๊ะทุกจุด (ค่า fallback ท้ายสุดในแต่ละ branch ด้านล่าง)
   const shotZoom = scene.shotZoomOverride;
+  const isInsertCam = scene.cam === "cut-to-insert" || scene.cam === "insert-overlay";
 
-  if (scene.cam === "cut-to-insert" || scene.cam === "insert-overlay") {
+  if (isInsertCam) {
     stopOrbit();
-    const zoomParam = shotZoom != null ? { zoom: shotZoom } : {};
+    const zoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : null;
+    const zoomParam = zoom != null ? { zoom } : {};
     map.easeTo({ center, duration: 450 * paceMul, bearing: map.getBearing(), easing: easingFn, ...zoomParam });
     lastCamPitch = pitch;
     lastCamBearing = bearing;
+    if (zoom != null) lastCamZoom = zoom;
+    // lastMapCamState ไม่อัปเดตตรงนี้ตั้งใจ — insert scene ไม่ใช่ตำแหน่งกล้องแผนที่จริง returnmap=on ต้องข้ามกลับไปจุดก่อนหน้า
     return;
   }
   if (scene.cam === "orbit") {
     const setupMs = 650 * paceMul;
     const orbitPitch = pitch || 45;
-    map.easeTo({ center, zoom: shotZoom != null ? shotZoom : 8, duration: setupMs, pitch: orbitPitch, bearing, easing: easingFn });
+    const orbitZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 8;
+    map.easeTo({ center, zoom: orbitZoom, duration: setupMs, pitch: orbitPitch, bearing, easing: easingFn });
     setTimeout(() => startOrbit(durationSec, bearing), setupMs);
     lastCamPitch = orbitPitch;
     lastCamBearing = bearing;
+    lastCamZoom = orbitZoom;
+    lastMapCamState = { center, zoom: orbitZoom, pitch: orbitPitch, bearing };
     return;
   }
   stopOrbit();
@@ -1144,6 +1164,7 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
   // (กันสองอนิเมชันชนกันกลางอากาศตอนขอบเขตโหลดมาช้ากว่ากล้อง ทำให้ดูกระตุก)
   if (scene.highlight !== "none" && AUTO_FRAME_CAMS.has(scene.cam)) {
     // showBoundary() ใช้ scene.tilt||0 / scene.bearing||0 ของตัวเอง — sync ค่าไว้ให้ฉากถัดไปสืบทอดถูกต้อง
+    // (ซูมของ showBoundary คำนวณ async จาก cameraForBounds เอง เก็บ lastCamZoom ตรงนี้ไม่ได้ — เป็นข้อจำกัดที่รู้อยู่แล้ว)
     lastCamPitch = scene.tilt || 0;
     lastCamBearing = scene.bearing || 0;
     return;
@@ -1151,30 +1172,67 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
   // ระยะเวลากล้องขยับสั้นลงกว่าเดิม (จาก 1000-1200ms เหลือ 650-850ms) ให้ฟีลตัดต่อไวขึ้นแบบคลิปสั้น/เจนซี
   // กล้องเข้าที่เร็วขึ้น เหลือเวลาให้เนื้อหา/ซับไตเติลมากขึ้นในแต่ละฉาก
   let appliedPitch = pitch;
+  let appliedZoom;
   if (scene.cam === "battle-map") {
     // มุมมองแบบเกม RTS: เอียงเล็กน้อยพอเห็นมิติ ไม่หมุน (เว้นแต่ผู้ใช้ตั้ง bearing เอง)
-    const zoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : 6;
+    appliedZoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 6;
     appliedPitch = pitch || 35;
-    map.easeTo({ center, zoom, duration: 800 * paceMul, bearing, pitch: appliedPitch, easing: easingFn });
+    map.easeTo({ center, zoom: appliedZoom, duration: 800 * paceMul, bearing, pitch: appliedPitch, easing: easingFn });
   } else if (scene.cam === "fly-to") {
-    const zoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : 6.2;
+    // fly-to ที่มี frameOverride (มาจาก route bounds จริง) ใช้ค่านั้นเสมอ ไม่รับซูมสืบทอด กันเส้นทางจริงถูกบังจนเห็นไม่ครบ
+    appliedZoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 6.2;
     if (scene.follow) {
       // follow=on: กล้องแค่ขยับไปตั้งต้นที่จุดเริ่มเร็วๆ แล้วปล่อยให้ startPathIcon() เป็นคนลากกล้องตามไอคอนเองทุกเฟรม
       appliedPitch = pitch || 30;
-      map.easeTo({ center, zoom, duration: 550 * paceMul, bearing, pitch: appliedPitch, easing: easingFn });
+      map.easeTo({ center, zoom: appliedZoom, duration: 550 * paceMul, bearing, pitch: appliedPitch, easing: easingFn });
     } else {
       // ไม่คูณ paceMul: ระยะเวลานี้ผูกกับความยาวฉากจริง (จากเสียงพากย์) อยู่แล้ว ไม่ใช่ค่าคงที่แบบอื่นๆ
-      map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch, easing: easingFn });
+      map.flyTo({ center, zoom: appliedZoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch, easing: easingFn });
     }
   } else if (scene.cam === "push-in") {
-    map.easeTo({ center, zoom: shotZoom != null ? shotZoom : 10, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
+    appliedZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 10;
+    map.easeTo({ center, zoom: appliedZoom, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
   } else if (scene.cam === "zoom-out") {
-    map.easeTo({ center, zoom: shotZoom != null ? shotZoom : 4.2, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
+    appliedZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 4.2;
+    map.easeTo({ center, zoom: appliedZoom, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
   } else {
-    map.easeTo({ center, zoom: shotZoom != null ? shotZoom : 4.3, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
+    appliedZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 4.3;
+    map.easeTo({ center, zoom: appliedZoom, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
   }
   lastCamPitch = appliedPitch;
   lastCamBearing = bearing;
+  lastCamZoom = appliedZoom;
+  lastMapCamState = { center, zoom: appliedZoom, pitch: appliedPitch, bearing };
+}
+
+// Transition Intelligence: ผู้ใช้ระบุ transition= เองทับเสมอ; ไม่ระบุ → เดาจากประเภทฉากก่อนหน้า/ปัจจุบัน
+// Map→Map ปกติ = "none" (ไม่ใส่อะไรเลย พฤติกรรมเดิม) กันไม่ให้ transition โผล่ทุกฉากตามที่ห้ามไว้
+function resolveTransition(scene, prevScene) {
+  if (scene.transition) return scene.transition; // ผู้ใช้ตั้งเองทับ auto เสมอ
+  if (!prevScene) return "none";
+  const prevIsInsert = prevScene.cam === "cut-to-insert" || prevScene.cam === "insert-overlay";
+  const curIsInsert = scene.cam === "cut-to-insert" || scene.cam === "insert-overlay";
+  if (curIsInsert && !prevIsInsert) return "dissolve"; // Map → Historical Image
+  if (!curIsInsert && prevIsInsert) return "dissolve"; // Historical Image → Map (รวม returnmap=on ด้วย)
+  if (scene.beat === "twist" || scene.beat === "turningpoint") return "cut"; // Turning Point เน้นจังหวะด้วยตัดฉับ
+  return "none"; // Map → Map ปกติ
+}
+
+// แฟลชสั้นๆกลบรอยตัดฉาก (ซิงก์กับ CSS ผ่าน custom property ไม่บล็อก JS) — cut/none/match/travel/reveal ไม่มีอะไรเกิดขึ้นเลย
+// (reveal ปล่อยให้ระบบไฮไลต์เขตแดนเดิมเป็นคนจัดการลูกเล่นเผยพื้นที่ของมันเองอยู่แล้ว ไม่ซ้อนทับกัน)
+const TRANSITION_PEAK_OPACITY = { fade: 0.85, dissolve: 0.5, morph: 0.45, whip: 0.6 };
+const TRANSITION_DURATION_MS = { fade: 350, dissolve: 220, morph: 320, whip: 150 };
+function playTransitionOverlay(kind, scene) {
+  const peak = TRANSITION_PEAK_OPACITY[kind];
+  if (!peak) return;
+  const mul = TRANSITION_IMPORTANCE_MUL[scene.importance] || 1;
+  if (mul <= 0) return;
+  const overlay = el.transitionOverlay;
+  overlay.style.setProperty("--tx-opacity", String(peak * mul));
+  overlay.style.setProperty("--tx-duration", `${TRANSITION_DURATION_MS[kind] || 250}ms`);
+  overlay.classList.remove("is-flashing");
+  void overlay.offsetWidth; // บังคับ reflow ให้ retrigger keyframe ได้ทุกครั้งแม้ transition ชนิดเดิมติดกัน
+  overlay.classList.add("is-flashing");
 }
 
 // ---------- แปลงข้อมูลดิบ → ฉาก ----------
@@ -1377,6 +1435,13 @@ const MOTIONCURVE_EASE_FN = {
   "ease-in-out": EASE_CINEMATIC,
 };
 
+// ---------- Scene Connection System: continuity / visualbridge / transition / returnmap ----------
+// ต่อยอดจาก Geographic Camera Continuity (moveCamera) — ให้ผู้ใช้บังคับ/ปิดเอง หรือเพิ่มสะพานภาพ/เปลี่ยนฉากที่นุ่มนวลขึ้น
+const CONTINUITY_VALUES = ["on", "off"];
+const TRANSITION_VALUES = ["cut", "fade", "dissolve", "match", "travel", "morph", "reveal", "whip", "none"];
+// importance สูง = ลดความหวือหวาของ transition ตามที่กำหนด (ไม่ตั้ง importance = medium = คูณ 1 ไม่เปลี่ยนอะไร)
+const TRANSITION_IMPORTANCE_MUL = { critical: 0.3, high: 0.6, medium: 1, low: 1 };
+
 // focuspoint=lat,lng — จุดที่กล้องควรสนใจ แยกจากพิกัดหลักของฉาก (scene.lat/lng ยังคงเป็นพิกัดของ place/หมุด/ไฮไลต์เหมือนเดิมทุกจุด)
 function parseFocusPoint(str) {
   if (!str) return null;
@@ -1395,6 +1460,7 @@ function finalizeScene(raw) {
     focus, highlightcolor, badge, callout, route, follow, speed, style,
     narrative: narrativeRaw, beat: beatRaw, importance: importanceRaw, mood: moodRaw,
     shot: shotRaw, cameraaction: cameraactionRaw, focuspoint, motion: motionRaw, motioncurve: motioncurveRaw,
+    continuity, visualbridge, transition: transitionRaw, returnmap,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1464,6 +1530,12 @@ function finalizeScene(raw) {
   const tiltExplicit = tilt !== undefined && String(tilt).trim() !== "";
   const bearingExplicit = bearing !== undefined && String(bearing).trim() !== "";
 
+  // ---------- resolve continuity/visualbridge/transition/returnmap ----------
+  const continuityKey = CONTINUITY_VALUES.includes(continuity) ? continuity : "auto"; // auto = heuristic ระยะทางเดิมจาก Part 19
+  const visualBridgeVal = visualbridge === "on" || visualbridge === "true";
+  const returnMapVal = returnmap === "on" || returnmap === "true";
+  const transitionValid = TRANSITION_VALUES.includes(transitionRaw) ? transitionRaw : null;
+
   return {
     place,
     cam: camKey,
@@ -1528,6 +1600,11 @@ function finalizeScene(raw) {
     motioncurveFn,
     tiltExplicit,
     bearingExplicit,
+    continuity: continuityKey,
+    visualBridge: visualBridgeVal,
+    transition: transitionValid,
+    transitionSource: transitionValid ? "user" : "auto",
+    returnMap: returnMapVal,
   };
 }
 
@@ -1574,6 +1651,10 @@ const TAG_KEY_ALIASES = {
   focuspoint: "focuspoint", จุดโฟกัส: "focuspoint",
   motion: "motion", ความเร็วกล้อง: "motion",
   motioncurve: "motioncurve", จังหวะเร่งชะลอ: "motioncurve",
+  continuity: "continuity", ความต่อเนื่อง: "continuity",
+  visualbridge: "visualbridge", เชื่อมภาพ: "visualbridge",
+  transition: "transition", การเปลี่ยนฉาก: "transition",
+  returnmap: "returnmap", กลับแผนที่: "returnmap",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1647,6 +1728,10 @@ function sceneStyleTags(s) {
   if (s.motionSource === "user") tags.push(`motion:${s.motion}`);
   if (s.motioncurveSource === "user") tags.push(`motioncurve:${s.motioncurve}`);
   if (s.focusPoint) tags.push("focuspoint");
+  if (s.continuity !== "auto") tags.push(`continuity:${s.continuity}`);
+  if (s.visualBridge) tags.push("visualbridge");
+  if (s.transitionSource === "user") tags.push(`transition:${s.transition}`);
+  if (s.returnMap) tags.push("returnmap");
   if (s.highlight !== "none") tags.push(`ไฮไลต์เขต:${s.highlight}`);
   if (s.focus) tags.push("โฟกัสขาวดำ");
   if (s.highlightColor) tags.push(`สีไฮไลต์ ${s.highlightColor}`);
@@ -1815,6 +1900,7 @@ function goToScene(index, durationOverride) {
 
   // หมุดต้นทาง + เส้นทางโค้ง + ลูกศร (ข้ามระบบนี้ถ้าเป็นแผนที่สนามรบ — ใช้ระบบลูกศรหลายเส้นแทน)
   const prevScene = scenes[activeIndex - 1];
+  playTransitionOverlay(resolveTransition(scene, prevScene), scene);
   const lineSource = map.getSource("scene-line");
   let flyFrame = null; // fly-to: ซูมให้พอดีระยะทางจริงระหว่างจุดเดิม-จุดใหม่ (คำนวณด้านล่างถ้ามี prevScene)
   if (scene.cam === "battle-map") {
@@ -1898,7 +1984,23 @@ function goToScene(index, durationOverride) {
   el.timeline.classList.toggle("hs-hidden", isCapturing && hideSet.has("timeline"));
   el.brandChip.classList.toggle("hs-hidden", hideSet.has("brand"));
 
-  moveCamera(scene, durationOverride, battleFrame || flyFrame, prevScene);
+  // visualbridge=on: ฉากที่ไม่ใช่ fly-to (ซึ่งมีเส้นทาง/การบินข้ามพื้นที่อยู่แล้วในตัว) ถ้ากระโดดไกลจากฉากก่อนหน้ามาก
+  // ให้ซูมออกเห็นทั้งสองจุดสั้นๆก่อน แล้วค่อยเข้ากล้องจริงของฉากนี้ต่อ กันความรู้สึก "รีเซ็ตแผนที่เริ่มใหม่" (Berlin→France ตัวอย่างจากสเปค)
+  const doMoveCamera = () => moveCamera(scene, durationOverride, battleFrame || flyFrame, prevScene);
+  const farFromPrev = prevScene && haversine([prevScene.lng, prevScene.lat], [scene.lng, scene.lat]) >= GEO_CONTINUITY_THRESHOLD_M;
+  if (scene.visualBridge && prevScene && scene.cam !== "fly-to" && farFromPrev) {
+    const bounds = new maplibregl.LngLatBounds([prevScene.lng, prevScene.lat], [prevScene.lng, prevScene.lat]).extend([scene.lng, scene.lat]);
+    const bridgeCam = map.cameraForBounds(bounds, { padding: 80 });
+    if (bridgeCam) {
+      const bridgeMs = 500;
+      map.easeTo({ center: bridgeCam.center, zoom: Math.max(bridgeCam.zoom - 0.5, 3), duration: bridgeMs, easing: EASE_CINEMATIC });
+      setTimeout(doMoveCamera, bridgeMs);
+    } else {
+      doMoveCamera();
+    }
+  } else {
+    doMoveCamera();
+  }
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
     btn.classList.toggle("is-active", i === activeIndex);

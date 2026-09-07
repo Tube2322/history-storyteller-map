@@ -19,6 +19,7 @@
           <div id="map" class="map-canvas"></div>
           <div class="cinematic-vignette"></div>
           <div id="shadeOverlay" class="shade-overlay"></div>
+          <div id="transitionOverlay" class="transition-overlay"></div>
           <div id="regionLabel" class="region-label"></div>
           <div id="captionOverlay" class="caption-overlay"></div>
           <svg id="calloutLine" class="callout-line"><line id="calloutLineEl" x1="0" y1="0" x2="0" y2="0" /></svg>
@@ -247,6 +248,11 @@
             <br><strong>motion</strong>: <code>static / slow / normal / fast / accelerate / decelerate</code> — ความเร็วกล้อง คูณเข้ากับ cameraaction (accelerate/decelerate โดยนัยเซ็ต motioncurve ให้ด้วยถ้ายังไม่ได้ตั้งเอง)
             <br><strong>motioncurve</strong>: <code>linear / ease-in / ease-out / ease-in-out</code> — รูปแบบเร่ง/ชะลอของกล้อง (ไม่ใส่ = ใช้เส้นโค้งเดิมของระบบ)
             <br><strong>Geographic Camera Continuity</strong>: ถ้าฉากนี้ไม่ได้ตั้ง <code>tilt=</code>/<code>bearing=</code> เอง และพิกัดอยู่ใกล้ฉากก่อนหน้า (≲60กม.) กล้องจะสืบทอดมุมเอียง/ทิศจากฉากก่อนแทนการรีเซ็ตกลับ 0 ทุกครั้ง
+            <br><br><strong>Scene Connection System (ทั้งหมด optional — เชื่อมโยงกัน ไม่ใส่ = พฤติกรรมเดิมทุกจุด):</strong>
+            <br><strong>continuity</strong>: <code>on / off</code> — ทับ heuristic ระยะทางของ Geographic Camera Continuity เสมอ (<code>on</code> = สืบทอดมุม/ซูมกล้องไม่ว่าไกลแค่ไหน, <code>off</code> = รีเซ็ตกล้องทุกครั้งแม้ใกล้ฉากก่อนหน้า) ไม่ใส่ = ใช้ heuristic ระยะทางเดิม
+            <br><strong>visualbridge</strong>: <code>on</code> — ฉากที่ไม่ใช่ <code>fly-to</code> ถ้ากระโดดไกลจากฉากก่อนหน้ามาก จะซูมออกเห็นทั้งสองจุดสั้นๆก่อนแล้วค่อยเข้ากล้องจริง แทนการตัดตรงแบบรีเซ็ตแผนที่ (เช่น เบอร์ลิน → ฝรั่งเศส)
+            <br><strong>transition</strong>: <code>cut / fade / dissolve / match / travel / morph / reveal / whip / none</code> — ลูกเล่นเปลี่ยนฉาก (แฟลชสั้นๆกลบรอยตัด) ไม่ใส่ = engine เดาเอง (ฉากแผนที่ต่อฉากแผนที่ปกติ = ไม่มีอะไรเลย, ตัดเข้า/ออกภาพแทรกจริง = <code>dissolve</code> นุ่มๆ) — importance สูงลดความหวือหวาของ transition ให้อัตโนมัติ
+            <br><strong>returnmap</strong>: <code>on</code> — หลัง insert ภาพจริงจบ ฉากที่กลับมาเป็นแผนที่จะสืบทอดตำแหน่ง/ซูม/มุมกล้องจาก "ฉากแผนที่จริงล่าสุดก่อนตัดเข้า insert" แทนเริ่มใหม่ (ข้ามระยะทาง ใช้ได้แม้ insert อยู่คนละพิกัด)
             <br>insert: ข้อความหรือ url รูป ใช้กับ cut-to-insert / insert-overlay
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
           </p>

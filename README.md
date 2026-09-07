@@ -139,6 +139,14 @@
 - **Geographic Camera Continuity**: ถ้าฉากไม่ได้ตั้ง `tilt=`/`bearing=` เอง และพิกัดอยู่ใกล้ฉากก่อนหน้า (< 60กม.) กล้องจะสืบทอดมุมเอียง/ทิศจากฉากก่อนแทนการรีเซ็ตกลับ 0 — ทดสอบแล้ว: ฉากใกล้กันสืบทอด pitch/bearing ถูกต้อง, ฉากไกลกัน (คนละทวีป) รีเซ็ตกลับ 0 ตามพฤติกรรมเดิม; ตั้ง `tilt=`/`bearing=` เองเมื่อไหร่ก็ทับค่าสืบทอดเสมอ (ครอบคลุมเฉพาะ path หลักใน `moveCamera()`, ไม่รวม path ไฮไลต์เขตแดนที่ `showBoundary()` คุมกล้องเอง)
 - ทดสอบเต็มรูปแบบ (6 ฉากผสม establishing/push-in/fly-to/orbit/battle-map + highlight/route/badge/style ทุกแบบ) เล่นจบไม่มี error console เลย
 
+**พาท 20 — Scene Connection System: continuity / visualbridge / transition / returnmap (เพิ่มความสามารถล้วนๆ ไม่กระทบของเดิม)**
+- ต่อยอดจาก Geographic Camera Continuity (พาท 19) — ตรวจแล้ว: สคริปต์ไม่มี 4 คีย์นี้เลยได้ `continuity="auto"` (heuristic ระยะทางเดิม), `visualBridge=false`, `transition=null→"none"`, `returnMap=false` = พฤติกรรมเดิม 100%
+- **`continuity`**: `on/off` — ทับ heuristic ระยะทางเดิมเสมอ (`on` สืบทอด position/zoom/tilt/bearing ไม่ว่าไกลแค่ไหน, `off` รีเซ็ตทุกครั้งแม้ใกล้ฉากก่อนหน้า) — ทดสอบแล้ว: `off` กับฉากใกล้กันรีเซ็ตกลับ 0/0 จริง, `on` กับฉากไกลกันคนละทวีปสืบทอด pitch/bearing/**ซูม**ถูกต้อง (เพิ่มการสืบทอดซูมจากพาท 19 ที่ยังไม่รวม)
+- **`visualbridge`**: `on` — ฉากที่ไม่ใช่ `fly-to` ถ้ากระโดดไกลจากฉากก่อนหน้ามาก (≥60กม. ใช้ threshold เดียวกับ continuity) จะซูมออกเห็นทั้งสองจุดสั้นๆ (500ms) ก่อนแล้วค่อยเข้ากล้องจริงของฉากนั้นต่อ (`setTimeout` ต่อคิว กัน `easeTo` สองอันชนกันกลางอากาศ) แทนตัดตรงแบบ "รีเซ็ตแผนที่เริ่มใหม่" ตามตัวอย่างในสเปค (เบอร์ลิน→ฝรั่งเศส)
+- **`transition`**: `cut/fade/dissolve/match/travel/morph/reveal/whip/none` — แฟลชสั้นๆ (CSS keyframe ผ่าน `#transitionOverlay`, ไม่บล็อก JS) กลบรอยตัดฉาก ไม่ระบุ = engine เดาเอง: แผนที่→แผนที่ปกติ = `none` (ไม่มีอะไรเลย กัน "ห้ามใช้ transition ทุกฉาก"), แผนที่↔ภาพแทรกจริง (`cut-to-insert`/`insert-overlay`) = `dissolve` นุ่มๆอัตโนมัติ, beat=twist/turningpoint = `cut` เน้นจังหวะ — importance สูงลดความหวือหวาอัตโนมัติ (ทดสอบแล้ว: dissolve ปกติ opacity 0.5, importance=critical เหลือ 0.15)
+- **`returnmap`**: `on` — ติดตาม "สถานะกล้องแผนที่จริงล่าสุด" แยกจากสถานะกล้องทั่วไป (ข้าม insert scene ที่ไม่ใช่ตำแหน่งกล้องแผนที่จริง) ฉากที่กลับมาเป็นแผนที่จะสืบทอด zoom/tilt/bearing จากจุดนั้นแทนเริ่มใหม่ แม้พิกัดจริงของฉากนั้นจะอยู่ไกลคนละทวีปก็ตาม (ทดสอบแล้ว: A push-in zoom10/tilt25 → B insert (คนละทวีป) → C returnmap=on ที่ญี่ปุ่น ได้ zoom10/tilt25 กลับมาถูกต้อง)
+- ทดสอบเต็มรูปแบบ (6 ฉากผสม establishing/push-in/cut-to-insert/fly-to + highlight/style/effect/visualbridge/returnmap ทุกแบบ) เล่นจบไม่มี error console เลย
+
 ## เปิดใช้งาน
 
 ต้องรัน `server.py` (ไม่ใช่ `python -m http.server` เฉยๆ) เพราะต้องมี endpoint `/api/tts` สำหรับเสียงพากย์:
