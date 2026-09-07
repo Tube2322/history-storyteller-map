@@ -467,7 +467,7 @@ html, body {
 .export-menu {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  left: 0; /* เดิม right:0 ทำให้เมนู (กว้างกว่าปุ่ม) ยื่นไปทางซ้ายจนล้นขอบจอ เพราะปุ่มอยู่ค่อนไปทางซ้ายของ topbar */
   display: flex;
   flex-direction: column;
   gap: 4px;
