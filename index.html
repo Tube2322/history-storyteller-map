@@ -258,10 +258,12 @@
           </p>
           </details>
 
-          <textarea id="importText" class="import-textarea" placeholder="place=สุโขทัย | latlng=17.0175,99.7016 | cam=establishing | script=ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | sec=5 | icon=castle | highlight=province
-place=สุโขทัย → ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=fly-to | script=จากนั้นกองคาราวานเดินทางขึ้นเหนือ ;; มุ่งสู่เมืองพันธมิตรทางเหนือ | sec=6 | icon=flag | tilt=45 | bearing=200
-place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=insert-overlay | script=ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | sec=4 | icon=battle | effect=fire | insert=ภาพจำลองการโจมตี
-place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=cut-to-insert | script=แต่สิ่งที่เกิดขึ้นต่อจากนี้ ไม่มีใครคาดคิดมาก่อน | sec=3 | icon=battle | insert=หลักฐานภาพเหตุการณ์"></textarea>
+          <textarea id="importText" class="import-textarea" placeholder="place=สุโขทัย | latlng=17.0175,99.7016 | cam=establishing | script=ในปี พ.ศ. 1800 อาณาจักรใหม่กำลังก่อร่างขึ้นกลางลุ่มน้ำยม | sec=5 | icon=castle | highlight=province | style=doc-classic
+place=สุโขทัย → ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=fly-to | script=จากนั้นกองคาราวานเดินทางขึ้นเหนือ ;; มุ่งสู่เมืองพันธมิตรทางเหนือ | sec=6 | icon=flag | tilt=45 | bearing=200 | shot=wide | cameraaction=tracking | motion=normal
+place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=insert-overlay | script=ภาพจำลองการโจมตีเมืองที่หลงเหลือในบันทึก | sec=4 | icon=battle | effect=fire | insert=ภาพจำลองการโจมตี | narrative=conflict | importance=high
+place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=cut-to-insert | script=แต่สิ่งที่เกิดขึ้นต่อจากนี้ ไม่มีใครคาดคิดมาก่อน | sec=3 | icon=battle | insert=หลักฐานภาพเหตุการณ์ | beat=twist | mood=tension
+place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=push-in | script=เมืองฟื้นตัวขึ้นอีกครั้งหลังเหตุการณ์นั้น | sec=5 | returnmap=on | narrative=resolution
+place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establishing | script=ขณะเดียวกัน ทางเหนือไกลออกไป อีกอาณาจักรหนึ่งกำลังเผชิญความเปลี่ยนแปลง | sec=6 | visualbridge=on | transition=dissolve"></textarea>
           <div class="import-actions import-actions-sticky">
             <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
             <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
