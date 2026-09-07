@@ -412,9 +412,9 @@ html, body {
 .insert-float {
   position: absolute;
   left: 50%;
-  top: 30%;
+  top: 18%;
   transform: translate(-50%, -50%) scale(0.9);
-  width: 62%;
+  width: 30%;
   aspect-ratio: 16 / 10;
   background: #000;
   border: 1px solid rgba(255,255,255,0.18);
@@ -446,12 +446,16 @@ html, body {
 /* insertmode=... — ปรับ "เลย์เอาต์" ของกล่อง insert ที่ cam เดิม (cut-to-insert/insert-overlay) เปิดใช้งานอยู่แล้ว
    ไม่ใส่ = insertmode default ต่อ cam (full/picture-in-picture) = พฤติกรรมเดิมเป๊ะ ไม่มีการเปลี่ยนแปลงอะไรเลย
    กันไม่ให้บังพื้นที่ล่างจอ (ซับไตเติล/ไทม์ไลน์) เสมอ — กล่อง insert ทุกโหมดไม่ยื่นเกิน top:60% ของจอ ยกเว้น full/background ที่ตั้งใจเต็มจอ */
-.insertmode-overlay .insert-layer,
-.insertmode-picture-in-picture .insert-layer {
+.insertmode-overlay .insert-layer {
   inset: auto; left: 50%; top: 30%; transform: translate(-50%, -50%);
   width: 62%; aspect-ratio: 16 / 10; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: #000;
 }
-.insertmode-overlay .insert-float { width: 78%; aspect-ratio: 16 / 9; top: 38%; }
+/* picture-in-picture ต้องเล็กจริงๆแยกจาก overlay (เดิมสองโหมดนี้ขนาดเท่ากันเป๊ะ 62%/78% ของจอ ไม่ต่างจาก "เต็มจอเกือบหมด" เลย ขัดกับชื่อ "PiP" และหลักการ MAP-FIRST ที่แผนที่ต้องยังเห็นชัดอยู่ข้างหลัง) */
+.insertmode-picture-in-picture .insert-layer {
+  inset: auto; left: 50%; top: 18%; transform: translate(-50%, -50%);
+  width: 30%; aspect-ratio: 16 / 10; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: #000;
+}
+.insertmode-overlay .insert-float { width: 62%; aspect-ratio: 16 / 9; top: 32%; }
 .insertmode-split .insert-layer,
 .insertmode-split .insert-float {
   inset: auto; left: auto; right: 0; top: 0; transform: none;

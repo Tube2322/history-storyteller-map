@@ -235,6 +235,7 @@
             <br><strong>warmorph</strong>: <code>RRGGBB:lat1,lng1:lat2,lng2</code> — พื้นที่ฝั่งขวาของเส้น (ยืนที่จุด1 หันไปจุด2) เปลี่ยนสีเป็นฝ่ายชนะทีละนิด ใช้คู่กับ highlight
             <br><strong>mainland</strong>: <code>on</code> — ตัดเกาะ/ดินแดนไกลออกไปทิ้งตอนคำนวณกรอบกล้อง (ใช้คู่กับ highlight)
             <br><strong>labelfont / labelsize / labelweight</strong>: ปรับฟอนต์/ขนาด/น้ำหนักตัวอักษรป้ายชื่อหมุดเฉพาะฉากนั้น
+            <br><strong>photosize</strong>: <code>120</code> — ปรับขนาด (px) การ์ดภาพ <code>geophoto=</code>/Smart Import/วิดีโอปักพิกัดของฉากนั้น (สี่เหลี่ยมจัตุรัส) ไม่ใส่ = ดีฟอลต์ 84px เดิม
             <br><strong>caption / captionpos</strong>: <code>caption=ข้อความ | captionpos=top/center/bottom</code> — ข้อความลอยกลางจอ ไม่ผูกกับหมุด (ทำหัวข้อ/คำโปรย)
             <br><strong>geophoto</strong>: <code>url:lat,lng</code> หรือ <code>url:lat,lng:ป้ายชื่อ</code> — ปักรูปจริง (จากที่อัปโหลดไว้/ค้นอัตโนมัติ) ตามพิกัดจริงบนแผนที่ ใส่ป้ายชื่อเพิ่มได้
             <br><strong>draw / drawcolor</strong>: <code>draw=lat,lng;lat,lng;...</code> — ลากเส้นอิสระตามพิกัดที่พิมพ์เอง (ขีดเส้นทาง/วงล้อม) สีกำหนดด้วย <code>drawcolor=RRGGBB</code>
@@ -284,6 +285,14 @@
             <br><br><strong>Full Scene Preload</strong>: กด "เล่น" (ไม่ใช่ตอนดูตัวอย่างทีละฉาก) เตรียมเสียงพากย์+รูปประกอบ (geophoto/callout/badge ธง/insert รูป) ทุกฉากในสคริปต์ให้เสร็จก่อนเริ่มเล่นจริงเสมอ — แก้สคริปต์แค่บางฉาก เสียงที่ไม่เปลี่ยนจะไม่ generate ซ้ำ (cache ตามเนื้อหาข้อความจริง)
             <br><br><strong>โหมดตรวจสอบ (Debug)</strong>: เปิดได้จากช่อง "โหมดตรวจสอบ" ด้านล่าง — แสดงรายการปัญหาที่เจอตอนแปลงสคริปต์ล่าสุด (คีย์ไม่รู้จัก/พิกัดผิด/ขาด place-cam-script ฯลฯ) โดยไม่กระทบการแสดงผลปกติเลย คีย์ผิด/ไม่รู้จักถูกข้ามเงียบๆเสมอไม่ว่าจะเปิดโหมดนี้หรือไม่
             <br>ในช่องสคริปต์: แบ่งซับไตเติลหลายช่วงในฉากเดียวด้วย <code>;;</code> (ห้ามใช้ <code>|</code>) — แต่ละช่วงพากย์เสียงจริงแยกกันแล้วต่อเรียงกัน (ต้องรัน server.py ไม่ใช่ http.server เฉยๆ)
+            <br><br><strong style="color:#f2b544">🗺️ MAP-FIRST — แผนที่เป็นพระเอก ใช้ภาพ/วิดีโอน้อยที่สุด (สไตล์สารคดี ไม่ใช่ slideshow):</strong>
+            <br>เอ็นจินนี้ไม่มี "AI ตัดสินใจ visual ให้อัตโนมัติ" แต่มี tag ที่ทำสิ่งเดียวกันได้ครบถ้าเขียนสคริปต์ตามแพทเทิร์นนี้:
+            <br>• ฉากส่วนใหญ่ควรเป็น <code>cam=establishing/fly-to/push-in/orbit/battle-map</code> เฉยๆ (แผนที่ล้วน ไม่มี insert) — นี่คือ "MAP ONLY" ค่าเริ่มต้นของทุกฉาก
+            <br>• ต้องการ "บอกพื้นที่/แนวรบ": ใช้ <code>cam=battle-map</code> + <code>arrows=</code> (ลูกศรแนวรุก) หรือ <code>highlight=</code> (ไฮไลต์เขตแดนจริง) เฉพาะฉากที่กำลังพูดถึงการเคลื่อนที่/แนวรบเท่านั้น ฉากอื่นไม่ต้องมี
+            <br>• ต้องการ "โชว์ภาพประกอบเล็กๆ ไม่เต็มจอ": ใช้ <code>cam=insert-overlay</code> (ไม่ใช่ <code>cut-to-insert</code> ซึ่งเต็มจอ) + <code>insertmode=picture-in-picture</code> — ได้กรอบเล็กมุมจอ แผนที่ยังโชว์อยู่ข้างหลัง ตรงกับ "SMALL IMAGE INSERT" — หรือใช้ <code>geophoto=</code>/Smart Import (image=) ที่เป็นการ์ดเล็กปักพิกัดอยู่แล้วโดยดีฟอลต์ ไม่เต็มจอเช่นกัน
+            <br>• ต้องการ "ตัดไปภาพ/วิดีโอเต็มจอชั่วครู่แล้วกลับแผนที่" (EXPLAIN→SHOW→RETURN): แทรกฉากสั้นๆ 1 ฉาก <code>cam=cut-to-insert</code> ระหว่างฉากแผนที่ 2 ฉาก แล้วฉากแผนที่ที่กลับมาใส่ <code>returnmap=on</code> — กล้องจะสืบทอดตำแหน่ง/ซูมจากฉากแผนที่ก่อนหน้า ไม่กระโดดเริ่มใหม่
+            <br>• ไม่อยากให้ฉากรกด้วย effect ตกแต่ง: ใส่ <code>density=low</code> หรือ <code>minimal</code> (ลดความเร็วกล้อง+ลด effect จาก style preset อัตโนมัติ) — เส้น/ลูกศร/insert ที่พิมพ์เองยังโชว์เสมอ (เอ็นจินไม่ลบสิ่งที่สั่งเองตรงๆ)
+            <br>• กด "🗺️ โหลดตัวอย่าง MAP-FIRST" ด้านบนปุ่ม "แปลงเป็นฉาก" เพื่อโหลดสคริปต์ตัวอย่างที่ใช้แพทเทิร์นนี้ครบ (MAP → แนวรบ → INSERT เล็ก → กลับ MAP) มาแก้ไขต่อได้เลย
           </p>
           </details>
 
@@ -296,6 +305,7 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
           <div class="import-actions import-actions-sticky">
             <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
             <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
+            <button id="btnLoadMapFirstExample" class="ghost-btn" type="button">🗺️ โหลดตัวอย่าง MAP-FIRST</button>
           </div>
           <div class="import-preview" id="importPreview"></div>
           </div>
@@ -430,6 +440,17 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
                 <option value="800">หนา 800</option>
               </select>
             </div>
+          </div>
+
+          <div class="brand-settings">
+            <h3>ดึงภาพประกอบอัตโนมัติ</h3>
+            <label class="check-row">
+              <input id="autoFetchImagesToggle" type="checkbox" />
+              ดึงภาพประกอบอัตโนมัติทุกฉากที่ยังไม่มีรูป (ค้นจาก Wikimedia Commons ฟรี ตามชื่อสถานที่)
+            </label>
+            <p class="import-hint">ทำงานตอนกด "เล่น" เท่านั้น (ส่วนของ Full Scene Preload) — ข้ามฉากที่มีรูป/วิดีโอจาก Smart Import หรือ <code>geophoto=</code> อยู่แล้ว และข้ามฉาก <code>cut-to-insert</code>/<code>insert-overlay</code> (ต้องใส่ <code>insert=</code> เอง) หาไม่เจอ = ไม่มีรูปเหมือนเดิม ไม่ error ดีฟอลต์ปิด (ต้องเปิดเอง)</p>
+            <p class="import-hint">เลือกได้เป็นรายฉากด้วย tag <code>autoimage=on</code> หรือ <code>autoimage=off</code> — ทับตัวเลือกรวมด้านบนเสมอ เช่น เปิด toggle รวมไว้แต่บางฉากอยากใส่รูปเองแน่ๆ ไม่ให้ไปดึงทับ ใส่ <code>autoimage=off</code> ที่ฉากนั้น หรือปิด toggle รวมไว้แต่อยากให้ดึงอัตโนมัติเฉพาะบางฉาก ใส่ <code>autoimage=on</code> ที่ฉากนั้น</p>
+            <p class="import-hint"><strong>ดึงภาพให้ตรงยุคเหตุการณ์</strong>: ค้นแค่ชื่อสถานที่เฉยๆ มักได้รูปปัจจุบัน/นักท่องเที่ยว (เช่น "เพิร์ลฮาร์เบอร์" ได้รูปพิพิธภัณฑ์ปี 2013) ระบบจึงเดา "ปี" จากตัวเลขปี ค.ศ. หรือ พ.ศ. ที่เจอในบทพากย์ฉากนั้นให้เองก่อน (เช่นมีคำว่า "1941" หรือ "พ.ศ. 2484" ในสคริปต์ จะค้นเป็น "ชื่อสถานที่ 1941" ให้อัตโนมัติ ได้ภาพยุคเหตุการณ์จริงแม่นขึ้นมาก) ถ้าอยากระบุปีเองตรงๆ ไม่ต้องพึ่งการเดา ใส่ tag <code>year=1941</code> ที่ฉากนั้นได้เลย (ทับการเดาจากบทพากย์เสมอ)</p>
           </div>
 
           <div class="brand-settings">

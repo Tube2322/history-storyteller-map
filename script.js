@@ -130,6 +130,7 @@ const el = {
   btnClear: document.getElementById("btnClear"),
   importPreview: document.getElementById("importPreview"),
   btnDownloadTemplate: document.getElementById("btnDownloadTemplate"),
+  btnLoadMapFirstExample: document.getElementById("btnLoadMapFirstExample"),
   fileImportXlsx: document.getElementById("fileImportXlsx"),
   mapStage: document.getElementById("mapStage"),
   ttsPlayer: document.getElementById("ttsPlayer"),
@@ -193,6 +194,7 @@ const el = {
   btnBuilderAdd: document.getElementById("btnBuilderAdd"),
   btnBuilderCancelEdit: document.getElementById("btnBuilderCancelEdit"),
   builderDetails: document.getElementById("builderDetails"),
+  autoFetchImagesToggle: document.getElementById("autoFetchImagesToggle"),
   dropZoneImages: document.getElementById("dropZoneImages"),
   fileDropImages: document.getElementById("fileDropImages"),
   dropImagesStatus: document.getElementById("dropImagesStatus"),
@@ -229,6 +231,7 @@ let bgmUrl = "";
 let bgmVolumeLevel = 0.25;
 let landClipEnabled = true; // ตัดเส้นไฮไลต์ให้อยู่แค่บนแผ่นดิน (ปิดได้ถ้าอยากได้เขตทางทะเลตามข้อมูล OSM จริง)
 let sceneGapSec = 0;
+let autoFetchImagesEnabled = false; // ดึงภาพประกอบอัตโนมัติจาก Wikimedia Commons ทุกฉากที่ยังไม่มีรูป — ดีฟอลต์ปิด ต้องเปิดเอง
 let subtitleStyle = { pos: "bottom", color: "", size: 0, weight: "" };
 
 function applySubtitleStyle() {
@@ -1048,7 +1051,11 @@ function setCaption(scene) {
 // geophoto=url:lat,lng — รูปจริงปักหมุดตามพิกัด (เทียบเท่า "Add Image" ของ AnimateMyMap)
 function setGeoPhoto(scene) {
   if (scene.geophoto) {
-    geoPhotoWrapEl.querySelector(".geo-photo-card").style.backgroundImage = `url("${scene.geophoto.url}")`;
+    const card = geoPhotoWrapEl.querySelector(".geo-photo-card");
+    card.style.backgroundImage = `url("${scene.geophoto.url}")`;
+    // photosize= ตั้งเอง = px นั้นตรงๆ (สี่เหลี่ยมจัตุรัส) ไม่ใส่ = ดีฟอลต์ 84px เดิมจาก CSS
+    card.style.width = scene.photoSize ? `${scene.photoSize}px` : "";
+    card.style.height = scene.photoSize ? `${scene.photoSize}px` : "";
     const labelEl = geoPhotoWrapEl.querySelector(".geo-photo-label");
     labelEl.textContent = scene.geophoto.label || "";
     labelEl.style.display = scene.geophoto.label ? "" : "none";
@@ -1061,9 +1068,13 @@ function setGeoPhoto(scene) {
 // videoAsset — มาจาก Smart Documentary Production Import (พาท 27) เท่านั้น ไม่ใช่ tag ที่พิมพ์เอง (คล้าย geophoto แต่เล่นวิดีโอแทนรูปนิ่ง ปักข้างๆ geophoto ถ้ามีทั้งคู่)
 function setGeoVideo(scene) {
   const videoEl = geoVideoWrapEl.querySelector("video");
+  const card = geoVideoWrapEl.querySelector(".geo-video-card");
   if (scene.videoAsset && scene.videoAsset.url) {
     if (videoEl.src !== scene.videoAsset.url) videoEl.src = scene.videoAsset.url;
     videoEl.play().catch(() => {});
+    // photosize= ค่าเดียวกับ geophoto ใช้คุมขนาดวิดีโอการ์ดด้วย (คู่กันเป็น "ภาพประกอบปักจุด" ชุดเดียวกัน)
+    card.style.width = scene.photoSize ? `${scene.photoSize}px` : "";
+    card.style.height = scene.photoSize ? `${scene.photoSize}px` : "";
     const labelEl = geoVideoWrapEl.querySelector(".geo-photo-label");
     labelEl.textContent = scene.videoAsset.label || "";
     labelEl.style.display = scene.videoAsset.label ? "" : "none";
@@ -1619,7 +1630,7 @@ function finalizeScene(raw) {
     place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
     tilt, bearing, highlight, arrows, transport: transportRaw, shade, hide, landfill,
     reveal, trace, warmorph, mainland,
-    labelfont, labelsize, labelweight,
+    labelfont, labelsize, labelweight, photosize,
     caption, captionpos, geophoto, draw, drawcolor, persist,
     focus, highlightcolor, badge, callout, route, follow, speed, style,
     narrative: narrativeRaw, beat: beatRaw, importance: importanceRaw, mood: moodRaw,
@@ -1630,6 +1641,7 @@ function finalizeScene(raw) {
     pace: paceRaw, pacing, density, attention, emphasis, intensity, composition,
     navigation, travelmode,
     image: imageRaw, video: videoRaw, audio: audioRaw,
+    autoimage, year: yearRaw,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1783,6 +1795,8 @@ function finalizeScene(raw) {
     labelFont: (labelfont || "").trim(),
     labelSize: Number(labelsize) > 0 ? Number(labelsize) : 0,
     labelWeight: (labelweight || "").trim(),
+    // photosize=120 — ปรับขนาด (px) การ์ดภาพ geophoto/วิดีโอ ปักพิกัดของฉากนี้ ไม่ใส่ = ดีฟอลต์ 84px เดิมเป๊ะ
+    photoSize: Number(photosize) > 0 ? Number(photosize) : 0,
     caption: (caption || "").trim(),
     captionPos: captionPosKey,
     geophoto: parseGeophoto(geophoto),
@@ -1859,6 +1873,10 @@ function finalizeScene(raw) {
     imageRefs: parseAssetRefs(imageRaw),
     videoRefs: parseAssetRefs(videoRaw),
     audioRefs: parseAssetRefs(audioRaw),
+    // autoimage=on/off — ตั้งเองรายฉาก ทับ toggle รวม "ดึงภาพประกอบอัตโนมัติ" ในแท็บตั้งค่า (ไม่ใส่ = ตามตัวเลือกรวม)
+    autoImagePref: ["on", "off"].includes(autoimage) ? autoimage : null,
+    // year=1941 — ปีของเหตุการณ์ฉากนี้ (ค.ศ.) ใช้ช่วยดึงภาพประกอบอัตโนมัติให้ตรงยุค ไม่ใส่ = เดาจากบทพากย์เอง (ดูฟังก์ชัน extractYearHint)
+    yearHint: /^\d{4}$/.test((yearRaw || "").trim()) ? yearRaw.trim() : null,
   };
 }
 
@@ -1884,6 +1902,7 @@ const TAG_KEY_ALIASES = {
   warmorph: "warmorph", ยึดครอง: "warmorph",
   mainland: "mainland", แผ่นดินใหญ่: "mainland",
   labelfont: "labelfont", labelsize: "labelsize", labelweight: "labelweight",
+  photosize: "photosize", ขนาดภาพ: "photosize",
   caption: "caption", ข้อความ: "caption", captionpos: "captionpos",
   geophoto: "geophoto", รูปพิกัด: "geophoto",
   draw: "draw", วาด: "draw", drawcolor: "drawcolor",
@@ -1925,6 +1944,8 @@ const TAG_KEY_ALIASES = {
   image: "image", รูป: "image",
   video: "video", วิดีโอ: "video",
   audio: "audio", เสียง: "audio",
+  autoimage: "autoimage", ดึงภาพอัตโนมัติ: "autoimage",
+  year: "year", ปี: "year",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1963,6 +1984,20 @@ function parseRow(line) {
 let debugMode = false;
 let lastValidationReport = [];
 
+// เดิม validateTagLine เช็คแค่ place/cam/script/latlng — คีย์ enum อีก 20+ ตัวที่เพิ่มมาทีหลัง (narrative/beat/mapmode/ฯลฯ)
+// พิมพ์ค่าผิด enum (เช่น narrative=rising-action ที่ระบบไม่รู้จัก เพราะใช้ค่าจริงคือ escalation/conflict) จะเงียบๆตกไปใช้ auto-guess/default โดยไม่มี warning ให้เห็นเลยแม้เปิด Debug Mode
+// เจอจากการเทสสคริปต์จริง (สงครามแปซิฟิก) จึงเพิ่ม generic enum check ตัวเดียวครอบคลุมทุกคีย์ enum แทนเขียนซ้ำทีละคีย์
+const ENUM_KEY_CHECKS = {
+  narrative: NARRATIVE_VALUES, beat: BEAT_VALUES, importance: IMPORTANCE_VALUES, mood: MOOD_VALUES,
+  shot: SHOT_VALUES, cameraaction: CAMERAACTION_VALUES, motion: MOTION_VALUES, motioncurve: MOTIONCURVE_VALUES,
+  continuity: CONTINUITY_VALUES, transition: TRANSITION_VALUES, mapmode: MAPMODE_VALUES,
+  insertmode: INSERTMODE_VALUES, inserttransition: INSERTTRANSITION_VALUES, evidence: EVIDENCE_VALUES,
+  pace: PACE_VALUES, pacing: PACING_VALUES, density: DENSITY_VALUES, attention: ATTENTION_VALUES,
+  emphasis: EMPHASIS_VALUES, intensity: INTENSITY_VALUES, composition: COMPOSITION_VALUES,
+  navigation: NAVIGATION_VALUES, travelmode: TRAVELMODE_VALUES,
+  autoimage: ["on", "off"],
+};
+
 function validateTagLine(line, lineIndex) {
   const segments = line.split("|").map((s) => s.trim()).filter(Boolean);
   const raw = {};
@@ -1988,6 +2023,29 @@ function validateTagLine(line, lineIndex) {
   if (raw.latlng) {
     const parts = raw.latlng.split(",").map((n) => Number(n.trim()));
     if (parts.length !== 2 || parts.some(Number.isNaN)) issues.push({ line: lineIndex + 1, level: "error", msg: `latlng="${raw.latlng}" ไม่ถูกรูปแบบ (ต้องเป็น lat,lng) — ใช้พิกัดค่าเริ่มต้นแทน` });
+  }
+  // arrows=ฝ่าย1:RRGGBB:lat,lng:lat,lng;ฝ่าย2:... — เขียนผิดฟอร์แมต (เช่นเผลอใช้ ; แทน : คั่นจุดที่1/2) จะถูกทิ้งเงียบๆ ไม่มีลูกศรขึ้นเลยและไม่มี error ให้เห็นถ้าไม่เปิด Debug Mode
+  if (raw.arrows) {
+    const entries = raw.arrows.split(";").map((s) => s.trim()).filter(Boolean);
+    entries.forEach((entry) => {
+      const parts = entry.split(":").map((p) => p.trim());
+      if (parts.length !== 4) {
+        issues.push({ line: lineIndex + 1, level: "error", msg: `arrows="${entry}" ผิดฟอร์แมต (ต้องเป็น ป้ายชื่อ:RRGGBB:lat,lng:lat,lng คั่นจุดเริ่ม/จุดปลายด้วย : ไม่ใช่ ;) — ลูกศรเส้นนี้จะไม่แสดง` });
+        return;
+      }
+      const [, colorRaw, fromRaw, toRaw] = parts;
+      if (!/^[0-9a-fA-F]{6}$/.test(colorRaw)) issues.push({ line: lineIndex + 1, level: "warn", msg: `arrows: สี "${colorRaw}" ไม่ใช่ RRGGBB (เช่น cc0000) — ใช้สีเหลืองดีฟอลต์แทน` });
+      const from = fromRaw.split(",").map((n) => Number(n.trim()));
+      const to = toRaw.split(",").map((n) => Number(n.trim()));
+      if (from.length !== 2 || to.length !== 2 || from.some(Number.isNaN) || to.some(Number.isNaN)) {
+        issues.push({ line: lineIndex + 1, level: "error", msg: `arrows="${entry}" พิกัดจุดเริ่ม/จุดปลายไม่ถูกรูปแบบ — ลูกศรเส้นนี้จะไม่แสดง` });
+      }
+    });
+  }
+  for (const [key, allowed] of Object.entries(ENUM_KEY_CHECKS)) {
+    if (raw[key] && !allowed.includes(raw[key])) {
+      issues.push({ line: lineIndex + 1, level: "warn", msg: `${key}="${raw[key]}" ไม่ใช่ค่าที่รองรับ (ตัวเลือกคือ ${allowed.join("/")}) — ระบบจะเดา/ใช้ดีฟอลต์แทนอัตโนมัติแทน ไม่ error` });
+    }
   }
   return issues;
 }
@@ -2093,6 +2151,8 @@ function sceneStyleTags(s) {
   if (s.geophoto) tags.push("รูปปักพิกัด");
   if (s.overrideAudioUrl) tags.push("เสียงพากย์อัพโหลดเอง");
   if (s.videoAsset) tags.push("วิดีโอปักพิกัด");
+  if (s.autoImagePref === "off") tags.push("ปิดดึงภาพอัตโนมัติฉากนี้");
+  if (s.autoImagePref === "on") tags.push("เปิดดึงภาพอัตโนมัติฉากนี้");
   if ((s.imageRefs && s.imageRefs.length) || (s.videoRefs && s.videoRefs.length) || (s.audioRefs && s.audioRefs.length)) tags.push("Smart Import ref");
   if (s.badge) tags.push("ป้ายวงกลม");
   if (s.callout) tags.push("กล่องแทรก+เส้นโยง");
@@ -2678,6 +2738,51 @@ function startBgm() {
   el.bgmPlayer.play().catch(() => {});
 }
 
+// ดึงภาพประกอบอัตโนมัติจาก Wikimedia Commons (ใช้ /api/imagesearch เดิม — Zero Additional Cost, ฟรีไม่มีคีย์) ให้ฉากที่ยังไม่มีรูปเลย
+// คีย์ตาม "ชื่อสถานที่" กันค้นซ้ำถ้าหลายฉากใช้ place เดียวกัน (เช่น กลับมาที่เมืองเดิมหลาย scene)
+const autoImageCache = new Map();
+// autoimage=on/off รายฉาก priority สูงสุด ทับ toggle รวมเสมอ (explicit ผู้ใช้ > auto ทั้งระบบ เหมือนทุกจุดอื่น) ไม่ตั้ง = ตามตัวเลือกรวม
+function shouldAutoFetchImage(scene) {
+  if (scene.autoImagePref === "off") return false;
+  if (scene.autoImagePref === "on") return true;
+  return autoFetchImagesEnabled;
+}
+// เดา "ปีของเหตุการณ์" จากบทพากย์ (ค.ศ. ตรงๆ หรือ พ.ศ. แปลงเป็น ค.ศ.) ให้ค้นภาพประกอบตรงยุคเหตุการณ์ แทนที่จะได้แต่รูปสถานที่ปัจจุบัน/นักท่องเที่ยว
+// ทดสอบยืนยัน: ค้น "เพิร์ลฮาร์เบอร์" เฉยๆ ได้รูปกรุ๊ปทัวร์ปี 2013, เติมปี "เพิร์ลฮาร์เบอร์ 1941" ได้รูปเหตุการณ์จริงปี 1941 ทันที
+// year= ที่ตั้งเองมาก่อนเสมอ (resolve ไว้ใน finalizeScene แล้วเป็น scene.yearHint) — ฟังก์ชันนี้ใช้ตอนไม่ได้ตั้งเองเท่านั้น
+function extractYearHint(scene) {
+  if (scene.yearHint) return scene.yearHint;
+  const text = scene.script || "";
+  const beMatch = text.match(/พ\.?\s?ศ\.?\s?(\d{4})/); // พุทธศักราช เช่น "พ.ศ. 2484" → ค.ศ. 1941
+  if (beMatch) return String(Number(beMatch[1]) - 543);
+  const ceMatch = text.match(/\b(1[5-9]\d{2}|20[0-4]\d)\b/); // เลขปี ค.ศ. ตรงๆ ในช่วง 1500-2049
+  if (ceMatch) return ceMatch[1];
+  return null;
+}
+
+async function autoFetchMissingImages(list, myToken) {
+  const INSERT_CAMS = new Set(["cut-to-insert", "insert-overlay"]);
+  const targets = list.filter((s) => !s.geophoto && !s.videoAsset && !INSERT_CAMS.has(s.cam) && shouldAutoFetchImage(s));
+  if (!targets.length) return true;
+  el.subtitleText.textContent = "กำลังค้นภาพประกอบอัตโนมัติ (Wikimedia Commons)...";
+  for (const scene of targets) {
+    if (myToken !== playToken) return false;
+    const yearHint = extractYearHint(scene);
+    const query = yearHint ? `${scene.place} ${yearHint}` : scene.place;
+    if (!autoImageCache.has(query)) autoImageCache.set(query, searchAutoImage(query));
+    let found = await autoImageCache.get(query);
+    if (myToken !== playToken) return false;
+    // ค้นแบบมีปีแล้วไม่เจอเลย (พบว่าเกิดได้บ่อยเมื่อชื่อสถานที่เป็นภาษาไทย+ตัวเลขปี) ลองค้นแค่ชื่อสถานที่เฉยๆ อีกครั้งแทนปล่อยว่าง
+    if (!found && yearHint) {
+      if (!autoImageCache.has(scene.place)) autoImageCache.set(scene.place, searchAutoImage(scene.place));
+      found = await autoImageCache.get(scene.place);
+      if (myToken !== playToken) return false;
+    }
+    if (found) scene.geophoto = { url: found.url, lat: scene.lat, lng: scene.lng, label: scene.place };
+  }
+  return true;
+}
+
 function setPlaying(next) {
   if (next) {
     if (isRenderMode) {
@@ -2693,12 +2798,17 @@ function setPlaying(next) {
     isPlaying = true;
     el.btnPlay.textContent = "⏸";
     el.subtitleText.textContent = "กำลังเตรียมพร้อม (PREPARING)...";
-    Promise.all([preloadNarration(myToken), preloadImages(scenes, myToken, startIdx)]).then(([ttsReady, imagesReady]) => {
-      if (!ttsReady || !imagesReady || myToken !== playToken) return;
-      el.subtitleText.textContent = "พร้อมเล่น (READY)";
-      startBgm();
-      narrationLoop();
-    });
+    (async () => {
+      // autoFetchMissingImages ตัดสินใจเองต่อฉาก (autoimage=on/off รายฉาก ทับ toggle รวม) — เรียกเสมอ ไม่มีเป้าหมายก็ return ทันทีเงียบๆ
+      const ok = await autoFetchMissingImages(scenes, myToken);
+      if (!ok || myToken !== playToken) return;
+      Promise.all([preloadNarration(myToken), preloadImages(scenes, myToken, startIdx)]).then(([ttsReady, imagesReady]) => {
+        if (!ttsReady || !imagesReady || myToken !== playToken) return;
+        el.subtitleText.textContent = "พร้อมเล่น (READY)";
+        startBgm();
+        narrationLoop();
+      });
+    })();
     return;
   }
   isPlaying = false;
@@ -2842,6 +2952,19 @@ el.btnClear.addEventListener("click", () => {
   el.importPreview.innerHTML = "";
 });
 el.btnDownloadTemplate.addEventListener("click", downloadTemplate);
+
+// ---------- ตัวอย่าง MAP-FIRST DOCUMENTARY: แผนที่เป็นพระเอก ใช้ insert/effect น้อยที่สุด เดินตามแพทเทิร์น EXPLAIN → SHOW → RETURN ----------
+// ไม่ใช่ระบบใหม่ — สาธิตวิธีผสม tag เดิม (mapmode/arrows/cam=insert-overlay/cut-to-insert/returnmap/density) ที่มีอยู่แล้วให้ได้ฟีลสารคดีตามที่ขอ
+const MAP_FIRST_EXAMPLE = `place=เคียฟ | latlng=50.4501,30.5234 | cam=establishing | mapmode=location | density=low | script=กรุงเคียฟ เมืองหลวงของยูเครน ตั้งอยู่ริมแม่น้ำนีเปอร์ | sec=5
+place=แนวรุกทางเหนือ | latlng=50.65,30.45 | cam=battle-map | arrows=รัสเซีย:cc0000:50.9,30.3;50.65,30.45 | mapmode=movement | density=low | script=กองกำลังรัสเซียเริ่มรุกเข้าสู่กรุงเคียฟจากทางเหนือ | sec=5
+place=หลักฐานภาพ | latlng=50.65,30.45 | cam=insert-overlay | insertmode=picture-in-picture | evidence=photo | insert=ใส่ path รูปที่นี่ (อัพโหลดจากแท็บ Smart Import หรือช่อง "อัพโหลดภาพของตัวเอง") | script=ภาพจากแนวรบในช่วงเวลานั้น | sec=3
+place=เคียฟ | latlng=50.4501,30.5234 | cam=push-in | returnmap=on | mapmode=location | density=low | script=แม้เผชิญแรงกดดัน กรุงเคียฟยังคงยืนหยัดต่อสู้ | sec=4`;
+
+el.btnLoadMapFirstExample.addEventListener("click", () => {
+  if (el.importText.value.trim() && !confirm("โหลดตัวอย่าง MAP-FIRST จะเขียนทับสคริปต์ปัจจุบันในกล่องข้อความ ดำเนินการต่อ?")) return;
+  el.importText.value = MAP_FIRST_EXAMPLE;
+  parseImportText();
+});
 el.fileImportXlsx.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (file) importXlsxFile(file);
@@ -2929,6 +3052,7 @@ function saveProject() {
     sceneGapSec,
     subtitleStyle,
     landClipEnabled,
+    autoFetchImagesEnabled,
     assetManifest,
     assetSeqCounters,
   };
@@ -2977,6 +3101,10 @@ function applyProjectData(data) {
     landClipEnabled = data.landClipEnabled;
     el.landClipToggle.checked = landClipEnabled;
     boundaryCache.clear();
+  }
+  if (typeof data.autoFetchImagesEnabled === "boolean") {
+    autoFetchImagesEnabled = data.autoFetchImagesEnabled;
+    el.autoFetchImagesToggle.checked = autoFetchImagesEnabled;
   }
   if (Array.isArray(data.assetManifest)) {
     assetManifest = data.assetManifest;
@@ -3138,6 +3266,8 @@ function wireDropZone(zoneEl, inputEl, kind) {
     if (e.dataTransfer && e.dataTransfer.files.length) assignDroppedMedia(e.dataTransfer.files, kind);
   });
 }
+
+el.autoFetchImagesToggle.addEventListener("change", () => { autoFetchImagesEnabled = el.autoFetchImagesToggle.checked; });
 
 wireDropZone(el.dropZoneImages, el.fileDropImages, "image");
 wireDropZone(el.dropZoneAudio, el.fileDropAudio, "audio");
