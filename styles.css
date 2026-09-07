@@ -919,6 +919,7 @@ body.is-render-mode .import-panel {
 .pr-edit-btn:hover { background: rgba(255,255,255,0.08); color: var(--ink); }
 .preview-row .pr-script { color: var(--ink-dim); margin-top: 3px; }
 .preview-row .pr-meta { font-family: var(--mono); color: var(--ink-dim); font-size: 10px; margin-top: 4px; }
+.pr-visual-makeup { font-size: 10px; color: var(--accent, #f2b544); margin-top: 3px; letter-spacing: .02em; }
 .pr-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .validation-row {
   padding: 6px 10px;

@@ -200,6 +200,16 @@
               <button id="btnBuilderCancelEdit" class="ghost-btn" type="button" hidden>ยกเลิก</button>
             </div>
           </div>
+
+          <div class="brand-settings">
+            <h3>🔍 ค้นข้อมูลจริงจาก Wikidata (ฟรี ไม่ต้องมีคีย์)</h3>
+            <p class="import-hint">หาพิกัด/ปี/คำอธิบายจริงของ<strong>เหตุการณ์ประวัติศาสตร์</strong>ก่อนพิมพ์ลงสคริปต์เอง — พิมพ์ชื่อเหตุการณ์ให้เจาะจง (ภาษาอังกฤษแม่นกว่ามาก) เช่น <code>Attack on Pearl Harbor</code> ไม่ใช่ <code>Pearl Harbor</code> เฉยๆ (จะได้หนังปี 2001 แทน) หรือ <code>Battle of Midway</code> ไม่ใช่ <code>Midway</code> เฉยๆ (จะได้เมืองในรัฐ Kentucky แทนเกาะมิดเวย์) — <strong>ระบบไม่เชื่อมต่ออัตโนมัติให้เด็ดขาด</strong> เพราะ Wikidata ค้นด้วยข้อความจับ entity ผิดได้ง่าย ต้องอ่านคำอธิบายที่โชว์แล้วเช็กเองก่อนว่าใช่เหตุการณ์ที่ต้องการจริงๆ ก่อนคัดลอกไปใช้</p>
+            <div class="brand-row">
+              <input id="wikidataQuery" class="brand-input" type="text" placeholder="เช่น Attack on Pearl Harbor" style="flex:1" />
+              <button id="btnWikidataSearch" class="ghost-btn" type="button">ค้นหา</button>
+            </div>
+            <div id="wikidataResult"></div>
+          </div>
           </div>
 
           <div class="tab-panel" data-tab="script">
@@ -207,7 +217,9 @@
           <summary>วิธีเขียนสคริปต์ + รายการ tag ทั้งหมด (แตะเพื่อดู)</summary>
           <p class="import-hint">
             <strong style="color:#f2b544">ข้อกำหนดของสคริปต์ (อ่านก่อนพิมพ์):</strong>
-            <br>• <strong>ต้องมี 3 อย่างเสมอ</strong>: <code>place</code> (ชื่อสถานที่) + <code>cam</code> (แผนกล้อง ต้องสะกดตรงตามรายการด้านล่าง) + <code>script</code> (บทพากย์) — ขาดอันใดอันหนึ่ง ฉากนั้นจะถูกข้ามเงียบๆ ไม่มีสถานที่ก็จบ (ไม่ error ให้เห็น ต้องเช็กเองว่าจำนวนฉากในเส้นเวลาตรงกับที่พิมพ์)
+            <br>• <strong>ต้องมี 2 อย่างเสมอ</strong>: <code>place</code> (ชื่อสถานที่) + <code>script</code> (บทพากย์) — ขาดอันใดอันหนึ่ง ฉากนั้นจะถูกข้ามเงียบๆ (ไม่ error ให้เห็น ต้องเช็กเองว่าจำนวนฉากในเส้นเวลาตรงกับที่พิมพ์)
+            <br>• <strong>Auto Director — <code>cam</code> ไม่ใส่ก็ได้</strong>: ใส่เอง (ต้องสะกดตรงตามรายการด้านล่าง) = ใช้ตามนั้นเสมอ ไม่ใส่หรือสะกดผิด = ระบบเดามุมกล้องให้เองจากคำในบทพากย์ (เจอคำเกี่ยวกับการรบ/รุกราน/สงคราม → <code>battle-map</code>, เจอคำเกี่ยวกับการเดินทาง/เคลื่อนทัพ → <code>fly-to</code>, เดาไม่ออก → <code>establishing</code>) เดาแค่มุมกล้องเท่านั้น ไม่สร้าง arrows/highlight/insert ให้เองเด็ดขาด ดูได้ในการ์ดพรีวิวฉาก (ป้าย "cam:... (auto, Director)" ถ้าเป็นการเดา) และแถวสรุป "MAP + ..." บอกว่าฉากนั้นมีองค์ประกอบภาพอะไรบ้างจริงๆ
+            <br>• <strong>Visual Rhythm (Debug Mode)</strong>: เปิดโหมดตรวจสอบแล้วจะเตือนถ้าฉากติดกันตั้งแต่ 4 ฉากขึ้นไปใช้มุมกล้องเดิมซ้ำ หรือมีรูป/วิดีโอประกอบทุกฉากติดกันจนอาจดูเหมือน slideshow — เตือนเฉยๆ ไม่ได้แก้ฉากให้เอง
             <br>• <strong>ห้ามใช้ <code>|</code> ในเนื้อหา</strong> (ชื่อสถานที่/บทพากย์/ค่าใดๆ) เพราะ <code>|</code> คือตัวคั่น tag — ถ้าต้องแบ่งบทพากย์เป็นหลายช่วงให้ใช้ <code>;;</code> แทน
             <br>• แต่ละบรรทัด = 1 ฉาก, คั่นแต่ละ tag ในบรรทัดด้วย <code>|</code>, ในหนึ่ง tag คั่นชื่อคีย์กับค่าด้วย <code>=</code>
             <br>• ชื่อคีย์ (เช่น <code>place</code>, <code>cam</code>) ใช้ได้เฉพาะตัวอักษรไทย/อังกฤษเท่านั้น ห้ามมีตัวเลข ขีด หรือช่องว่างปนในชื่อคีย์

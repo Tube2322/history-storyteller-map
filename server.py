@@ -250,6 +250,74 @@ def fetch_image_search(query: str, limit: int = 5) -> list:
     return results
 
 
+# ---------- Wikidata (ฟรี ไม่ต้องมีคีย์) — ชื่อภาษาอังกฤษ/พิกัด/ปี ของสถานที่หรือเหตุการณ์ประวัติศาสตร์ จากฐานข้อมูลที่มีอ้างอิงจริง ----------
+# ใช้แก้ปัญหา 2 อย่าง: (1) ค้นภาพ Wikimedia Commons ด้วยชื่อไทยมักไม่เจอ/ได้รูปผิดยุค — ได้ชื่ออังกฤษ+ปีจริงมาค้นแทน
+# (2) year= ที่เดาจากบทพากย์ (พาท 33) ไม่มีก็ได้ปีจริงจาก Wikidata แทนได้ ไม่ใช่การเดา
+_wikidata_cache = {}
+
+
+def fetch_wikidata(query: str):
+    key = query.strip().lower()
+    if key in _wikidata_cache:
+        return _wikidata_cache[key]
+    headers = {"User-Agent": "history-storyteller-map/1.0 (local dev tool; contact via github)"}
+
+    def search(lang: str):
+        qs = urllib.parse.urlencode({
+            "action": "wbsearchentities", "search": query, "language": lang, "uselang": lang,
+            "type": "item", "limit": 1, "format": "json",
+        })
+        req = urllib.request.Request(f"https://www.wikidata.org/w/api.php?{qs}", headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read()).get("search") or []
+
+    # ค้นภาษาไทยก่อน (ตรงกับที่ผู้ใช้พิมพ์) หลาย entity ไม่มี label ไทยจึงลองอังกฤษต่อถ้าไม่เจอ
+    hits = search("th") or search("en")
+    if not hits:
+        _wikidata_cache[key] = None
+        return None
+    entity_id = hits[0]["id"]
+
+    entity_qs = urllib.parse.urlencode({
+        "action": "wbgetentities", "ids": entity_id, "props": "labels|descriptions|claims",
+        "languages": "en|th", "format": "json",
+    })
+    req2 = urllib.request.Request(f"https://www.wikidata.org/w/api.php?{entity_qs}", headers=headers)
+    with urllib.request.urlopen(req2, timeout=15) as resp2:
+        entity_data = json.loads(resp2.read())
+    entity = (entity_data.get("entities") or {}).get(entity_id) or {}
+    labels = entity.get("labels") or {}
+    label_en = (labels.get("en") or {}).get("value")
+    descriptions = entity.get("descriptions") or {}
+    desc = (descriptions.get("th") or {}).get("value") or (descriptions.get("en") or {}).get("value")
+    claims = entity.get("claims") or {}
+
+    lat = lng = None
+    for coord_claim in claims.get("P625") or []:
+        try:
+            coord_value = coord_claim["mainsnak"]["datavalue"]["value"]
+            lat, lng = coord_value.get("latitude"), coord_value.get("longitude")
+            break
+        except (KeyError, TypeError):
+            continue
+
+    year = None
+    for prop in ("P585", "P580", "P571"):  # point in time / start time / inception — เอาตัวแรกที่เจอ
+        for date_claim in claims.get(prop) or []:
+            try:
+                time_str = date_claim["mainsnak"]["datavalue"]["value"]["time"]  # เช่น "+1941-12-07T00:00:00Z"
+                year = time_str[1:5]
+                break
+            except (KeyError, TypeError):
+                continue
+        if year:
+            break
+
+    result = {"entityId": entity_id, "labelEn": label_en, "description": desc, "lat": lat, "lng": lng, "year": year}
+    _wikidata_cache[key] = result
+    return result
+
+
 _RATE_RE = re.compile(r"^[+-]\d{1,3}%$")
 _PITCH_RE = re.compile(r"^[+-]\d{1,3}Hz$")
 
@@ -307,6 +375,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith("/api/imagesearch"):
             self.handle_imagesearch()
             return
+        if self.path.startswith("/api/wikidata"):
+            self.handle_wikidata()
+            return
         path_only = self.path.split("?", 1)[0]
         if path_only in ("/", "/index.html"):
             self.handle_index()
@@ -363,6 +434,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             results = fetch_image_search(query)
             body = json.dumps({"results": results}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            message = json.dumps({"error": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(message)))
+            self.end_headers()
+            self.wfile.write(message)
+
+    def handle_wikidata(self):
+        try:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            query = (qs.get("q", [""])[0] or "").strip()
+            if not query:
+                self.send_error(400, "missing q")
+                return
+            result = fetch_wikidata(query)
+            body = json.dumps({"result": result}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

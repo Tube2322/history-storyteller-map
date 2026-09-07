@@ -131,6 +131,9 @@ const el = {
   importPreview: document.getElementById("importPreview"),
   btnDownloadTemplate: document.getElementById("btnDownloadTemplate"),
   btnLoadMapFirstExample: document.getElementById("btnLoadMapFirstExample"),
+  wikidataQuery: document.getElementById("wikidataQuery"),
+  btnWikidataSearch: document.getElementById("btnWikidataSearch"),
+  wikidataResult: document.getElementById("wikidataResult"),
   fileImportXlsx: document.getElementById("fileImportXlsx"),
   mapStage: document.getElementById("mapStage"),
   ttsPlayer: document.getElementById("ttsPlayer"),
@@ -1474,6 +1477,21 @@ const MOOD_KEYWORD_RULES = [
   { words: ["ความหวัง", "ฟื้นตัว", "รุ่งเรือง", "เจริญรุ่งเรือง", "hope", "prosper", "flourish"], mood: "hope" },
 ];
 
+// ---------- Auto Director (พาท 35): เดา cam อัตโนมัติจากคำในบทพากย์ ถ้าไม่ได้ระบุ cam= มาเลย ----------
+// เดิม cam เป็นคีย์บังคับ (ไม่ใส่ = ทั้งบรรทัดถูกข้ามเงียบๆ ไม่กลายเป็นฉาก) เปลี่ยนให้ "ไม่ใส่ cam= ก็ได้" แล้วเดามุมกล้องให้แทน
+// เดาแค่ "มุมกล้อง" เท่านั้น (rule-based ล้วนๆ ไม่มี AI ภายนอก) ไม่สร้าง arrows/highlight/insert ให้เองเด็ดขาด (ห้ามสร้างหลักฐาน/ข้อมูลเองตาม Global Compatibility Rules พาท 24)
+const CAM_KEYWORD_RULES = [
+  { words: ["สู้รบ", "ปะทะ", "โจมตี", "การรบ", "ยึด", "บุก", "รุกราน", "สงคราม", "ต่อสู้", "ยุทธการ", "ล้อม", "ปิดล้อม", "battle", "attack", "invade", "invasion", "siege", "war"], cam: "battle-map" },
+  { words: ["เดินทาง", "มุ่งหน้า", "มุ่งสู่", "เคลื่อนทัพ", "เคลื่อนพล", "เคลื่อนที่", "ยกพล", "ล่องเรือ", "เดินทัพ", "ออกเดินทาง", "journey", "travel", "march", "advance"], cam: "fly-to" },
+];
+function inferCam(script) {
+  const text = (script || "").toLowerCase();
+  for (const rule of CAM_KEYWORD_RULES) {
+    if (rule.words.some((w) => text.includes(w.toLowerCase()))) return rule.cam;
+  }
+  return "establishing"; // เดาไม่ออก = ดีฟอลต์กลางสุดปลอดภัยสุดเหมือน cam อื่นๆที่ resolve ไม่ได้
+}
+
 function inferNarrativeBeat(script, cam, effect, highlight) {
   const text = script || "";
   for (const rule of NARRATIVE_KEYWORD_RULES) {
@@ -1643,9 +1661,12 @@ function finalizeScene(raw) {
     image: imageRaw, video: videoRaw, audio: audioRaw,
     autoimage, year: yearRaw,
   } = raw;
-  if (!place || !cam || !script) return null;
+  if (!place || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
-  const camKey = CAM_LABELS[cam] ? cam : "establishing";
+  const camValid = CAM_LABELS[cam] ? cam : null;
+  // ไม่ระบุ cam= หรือสะกดผิด = เดาให้จากคำในบทพากย์ (Auto Director) แทนใช้ establishing เฉยๆ เหมือนเดิม — cam ที่พิมพ์ถูกยังชนะเสมอ
+  const camKey = camValid || inferCam(script);
+  const camSource = camValid ? "user" : "auto";
   const icon = ICON_GLYPHS[iconRaw] ? iconRaw : "default";
   const effect = EFFECT_GLYPHS[effectRaw] ? effectRaw : (preset && preset.effect) || "none";
   // ผู้ใช้พิมพ์ effect= เองตรงๆ = "user" (ห้ามลบ); มาจาก style preset ล้วนๆ = "auto" (Anti-Overediting ลดได้ถ้าจำเป็น)
@@ -1773,6 +1794,7 @@ function finalizeScene(raw) {
   return {
     place,
     cam: camKey,
+    camSource,
     script,
     duration: Number(dur) > 0 ? Number(dur) : DEFAULT_DURATION,
     icon,
@@ -2016,8 +2038,8 @@ function validateTagLine(line, lineIndex) {
   }
   if (matched === 0) return null; // ไม่ใช่ tag-mode ปล่อยให้ column-mode ตรวจต่อ
   if (!raw.place) issues.push({ line: lineIndex + 1, level: "error", msg: "ขาด place= — บรรทัดนี้จะไม่ถูกแปลงเป็นฉาก" });
-  if (!raw.cam) issues.push({ line: lineIndex + 1, level: "error", msg: "ขาด cam= — บรรทัดนี้จะไม่ถูกแปลงเป็นฉาก" });
-  else if (!CAM_LABELS[raw.cam]) issues.push({ line: lineIndex + 1, level: "warn", msg: `cam="${raw.cam}" ไม่รู้จัก — ใช้ establishing แทนอัตโนมัติ` });
+  if (!raw.cam) issues.push({ line: lineIndex + 1, level: "info", msg: "ไม่ระบุ cam= — ระบบเดามุมกล้องให้อัตโนมัติจากบทพากย์ (Auto Director)" });
+  else if (!CAM_LABELS[raw.cam]) issues.push({ line: lineIndex + 1, level: "warn", msg: `cam="${raw.cam}" ไม่รู้จัก — ระบบเดามุมกล้องให้อัตโนมัติจากบทพากย์แทน (Auto Director)` });
   if (!raw.script) issues.push({ line: lineIndex + 1, level: "error", msg: "ขาด script= — บรรทัดนี้จะไม่ถูกแปลงเป็นฉาก" });
   else if (raw.script.split(";;").some((s) => !s.trim())) issues.push({ line: lineIndex + 1, level: "warn", msg: "มีช่วง ;; ว่างเปล่าใน script= — ช่วงว่างจะถูกข้าม" });
   if (raw.latlng) {
@@ -2063,6 +2085,30 @@ function validateScript(text) {
   return report;
 }
 
+// Auto Director (พาท 35) — Visual Rhythm diagnostic: เตือน (ไม่แก้ให้) ถ้าฉากติดกันซ้ำแบบเดิมนานเกินไป (สเปกข้อ 16: ไม่ควรเป็น MAP/MAP/MAP/MAP หรือ IMAGE/IMAGE/IMAGE/IMAGE รัวๆ)
+// ทำงานหลัง scenes resolve แล้วเท่านั้น (ต้องรู้ cam/geophoto จริงของแต่ละฉาก) ต่างจาก validateScript ที่ทำงานตอน parse บรรทัดดิบ
+const RHYTHM_RUN_THRESHOLD = 4;
+function checkVisualRhythm(list) {
+  const issues = [];
+  // reportIf กรองว่า "ค่าไหน" ถึงควรเตือน (เช่น cam ซ้ำเตือนทุกค่า, มี/ไม่มีรูป เตือนเฉพาะรันที่ "มี" — รันที่ "ไม่มี" คือ MAP ล้วนซึ่งถูกต้องตามหลัก MAP-FIRST อยู่แล้ว ไม่ใช่ปัญหา)
+  function scanRuns(keyFn, label, reportIf) {
+    let runKey = undefined, runStart = 0, runLen = 0;
+    const flush = (endIdx) => {
+      if (runLen >= RHYTHM_RUN_THRESHOLD && reportIf(runKey)) {
+        issues.push({ line: runStart + 1, level: "info", msg: `ฉาก ${runStart + 1}-${endIdx} ${label} ซ้ำติดกัน ${runLen} ฉาก — ลองสลับให้มีจังหวะมากขึ้น (Visual Rhythm)` });
+      }
+    };
+    list.forEach((s, i) => {
+      const key = keyFn(s);
+      if (key === runKey) { runLen++; } else { flush(i); runKey = key; runStart = i; runLen = 1; }
+    });
+    flush(list.length);
+  }
+  scanRuns((s) => s.cam, "ใช้มุมกล้องเดิม", () => true);
+  scanRuns((s) => !!(s.geophoto || s.videoAsset), "มีรูป/วิดีโอประกอบทุกฉาก (ระวังกลายเป็น slideshow)", (key) => key === true);
+  return issues;
+}
+
 function renderValidationReport() {
   if (!debugMode) { el.validationReport.hidden = true; return; }
   el.validationReport.hidden = false;
@@ -2105,6 +2151,8 @@ function parseImportText() {
   scenes = pairs.map((p) => p.scene);
   sceneRawLines = pairs.map((p) => p.line);
   applyPostClimaxRelease(scenes);
+  lastValidationReport = lastValidationReport.concat(checkVisualRhythm(scenes)); // Auto Director (พาท 35) — เตือนจังหวะภาพซ้ำ ต้องรอ scenes resolve คร่บก่อนถึงจะเช็ก cam/รูปจริงได้
+  renderValidationReport();
   renderTimeline();
   renderPreview();
   goToScene(0);
@@ -2113,8 +2161,20 @@ function parseImportText() {
 
 // สรุปลูกเล่น/สไตล์ที่เปิดใช้งานจริงในฉากนี้ เป็น chip สั้นๆ ให้เห็นภาพรวมทั้งคลิปว่าฉากไหนใช้อะไรบ้าง
 // (ตอบโจทย์ "วางแผนว่าฉากไหน/นาทีไหนจะใช้ลูกเล่นแบบไหน" โดยไม่ต้องไล่อ่าน tag ในกล่องข้อความ)
+// Auto Director (พาท 35): สรุปว่าฉากนี้จริงๆแล้วมี "องค์ประกอบภาพ" อะไรบ้าง (โปร่งใสให้เห็นว่าระบบตัดสินใจอะไรไปบ้าง ไม่ใช่ค่าที่ไปเปลี่ยน render)
+function sceneVisualMakeup(s) {
+  const parts = ["MAP"];
+  if (s.videoAsset) parts.push("VIDEO");
+  else if (s.geophoto) parts.push("IMAGE");
+  if (s.cam === "battle-map" && s.arrows.length) parts.push("GRAPHIC (ลูกศร)");
+  else if (s.highlight !== "none") parts.push("GRAPHIC (ไฮไลต์เขตแดน)");
+  if (s.insert && (s.cam === "cut-to-insert" || s.cam === "insert-overlay")) parts.push(s.cam === "cut-to-insert" ? "→ INSERT เต็มจอ → MAP" : "+ INSERT เล็ก");
+  return parts.join(" + ");
+}
+
 function sceneStyleTags(s) {
   const tags = [];
+  if (s.camSource === "auto") tags.push(`cam:${s.cam} (auto, Director)`);
   if (s.style) tags.push(`สไตล์:${s.style}`);
   if (s.narrative && s.narrative !== "auto") tags.push(`narrative:${s.narrative}${s.narrativeSource === "auto" ? " (auto)" : ""}`);
   if (s.beat && s.beat !== "auto") tags.push(`beat:${s.beat}${s.beatSource === "auto" ? " (auto)" : ""}`);
@@ -2181,6 +2241,7 @@ function renderPreview() {
         </div>
         <div class="pr-script">${escapeHtml(s.script)}</div>
         <div class="pr-meta">${CAM_LABELS[s.cam]} · ${s.duration}s · ${s.lat.toFixed(3)},${s.lng.toFixed(3)}</div>
+        <div class="pr-visual-makeup">${escapeHtml(sceneVisualMakeup(s))}</div>
         ${tagsHtml}
       </div>`;
     })
@@ -2959,6 +3020,54 @@ const MAP_FIRST_EXAMPLE = `place=เคียฟ | latlng=50.4501,30.5234 | cam=
 place=แนวรุกทางเหนือ | latlng=50.65,30.45 | cam=battle-map | arrows=รัสเซีย:cc0000:50.9,30.3;50.65,30.45 | mapmode=movement | density=low | script=กองกำลังรัสเซียเริ่มรุกเข้าสู่กรุงเคียฟจากทางเหนือ | sec=5
 place=หลักฐานภาพ | latlng=50.65,30.45 | cam=insert-overlay | insertmode=picture-in-picture | evidence=photo | insert=ใส่ path รูปที่นี่ (อัพโหลดจากแท็บ Smart Import หรือช่อง "อัพโหลดภาพของตัวเอง") | script=ภาพจากแนวรบในช่วงเวลานั้น | sec=3
 place=เคียฟ | latlng=50.4501,30.5234 | cam=push-in | returnmap=on | mapmode=location | density=low | script=แม้เผชิญแรงกดดัน กรุงเคียฟยังคงยืนหยัดต่อสู้ | sec=4`;
+
+// ---------- ค้นข้อมูลจริงจาก Wikidata (พาท 36) — เครื่องมือให้ผู้ใช้กดดูเอง ไม่เชื่อมต่ออัตโนมัติเด็ดขาด ----------
+// เหตุผล: ทดสอบแล้วพบว่า Wikidata ค้นด้วยข้อความเฉยๆ จับ entity ผิดได้ง่ายมาก (เช่น "มิดเวย์" ได้เมือง Midway รัฐ Kentucky
+// แทนเกาะมิดเวย์จริง, "ฮิโรชิม่า" ได้ Asian Games 1994 แทนเหตุการณ์ระเบิดปรมาณู) ถ้า auto-apply เงียบๆ เสี่ยงขึ้นข้อมูลเท็จ
+// ขัดกับหลัก Accuracy ที่ยึดมาทั้งโปรเจกต์ — ให้ผู้ใช้เห็นคำอธิบายแล้วตัดสินใจเองก่อนคัดลอกไปใช้เสมอ
+async function wikidataLookup(query) {
+  const res = await fetch(`/api/wikidata?q=${encodeURIComponent(query)}`);
+  if (!res.ok) throw new Error(`ค้นหาไม่สำเร็จ (${res.status})`);
+  const data = await res.json();
+  return data.result || null;
+}
+
+el.btnWikidataSearch.addEventListener("click", async () => {
+  const q = el.wikidataQuery.value.trim();
+  if (!q) return;
+  el.wikidataResult.innerHTML = `<div class="upload-item">กำลังค้นหา...</div>`;
+  try {
+    const r = await wikidataLookup(q);
+    if (!r) {
+      el.wikidataResult.innerHTML = `<div class="upload-item">ไม่พบข้อมูล ลองคำค้นภาษาอังกฤษที่เจาะจงกว่านี้ (เช่น "Battle of Midway" แทน "Midway")</div>`;
+      return;
+    }
+    const hasCoord = r.lat !== null && r.lat !== undefined && r.lng !== null && r.lng !== undefined;
+    const tagSnippet = [
+      hasCoord ? `latlng=${r.lat.toFixed(4)},${r.lng.toFixed(4)}` : null,
+      r.year ? `year=${r.year}` : null,
+    ].filter(Boolean).join(" | ");
+    el.wikidataResult.innerHTML = `
+      <div class="upload-item">
+        <strong>${escapeHtml(r.labelEn || q)}</strong><br>
+        ${escapeHtml(r.description || "(ไม่มีคำอธิบาย — ระวังเป็นไปได้ว่าจับ entity ผิด)")}<br>
+        ${hasCoord ? `พิกัด: ${r.lat.toFixed(4)}, ${r.lng.toFixed(4)}` : "ไม่มีพิกัด"}${r.year ? ` · ปี: ${r.year}` : ""}<br>
+        ${tagSnippet ? `<span class="up-path" id="wikidataCopyTarget" style="cursor:pointer;text-decoration:underline dotted;">${escapeHtml(tagSnippet)}</span> (คลิกเพื่อคัดลอก)` : ""}
+      </div>
+      <p class="import-hint">⚠ เช็กคำอธิบายด้านบนให้ตรงกับเหตุการณ์ที่ต้องการก่อนนำไปใช้เสมอ — ไม่ตรง = อย่าคัดลอก ลองพิมพ์คำค้นใหม่ให้เจาะจงขึ้น</p>`;
+    const copyEl = document.getElementById("wikidataCopyTarget");
+    if (copyEl) {
+      copyEl.addEventListener("click", () => {
+        navigator.clipboard.writeText(tagSnippet).catch(() => {});
+        const old = copyEl.textContent;
+        copyEl.textContent = "คัดลอกแล้ว!";
+        setTimeout(() => { copyEl.textContent = old; }, 1200);
+      });
+    }
+  } catch (err) {
+    el.wikidataResult.innerHTML = `<div class="upload-item">ค้นหาไม่สำเร็จ: ${escapeHtml(err.message)} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ</div>`;
+  }
+});
 
 el.btnLoadMapFirstExample.addEventListener("click", () => {
   if (el.importText.value.trim() && !confirm("โหลดตัวอย่าง MAP-FIRST จะเขียนทับสคริปต์ปัจจุบันในกล่องข้อความ ดำเนินการต่อ?")) return;
