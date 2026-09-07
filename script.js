@@ -1102,15 +1102,18 @@ function moveCamera(scene, durationSecOverride, frameOverride) {
   const durationSec = durationSecOverride || scene.duration;
   const pitch = scene.tilt || 0; // tilt=องศา ในสคริปต์ (0-60) ให้มุมกล้อง 3D
   const bearing = scene.bearing || 0; // bearing=องศา ในสคริปต์ ตั้งทิศเริ่มต้นของช็อต (ไม่หมุนต่อเนื่อง ยกเว้น orbit)
+  // importance/mood คุมแค่ "ความเร็ว" ของการขยับกล้องที่มีอยู่แล้ว (ไม่เพิ่มการขยับใหม่) — ไม่ตั้ง importance/mood = 1 = พฤติกรรมเดิมเป๊ะ
+  const paceMul = scene.camPaceMul || 1;
 
   if (scene.cam === "cut-to-insert" || scene.cam === "insert-overlay") {
     stopOrbit();
-    map.easeTo({ center, duration: 450, bearing: map.getBearing(), easing: EASE_CINEMATIC });
+    map.easeTo({ center, duration: 450 * paceMul, bearing: map.getBearing(), easing: EASE_CINEMATIC });
     return;
   }
   if (scene.cam === "orbit") {
-    map.easeTo({ center, zoom: 8, duration: 650, pitch: pitch || 45, bearing, easing: EASE_CINEMATIC });
-    setTimeout(() => startOrbit(durationSec, bearing), 650);
+    const setupMs = 650 * paceMul;
+    map.easeTo({ center, zoom: 8, duration: setupMs, pitch: pitch || 45, bearing, easing: EASE_CINEMATIC });
+    setTimeout(() => startOrbit(durationSec, bearing), setupMs);
     return;
   }
   stopOrbit();
@@ -1122,21 +1125,22 @@ function moveCamera(scene, durationSecOverride, frameOverride) {
   if (scene.cam === "battle-map") {
     // มุมมองแบบเกม RTS: เอียงเล็กน้อยพอเห็นมิติ ไม่หมุน (เว้นแต่ผู้ใช้ตั้ง bearing เอง)
     const zoom = frameOverride ? frameOverride.zoom : 6;
-    map.easeTo({ center, zoom, duration: 800, bearing, pitch: pitch || 35, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom, duration: 800 * paceMul, bearing, pitch: pitch || 35, easing: EASE_CINEMATIC });
   } else if (scene.cam === "fly-to") {
     const zoom = frameOverride ? frameOverride.zoom : 6.2;
     if (scene.follow) {
       // follow=on: กล้องแค่ขยับไปตั้งต้นที่จุดเริ่มเร็วๆ แล้วปล่อยให้ startPathIcon() เป็นคนลากกล้องตามไอคอนเองทุกเฟรม
-      map.easeTo({ center, zoom, duration: 550, bearing, pitch: pitch || 30, easing: EASE_CINEMATIC });
+      map.easeTo({ center, zoom, duration: 550 * paceMul, bearing, pitch: pitch || 30, easing: EASE_CINEMATIC });
     } else {
+      // ไม่คูณ paceMul: ระยะเวลานี้ผูกกับความยาวฉากจริง (จากเสียงพากย์) อยู่แล้ว ไม่ใช่ค่าคงที่แบบอื่นๆ
       map.flyTo({ center, zoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch, easing: EASE_CINEMATIC });
     }
   } else if (scene.cam === "push-in") {
-    map.easeTo({ center, zoom: 10, duration: 850, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: 10, duration: 850 * paceMul, bearing, pitch, easing: EASE_CINEMATIC });
   } else if (scene.cam === "zoom-out") {
-    map.easeTo({ center, zoom: 4.2, duration: 850, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: 4.2, duration: 850 * paceMul, bearing, pitch, easing: EASE_CINEMATIC });
   } else {
-    map.easeTo({ center, zoom: 4.3, duration: 850, bearing, pitch, easing: EASE_CINEMATIC });
+    map.easeTo({ center, zoom: 4.3, duration: 850 * paceMul, bearing, pitch, easing: EASE_CINEMATIC });
   }
 }
 
@@ -1237,6 +1241,83 @@ function parseCallout(str) {
   return { url, lat: latlng[0], lng: latlng[1], label };
 }
 
+// ---------- Story System: narrative / beat / importance / mood ----------
+// คีย์ทั้ง 4 นี้เป็น optional เสมอ ไม่ใส่ = engine ทำงานเหมือนเดิม 100% (ไม่กระทบ key/behavior เดิมใดๆ)
+// narrative/beat: metadata หน้าที่ของฉากในเรื่อง + จังหวะเล่าเรื่อง — ใช้แสดงในพรีวิวและป้อนเข้า auto-analysis
+// importance: คุมจังหวะ (ความเร็วกล้อง+เวลาพักก่อนตัดฉาก) เท่านั้น — ไม่เติม effect/reveal/camera ใหม่ให้เองเด็ดขาด
+// mood: คุมโทนจังหวะกล้อง + น้ำเสียงพากย์ (rate/pitch) เท่านั้น เช่นเดียวกับ importance
+const NARRATIVE_VALUES = ["hook", "context", "setup", "development", "escalation", "conflict", "reveal", "turningpoint", "climax", "consequence", "resolution", "conclusion"];
+const BEAT_VALUES = ["hook", "question", "setup", "reveal", "escalation", "conflict", "twist", "turningpoint", "payoff"];
+const IMPORTANCE_VALUES = ["low", "medium", "high", "critical"];
+const MOOD_VALUES = ["calm", "curious", "mysterious", "tension", "fear", "tragic", "epic", "hope", "shock"];
+
+// importance คุมแค่จังหวะ (ความเร็วกล้องที่ "มีอยู่แล้ว" ให้ deliberate ขึ้น/ไวขึ้น + เวลาพักก่อนตัดฉากถัดไป)
+// medium (ดีฟอลต์เมื่อไม่ระบุ/เดาไม่ออก) camMul=1, holdBonusMs=0 = พฤติกรรมเดิมเป๊ะ ไม่มีอะไรเปลี่ยน
+const IMPORTANCE_PACE = {
+  critical: { camMul: 1.3, holdBonusMs: 900 },
+  high: { camMul: 1.15, holdBonusMs: 400 },
+  medium: { camMul: 1, holdBonusMs: 0 },
+  low: { camMul: 0.8, holdBonusMs: 0 },
+};
+// beat บางจังหวะ (เผย/พลิกผัน/จุดพลิก/จุดจบเรื่องย่อย) สมควรมีเวลาพักให้คนดูซึมซับ เสริมจาก importance (เอาค่าสูงสุด ไม่บวกซ้ำ)
+const BEAT_HOLD_BONUS = { reveal: 600, twist: 600, turningpoint: 600, payoff: 600 };
+
+const MOOD_PACE_MUL = { tension: 0.85, fear: 0.85, shock: 0.8, mysterious: 1.15, tragic: 1.15, calm: 1.15, hope: 1.05, epic: 1.1, curious: 1, auto: 1 };
+const MOOD_TTS = {
+  calm: { rate: "-4%", pitch: "+0Hz" },
+  curious: { rate: "+2%", pitch: "+1Hz" },
+  mysterious: { rate: "-8%", pitch: "-4Hz" },
+  tension: { rate: "+3%", pitch: "-1Hz" },
+  fear: { rate: "+1%", pitch: "-3Hz" },
+  tragic: { rate: "-7%", pitch: "-3Hz" },
+  epic: { rate: "-4%", pitch: "-1Hz" },
+  hope: { rate: "+2%", pitch: "+2Hz" },
+  shock: { rate: "+6%", pitch: "+1Hz" },
+};
+
+// วิเคราะห์ narrative/beat/importance/mood จากเนื้อหาสคริปต์+cam+effect+highlight อัตโนมัติ (ใช้เฉพาะตอนผู้ใช้ไม่ได้ระบุเอง)
+// จับคีย์เวิร์ดแบบเรียงลำดับความสำคัญ เจอหมวดไหนก่อนใช้หมวดนั้น (เรียบง่าย พอเดาเจตนาได้ ไม่ต้องมี NLP จริงจัง)
+const NARRATIVE_KEYWORD_RULES = [
+  { words: ["จุดสูงสุด", "ชี้ขาด", "จุดแตกหัก", "decisive", "climax", "จุดจบศึก"], narrative: "climax", beat: "payoff", importance: "critical" },
+  { words: ["สงคราม", "บุก", "โจมตี", "รบ", "ต่อสู้", "ปะทะ", "ยึดครอง", "ศึก", "invasion", "invade", "attack", "war", "battle", "conquer"], narrative: "conflict", beat: "conflict", importance: "high" },
+  { words: ["ทวีความรุนแรง", "ขยายตัว", "ลุกลาม", "escalate", "worsen"], narrative: "escalation", beat: "escalation", importance: "high" },
+  { words: ["แต่ทว่า", "ทว่า", "จู่ๆ", "กลับกลายเป็นว่า", "ปรากฏว่า", "พลิกผัน", "suddenly", "unexpectedly", "twist"], narrative: "turningpoint", beat: "twist", importance: "high" },
+  { words: ["เผยให้เห็น", "เปิดเผย", "ค้นพบ", "ความจริงคือ", "แท้จริงแล้ว", "reveal", "discover"], narrative: "reveal", beat: "reveal", importance: "high" },
+  { words: ["ส่งผล", "นำไปสู่", "เป็นผลให้", "ผลที่ตามมา", "consequence", "lead to"], narrative: "consequence", importance: "medium" },
+  { words: ["สงบลง", "คลี่คลาย", "ยุติ", "settle", "resolve"], narrative: "resolution", importance: "medium" },
+  { words: ["สุดท้าย", "ในที่สุด", "จบลง", "สิ้นสุด", "ปิดฉาก", "finally", "ultimately", "conclude"], narrative: "conclusion", beat: "payoff", importance: "medium" },
+  { words: ["ก่อตั้ง", "ถือกำเนิด", "เริ่มต้น", "จุดเริ่มต้น", "founding", "began", "establish", "สถาปนา"], narrative: "setup", beat: "setup", importance: "medium" },
+  { words: ["ในยุคเดียวกัน", "ขณะเดียวกัน", "ภูมิหลัง", "meanwhile", "background"], narrative: "context", importance: "low" },
+];
+const MOOD_KEYWORD_RULES = [
+  { words: ["ผี", "วิญญาณ", "หลอน", "สยองขวัญ", "น่ากลัว", "ghost", "haunted"], mood: "mysterious" },
+  { words: ["โศกนาฏกรรม", "สูญเสีย", "ล่มสลาย", "เสียชีวิต", "ตาย", "death", "tragedy"], mood: "tragic" },
+  { words: ["ยิ่งใหญ่", "มหากาพย์", "จักรวรรดิ", "empire", "epic", "legendary"], mood: "epic" },
+  { words: ["ความหวัง", "ฟื้นตัว", "รุ่งเรือง", "เจริญรุ่งเรือง", "hope", "prosper", "flourish"], mood: "hope" },
+];
+
+function inferNarrativeBeat(script, cam, effect, highlight) {
+  const text = script || "";
+  for (const rule of NARRATIVE_KEYWORD_RULES) {
+    if (rule.words.some((w) => text.includes(w))) {
+      return { narrative: rule.narrative, beat: rule.beat || null, importance: rule.importance || null, mood: null };
+    }
+  }
+  // ไม่เจอคีย์เวิร์ดในสคริปต์: ลองเดาจากกล้อง/เอฟเฟกต์ (สัญญาณอ่อนกว่าเนื้อหา)
+  if (cam === "battle-map" || effect === "battle" || effect === "fire" || effect === "lightning") {
+    return { narrative: "conflict", beat: "conflict", importance: "high", mood: null };
+  }
+  return { narrative: null, beat: null, importance: null, mood: null };
+}
+
+function inferMood(script) {
+  const text = script || "";
+  for (const rule of MOOD_KEYWORD_RULES) {
+    if (rule.words.some((w) => text.includes(w))) return rule.mood;
+  }
+  return null;
+}
+
 function finalizeScene(raw) {
   const {
     place, latlng, cam, script, dur, icon: iconRaw, effect: effectRaw, insert,
@@ -1245,6 +1326,7 @@ function finalizeScene(raw) {
     labelfont, labelsize, labelweight,
     caption, captionpos, geophoto, draw, drawcolor, persist,
     focus, highlightcolor, badge, callout, route, follow, speed, style,
+    narrative: narrativeRaw, beat: beatRaw, importance: importanceRaw, mood: moodRaw,
   } = raw;
   if (!place || !cam || !script) return null;
   const preset = STYLE_PRESETS[style] || null;
@@ -1270,6 +1352,27 @@ function finalizeScene(raw) {
     if (!Number.isNaN(la) && !Number.isNaN(ln)) { lat = la; lng = ln; }
   }
   if (lat === undefined) { lat = FALLBACK_COORD.lat; lng = FALLBACK_COORD.lng; }
+
+  // ---------- resolve narrative/beat/importance/mood: ผู้ใช้ระบุเอง > auto-analysis > ดีฟอลต์ปลอดภัย ----------
+  const narrativeValid = NARRATIVE_VALUES.includes(narrativeRaw) ? narrativeRaw : null;
+  const beatValid = BEAT_VALUES.includes(beatRaw) ? beatRaw : null;
+  const importanceValid = IMPORTANCE_VALUES.includes(importanceRaw) ? importanceRaw : null;
+  const moodValid = MOOD_VALUES.includes(moodRaw) ? moodRaw : null;
+  const guess = (narrativeValid && beatValid && importanceValid) ? { narrative: null, beat: null, importance: null, mood: null } : inferNarrativeBeat(script, camKey, effect, highlightKey);
+  const moodGuess = moodValid ? null : inferMood(script);
+
+  const narrativeKey = narrativeValid || guess.narrative || "auto";
+  const beatKey = beatValid || guess.beat || "auto";
+  const importanceKey = importanceValid || guess.importance || "medium";
+  const moodKey = moodValid || moodGuess || "auto";
+
+  const pace = IMPORTANCE_PACE[importanceKey] || IMPORTANCE_PACE.medium;
+  const moodPaceMul = MOOD_PACE_MUL[moodKey] || 1;
+  const camPaceMul = pace.camMul * moodPaceMul;
+  const holdBonusMs = Math.max(pace.holdBonusMs, BEAT_HOLD_BONUS[beatKey] || 0);
+  // โทนพากย์: mood ที่ผู้ใช้ตั้งเอง ทับทุกอย่างรวมถึง style preset; ไม่ตั้ง mood แต่ตั้ง style ใช้โทนของ style เดิม (ไม่เปลี่ยนพฤติกรรมเดิม);
+  // ไม่ตั้งทั้งคู่แต่ auto เดาโทนได้จากเนื้อหา ใช้เป็นโทนแนะนำเบาๆ; ไม่มีอะไรเลย = null เหมือนเดิมทุกประการ
+  const resolvedMoodTts = moodValid ? MOOD_TTS[moodKey] : preset ? preset.mood : moodGuess ? MOOD_TTS[moodGuess] : null;
 
   return {
     place,
@@ -1310,7 +1413,17 @@ function finalizeScene(raw) {
     follow: follow === "on" || follow === "true",
     speedKmh: Number(speed) > 0 ? Number(speed) : 0,
     style: preset ? style : "",
-    styleMood: preset ? preset.mood : null,
+    styleMood: resolvedMoodTts,
+    narrative: narrativeKey,
+    narrativeSource: narrativeValid ? "user" : "auto",
+    beat: beatKey,
+    beatSource: beatValid ? "user" : "auto",
+    importance: importanceKey,
+    importanceSource: importanceValid ? "user" : "auto",
+    mood: moodKey,
+    moodSource: moodValid ? "user" : "auto",
+    camPaceMul,
+    holdBonusMs,
   };
 }
 
@@ -1348,6 +1461,10 @@ const TAG_KEY_ALIASES = {
   follow: "follow", ตามกล้อง: "follow",
   speed: "speed", ความเร็ว: "speed",
   style: "style", สไตล์: "style",
+  narrative: "narrative", เนื้อเรื่อง: "narrative",
+  beat: "beat", จังหวะ: "beat",
+  importance: "importance", ความสำคัญ: "importance",
+  mood: "mood", อารมณ์: "mood",
 };
 
 // โหมด tag: "place=... | cam=fly-to | sec=6 | tilt=45" — พิมพ์ลำดับไหนก็ได้ ไม่ใส่คีย์ไหนก็ default ให้
@@ -1412,6 +1529,10 @@ function parseImportText() {
 function sceneStyleTags(s) {
   const tags = [];
   if (s.style) tags.push(`สไตล์:${s.style}`);
+  if (s.narrative && s.narrative !== "auto") tags.push(`narrative:${s.narrative}${s.narrativeSource === "auto" ? " (auto)" : ""}`);
+  if (s.beat && s.beat !== "auto") tags.push(`beat:${s.beat}${s.beatSource === "auto" ? " (auto)" : ""}`);
+  if (s.importance && s.importance !== "medium") tags.push(`importance:${s.importance}${s.importanceSource === "auto" ? " (auto)" : ""}`);
+  if (s.mood && s.mood !== "auto") tags.push(`mood:${s.mood}${s.moodSource === "auto" ? " (auto)" : ""}`);
   if (s.highlight !== "none") tags.push(`ไฮไลต์เขต:${s.highlight}`);
   if (s.focus) tags.push("โฟกัสขาวดำ");
   if (s.highlightColor) tags.push(`สีไฮไลต์ ${s.highlightColor}`);
@@ -1901,6 +2022,10 @@ async function narrationLoop() {
 
     if (idx < scenes.length - 1) {
       if (sceneGapSec > 0) await wait(sceneGapSec * 1000); // จังหวะฉาก — พักเงียบก่อนตัดไปฉากถัดไป
+      if (myToken !== playToken) return;
+      // importance/beat สูง (critical หรือ beat=reveal/twist/turningpoint/payoff) เสริมเวลาพักก่อนตัดฉาก ให้คนดูซึมซับทัน
+      // ไม่ระบุ = holdBonusMs 0 = พฤติกรรมเดิมเป๊ะ (บวกต่อจาก sceneGapSec เดิม ไม่ได้แทนที่)
+      if (scene.holdBonusMs > 0) await wait(scene.holdBonusMs);
       if (myToken !== playToken) return;
       activeIndex = idx + 1;
     } else {

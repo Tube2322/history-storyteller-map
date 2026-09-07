@@ -120,6 +120,15 @@
 - **กล้องลื่นไหลขึ้น**: ทุกจุดที่กล้องขยับด้วย `easeTo`/`flyTo` ใช้ easing แบบ `easeInOutCubic` ร่วมกัน (`EASE_CINEMATIC`) แทนความเร็วคงที่เดิม กันกล้องกระชากตอนเริ่ม/หยุดขยับ
 - แก้ตำแหน่งป้ายชื่อรูปปักพิกัด (`geophoto`) และป้ายวงกลม (`badge`) ที่เคยไปทับป้ายชื่อหมุดหลัก (pin label) เวลาอยู่พิกัดเดียวกัน — ยกมาร์กเกอร์ทั้งสองขึ้น 34px ด้วย `offset`
 
+**พาท 18 — Story System: narrative / beat / importance / mood + auto narrative analysis (เพิ่มความสามารถล้วนๆ ไม่กระทบของเดิม)**
+- 4 คีย์ใหม่ทั้งหมด optional มี default ปลอดภัย: ไม่ใส่เลย = `narrative`/`beat`/`mood` เป็น `auto`, `importance` เป็น `medium` — สคริปต์เดิมที่ไม่มี 4 คีย์นี้ทำงานเหมือนเดิม 100% (ตรวจแล้ว: `camPaceMul=1`, `holdBonusMs=0`, `styleMood=null` เท่าของเดิมทุกประการ)
+- **`narrative`**: `hook/context/setup/development/escalation/conflict/reveal/turningpoint/climax/consequence/resolution/conclusion` — หน้าที่ของฉากในเรื่อง เป็น metadata สำหรับ auto-analysis + แสดงในพรีวิว ไม่บังคับพฤติกรรมกล้อง/เอฟเฟกต์เอง
+- **`beat`**: `hook/question/setup/reveal/escalation/conflict/twist/turningpoint/payoff` — จังหวะสำคัญของการเล่าเรื่อง; `reveal/twist/turningpoint/payoff` เสริมเวลาพักก่อนตัดฉากถัดไปให้อัตโนมัติ (`holdBonusMs`)
+- **`importance`**: `low/medium/high/critical` — คุมแค่ "จังหวะ" (ความเร็วกล้องที่มีอยู่แล้ว + เวลาพักก่อนตัดฉาก) เท่านั้น **ไม่เพิ่ม effect/reveal/camera-movement ใหม่ให้เอง** ตามที่กำหนดไว้ — `critical` กล้องขยับช้าลง 30% + พักก่อนตัดฉาก +900ms, `high` ช้าลง 15%+400ms, `low` ไวขึ้น 20%, `medium` (ดีฟอลต์) ไม่เปลี่ยนอะไรเลย
+- **`mood`**: `calm/curious/mysterious/tension/fear/tragic/epic/hope/shock` — คุมจังหวะกล้อง (คูณเพิ่มจาก importance) + โทนพากย์เสียง (`rate`/`pitch`) เท่านั้น ผู้ใช้ตั้งเองทับ `style=` preset's mood เสมอ, ไม่ตั้งแต่มี `style=` ใช้โทนของ style เดิม (ไม่เปลี่ยนพฤติกรรมเดิม), ไม่มีทั้งคู่ engine เดาจากเนื้อหาเป็นโทนแนะนำเบาๆ
+- **Auto Narrative Analysis**: จับคีย์เวิร์ดในสคริปต์ (ไทย+อังกฤษ) แปลงเป็น narrative/beat/importance โดยอัตโนมัติเมื่อผู้ใช้ไม่ได้ระบุเอง เช่น `"กองทัพเยอรมันบุกโปแลนด์"` → `narrative=conflict, beat=conflict, importance=high` (ทดสอบแล้วตรงตามตัวอย่างที่กำหนด) — เดาไม่ออกจากคำในสคริปต์ ลองเดาจาก `cam=battle-map`/`effect=battle,fire,lightning` ต่อ เดาไม่ออกเลยตกไปที่ดีฟอลต์ปลอดภัย ผู้ใช้ระบุเองทับค่าเดาเสมอไม่ว่าฟิลด์ไหน
+- ลำดับความสำคัญของโทนพากย์ (rate/pitch): `mood=` ที่ผู้ใช้ตั้งเอง > โทนจาก `style=` preset (เดิม) > โทนที่ auto เดาจากเนื้อหา > ไม่มีอะไรเลย (ใช้ค่าเสียงกลางปกติ) — ทั้งหมดยังไหลผ่านฟิลด์ `styleMood` เดิม ไม่ได้เปลี่ยนจุดเชื่อมกับระบบพากย์เสียงเลย
+
 ## เปิดใช้งาน
 
 ต้องรัน `server.py` (ไม่ใช่ `python -m http.server` เฉยๆ) เพราะต้องมี endpoint `/api/tts` สำหรับเสียงพากย์:
