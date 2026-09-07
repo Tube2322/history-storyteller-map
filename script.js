@@ -1751,7 +1751,14 @@ function buildKaraokeSegments(text) {
     .map((t) => ({ text: t, isWord: !/^\s+$/.test(t) }));
 }
 
+// นับรุ่นแยกจาก playToken เพราะ getElapsedSec ของคลิปเสียงจริงอ่านจาก el.ttsPlayer.currentTime ตัวเดียวที่ใช้ร่วมกันทุกคลิป
+// พอคลิปถัดไปเริ่มเล่น (player.src เปลี่ยน currentTime รีเซ็ตเป็น 0) tick() ของคลิปก่อนหน้าที่ยังไม่ทันจบ (เช่น
+// เวลาประมาณคลาดจากเสียงจริงเล็กน้อย) จะอ่านค่า currentTime ของคลิปใหม่ต่อ เข้าใจผิดว่ายัง<durationSec เดิม แล้ววน
+// requestAnimationFrame เขียนทับ DOM สลับกับ tick() ของคลิปใหม่ (ซับไตเติลฉากเก่า/ใหม่สลับกันโผล่) ต้องตัดด้วยเลขรุ่นเอง
+let karaokeGen = 0;
+
 function runKaraoke(text, durationSec, myToken, getElapsedSec) {
+  const myGen = ++karaokeGen;
   const segs = buildKaraokeSegments(text);
   const wordSegIdxs = [];
   segs.forEach((s, i) => { if (s.isWord) wordSegIdxs.push(i); });
@@ -1794,7 +1801,7 @@ function runKaraoke(text, durationSec, myToken, getElapsedSec) {
   }
 
   function tick() {
-    if (myToken !== playToken) return;
+    if (myToken !== playToken || myGen !== karaokeGen) return;
     const elapsed = getElapsedSec();
     let wIdx = thresholds.findIndex((t) => elapsed < t);
     if (wIdx === -1) wIdx = wordSegIdxs.length - 1;
@@ -1810,7 +1817,7 @@ function runKaraoke(text, durationSec, myToken, getElapsedSec) {
       if (wordSpans[localIdx]) wordSpans[localIdx].classList.add("active");
       activeInChunkIdx = localIdx;
     }
-    if (elapsed < durationSec && myToken === playToken) requestAnimationFrame(tick);
+    if (elapsed < durationSec && myToken === playToken && myGen === karaokeGen) requestAnimationFrame(tick);
   }
 
   renderChunk(0);
