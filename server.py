@@ -11,6 +11,7 @@ import difflib
 import hashlib
 import http.server
 import json
+import math
 import re
 import socketserver
 import sys
@@ -293,8 +294,16 @@ def _thwiki_image_search(query: str, limit: int) -> list:
     return results
 
 
-def fetch_image_search(query: str, limit: int = 5) -> list:
-    key = (query.lower(), limit)
+def _km_between(lat1, lng1, lat2, lng2) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def fetch_image_search(query: str, limit: int = 5, near_lat: float = None, near_lng: float = None) -> list:
+    key = (query.lower(), limit, near_lat, near_lng)
     if key in _imagesearch_cache:
         return _imagesearch_cache[key]
     # คำค้นภาษาไทย: full-text search ของ Commons หาแทบไม่เจอเลย เพราะคำบรรยายไฟล์ส่วนใหญ่เป็นภาษาอังกฤษ
@@ -313,6 +322,34 @@ def fetch_image_search(query: str, limit: int = 5) -> list:
         except Exception as exc:  # เช่น Wikimedia จำกัดอัตราคำขอชั่วคราว (429) — ไม่ควรทำให้ทั้ง endpoint ล่มเป็น 500
             print(f"ค้นภาพจาก Commons ไม่สำเร็จ ({query}): {exc}", file=sys.stderr)
             results = []
+    # ยังไม่เจอ และเป็นคำค้นภาษาไทย: ลองแปลงชื่อเป็นอังกฤษผ่าน Wikidata ก่อนค่อยยอมแพ้ (ยังไม่ใช่การเดา — อ่านชื่ออังกฤษที่ผูกกับ
+    # entity นั้นจริงบน Wikidata) แล้วค้น Commons ซ้ำด้วยชื่ออังกฤษ+ปี (ถ้าคำค้นเดิมมีปีต่อท้ายอยู่ เช่น "อาบูซิมเบล -1264" จาก
+    # extractYearHint ฝั่งเว็บ ตัดปีออกก่อนถาม Wikidata แล้วต่อกลับตอนค้น Commons ไม่งั้น Wikidata หาไม่เจอเพราะมีตัวเลขปนชื่อ)
+    if not results and not query.isascii():
+        m = re.match(r"^(.*?)(\s+-?\d{3,4})?$", query.strip())
+        base_name = (m.group(1) if m else query).strip()
+        year_suffix = (m.group(2) or "").strip() if m else ""
+        if base_name:
+            try:
+                entity = fetch_wikidata(base_name)
+                # ชื่อสถานที่ซ้ำข้ามประเทศได้ง่ายมาก (พิสูจน์แล้วจริง: ค้น "อเล็กซานเดรีย" (อียิปต์) ด้วย wbsearchentities
+                # ภาษาไทย ดันจับ entity "Alexandria, Virginia, USA" แทน — ชื่อพ้องกันเฉยๆ คนละที่กันคนละทวีป) ถ้ามีพิกัดฉากจริง
+                # ส่งมา (near_lat/near_lng) ต้องเช็คว่า entity ที่ Wikidata คืนมาอยู่ใกล้พิกัดจริงพอ (<300กม.) ก่อนเชื่อชื่ออังกฤษนั้น
+                # ไม่มีพิกัดฉากส่งมา หรือ entity ไม่มีพิกัดให้เทียบ = ไม่เสี่ยง ปล่อยว่างดีกว่าเดาผิดที่
+                usable = entity and entity.get("labelEn")
+                if usable and near_lat is not None and near_lng is not None:
+                    if entity.get("lat") is None or entity.get("lng") is None:
+                        usable = False
+                    elif _km_between(near_lat, near_lng, entity["lat"], entity["lng"]) > 300:
+                        usable = False
+                        print(f"Wikidata fallback ทิ้งผล ({query}): entity '{entity.get('labelEn')}' อยู่ไกลจากพิกัดฉากเกิน 300กม. (คนละที่กัน)", file=sys.stderr)
+                elif usable and (near_lat is None or near_lng is None):
+                    usable = False
+                if usable:
+                    en_query = f"{entity['labelEn']} {year_suffix}".strip() if year_suffix else entity["labelEn"]
+                    results = _commons_image_search(en_query, limit)
+            except Exception as exc:
+                print(f"ค้นภาพผ่าน Wikidata fallback ไม่สำเร็จ ({query}): {exc}", file=sys.stderr)
     _imagesearch_cache[key] = results
     return results
 
@@ -636,7 +673,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not query:
                 self.send_error(400, "missing q")
                 return
-            results = fetch_image_search(query)
+            near_lat = near_lng = None
+            try:
+                if qs.get("lat") and qs.get("lng"):
+                    near_lat, near_lng = float(qs["lat"][0]), float(qs["lng"][0])
+            except ValueError:
+                pass
+            results = fetch_image_search(query, near_lat=near_lat, near_lng=near_lng)
             body = json.dumps({"results": results}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

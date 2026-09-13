@@ -974,6 +974,11 @@ body.is-render-mode .import-panel {
 .pr-video-desc { display: block; color: var(--ink-dim); font-size: 10px; margin: 2px 0 4px; }
 .pr-video-status { font-family: var(--mono); font-size: 10px; color: var(--ink-dim); margin-left: 6px; }
 
+/* ค้นภาพจริงทีเดียวทั้งสคริปต์ + รีวิวเป็นตาราง (แทนต้องเปิดทีละฉาก) */
+.bulk-image-review-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; max-height: 420px; overflow-y: auto; }
+.bulk-review-row { padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,0.04); }
+.bulk-review-chosen { font-size: 10px; color: #34c759; margin-left: 6px; }
+
 .brand-settings {
   border-top: 1px solid var(--panel-border);
   padding-top: 12px;

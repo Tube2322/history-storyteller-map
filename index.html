@@ -340,6 +340,17 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
             <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
             <button id="btnLoadMapFirstExample" class="ghost-btn" type="button">🗺️ โหลดตัวอย่าง MAP-FIRST</button>
           </div>
+          <div class="import-actions">
+            <button id="btnBulkImageSearch" class="ghost-btn" type="button">🔍 ค้นภาพจริงทั้งสคริปต์อัตโนมัติ (เฉพาะฉากที่ยังไม่มีสื่อ)</button>
+          </div>
+          <p class="import-hint" id="bulkImageStatus" hidden></p>
+          <div id="bulkImageReviewWrap" hidden>
+            <p class="import-hint">คลิกรูปที่ตรงเพื่อเลือกให้ฉากนั้น — ฉากไหนไม่พบภาพจริงจะไม่ใส่อะไรให้ (ไม่เดาส่งเดะ) เลือกครบแล้วกดปิด</p>
+            <div class="bulk-image-review-list" id="bulkImageReviewList"></div>
+            <div class="import-actions">
+              <button id="btnBulkImageClose" class="ghost-btn" type="button">ปิด</button>
+            </div>
+          </div>
           <div class="import-preview" id="importPreview"></div>
           </div>
 

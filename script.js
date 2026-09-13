@@ -226,6 +226,11 @@ const el = {
   btnSmartApprove: document.getElementById("btnSmartApprove"),
   smartAssetGallery: document.getElementById("smartAssetGallery"),
   btnSmartAutoFillEmpty: document.getElementById("btnSmartAutoFillEmpty"),
+  btnBulkImageSearch: document.getElementById("btnBulkImageSearch"),
+  bulkImageStatus: document.getElementById("bulkImageStatus"),
+  bulkImageReviewWrap: document.getElementById("bulkImageReviewWrap"),
+  bulkImageReviewList: document.getElementById("bulkImageReviewList"),
+  btnBulkImageClose: document.getElementById("btnBulkImageClose"),
 };
 
 let scenes = [];
@@ -2356,8 +2361,9 @@ async function runImageSearchForScene(idx) {
   const resultsEl = document.getElementById(`prMediaResults${idx}`);
   if (!q || !resultsEl) return;
   resultsEl.innerHTML = `<div class="pr-media-loading">กำลังค้นหา...</div>`;
+  const scene = scenes[idx];
   try {
-    const res = await fetch(`/api/imagesearch?q=${encodeURIComponent(q)}`);
+    const res = await fetch(`/api/imagesearch?q=${encodeURIComponent(q)}&lat=${scene.lat}&lng=${scene.lng}`);
     const { results } = await res.json();
     if (!results || !results.length) { resultsEl.innerHTML = `<div class="pr-media-loading">ไม่พบภาพจริงที่ตรงพอ ลองแก้คำค้นเป็นภาษาอังกฤษ (ไม่แต่งภาพให้เดาส่งเดช)</div>`; return; }
     resultsEl.innerHTML = results.map((r, i) => `
@@ -2421,6 +2427,75 @@ async function runVideoSearchForScene(idx) {
     resultsEl.innerHTML = `<div class="pr-media-loading">ค้นหาไม่สำเร็จ: ${escapeHtml(err.message)}</div>`;
   }
 }
+
+// ค้นภาพจริงทีเดียวทั้งสคริปต์ (แทนต้องเปิดทีละฉาก) — ข้ามฉากที่มีสื่ออยู่แล้วเสมอ ไม่ทับของที่เลือกไว้/Smart Import จับคู่ไว้แล้ว
+// ใช้ query เดียวกับ autoFetchMissingImages (place + yearHint ถ้ามี) ให้ผลตรงกันไม่ว่าจะค้นทางไหน
+let lastBulkImageCandidates = [];
+async function runBulkImageSearch() {
+  if (!scenes.length) { alert("กด \"แปลงเป็นฉาก\" ให้มีฉากก่อน ถึงจะค้นภาพได้"); return; }
+  const targets = scenes.map((_, i) => i).filter((i) => !scenes[i].geophoto && !scenes[i].videoAsset);
+  if (!targets.length) {
+    el.bulkImageStatus.hidden = false;
+    el.bulkImageStatus.textContent = "ทุกฉากมีสื่อครบแล้ว ไม่มีฉากว่างให้ค้น";
+    return;
+  }
+  el.btnBulkImageSearch.disabled = true;
+  el.bulkImageStatus.hidden = false;
+  lastBulkImageCandidates = [];
+  for (let n = 0; n < targets.length; n++) {
+    const idx = targets[n];
+    const scene = scenes[idx];
+    el.bulkImageStatus.textContent = `กำลังค้นภาพ... ${n + 1}/${targets.length}`;
+    const yearHint = extractYearHint(scene);
+    const query = yearHint ? `${scene.place} ${yearHint}` : scene.place;
+    let results = [];
+    try {
+      const res = await fetch(`/api/imagesearch?q=${encodeURIComponent(query)}&lat=${scene.lat}&lng=${scene.lng}`);
+      const data = await res.json();
+      results = (data && data.results) || [];
+    } catch (e) { /* ข้ามฉากนี้ไป ไม่ล้มทั้งชุดเพราะฉากเดียวค้นพลาด */ }
+    lastBulkImageCandidates.push({ idx, query, results });
+  }
+  el.btnBulkImageSearch.disabled = false;
+  el.bulkImageStatus.textContent = `ค้นครบ ${targets.length} ฉาก — เลือกภาพที่ตรงด้านล่าง (ฉากไหนไม่พบภาพจะไม่ใส่ให้)`;
+  renderBulkImageReview();
+}
+
+function renderBulkImageReview() {
+  el.bulkImageReviewWrap.hidden = false;
+  el.bulkImageReviewList.innerHTML = lastBulkImageCandidates.map((c) => {
+    const scene = scenes[c.idx];
+    const thumbs = c.results.length
+      ? c.results.slice(0, 4).map((r, ri) => `
+          <button class="pr-media-result" type="button" data-bulk-idx="${c.idx}" data-ri="${ri}" title="${escapeHtml(r.title)}">
+            <img src="${r.url}" alt="" loading="lazy" />
+          </button>`).join("")
+      : `<span class="pr-media-loading">ไม่พบภาพจริงที่ตรงพอสำหรับ "${escapeHtml(c.query)}"</span>`;
+    const chosen = scene.geophoto ? `<span class="bulk-review-chosen">✓ เลือกแล้ว</span>` : "";
+    return `
+      <div class="bulk-review-row" data-bulk-row="${c.idx}">
+        <div class="pr-place">${c.idx + 1}. ${escapeHtml(scene.place)} ${chosen}</div>
+        <div class="pr-media-search-results">${thumbs}</div>
+      </div>`;
+  }).join("");
+  el.bulkImageReviewList.querySelectorAll(".pr-media-result").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.bulkIdx);
+      const ri = Number(btn.dataset.ri);
+      const cand = lastBulkImageCandidates.find((c) => c.idx === idx);
+      if (!cand) return;
+      const r = cand.results[ri];
+      const scene = scenes[idx];
+      scene.geophoto = { url: r.url, lat: scene.lat, lng: scene.lng, label: r.title || scene.place };
+      syncSceneToRawLine(idx);
+      renderPreview();
+      renderBulkImageReview();
+    });
+  });
+}
+
+el.btnBulkImageSearch.addEventListener("click", runBulkImageSearch);
+el.btnBulkImageClose.addEventListener("click", () => { el.bulkImageReviewWrap.hidden = true; });
 
 // ปุ่ม "ค้นภาพจริง"/"ค้นวิดีโอจริง" บนการ์ดฉากไหน → เปิดแผงค้นหา inline ใต้การ์ดนั้น
 el.importPreview.addEventListener("click", (e) => {
@@ -3061,12 +3136,12 @@ async function autoFetchMissingImages(list, myToken) {
     if (myToken !== playToken) return false;
     const yearHint = extractYearHint(scene);
     const query = yearHint ? `${scene.place} ${yearHint}` : scene.place;
-    if (!autoImageCache.has(query)) autoImageCache.set(query, searchAutoImage(query));
+    if (!autoImageCache.has(query)) autoImageCache.set(query, searchAutoImage(query, scene.lat, scene.lng));
     let found = await autoImageCache.get(query);
     if (myToken !== playToken) return false;
     // ค้นแบบมีปีแล้วไม่เจอเลย (พบว่าเกิดได้บ่อยเมื่อชื่อสถานที่เป็นภาษาไทย+ตัวเลขปี) ลองค้นแค่ชื่อสถานที่เฉยๆ อีกครั้งแทนปล่อยว่าง
     if (!found && yearHint) {
-      if (!autoImageCache.has(scene.place)) autoImageCache.set(scene.place, searchAutoImage(scene.place));
+      if (!autoImageCache.has(scene.place)) autoImageCache.set(scene.place, searchAutoImage(scene.place, scene.lat, scene.lng));
       found = await autoImageCache.get(scene.place);
       if (myToken !== playToken) return false;
     }
@@ -4079,9 +4154,11 @@ function buildSceneTagRow({ place, lat, lng, cam, script, dur, highlight, transp
 }
 
 // ค้นภาพประกอบจากคลังภาพเสรี Wikimedia Commons อัตโนมัติตามชื่อสถานที่ (ผ่าน server.py /api/imagesearch)
-async function searchAutoImage(query) {
+// ส่ง lat/lng ของฉากจริงไปด้วยเสมอที่มี — server ใช้เช็คระยะห่างกันชื่อสถานที่ซ้ำข้ามประเทศ (เช่น Alexandria อียิปต์/เวอร์จิเนีย)
+async function searchAutoImage(query, lat, lng) {
   try {
-    const res = await fetch(`/api/imagesearch?q=${encodeURIComponent(query)}`);
+    const coordQs = (lat != null && lng != null) ? `&lat=${lat}&lng=${lng}` : "";
+    const res = await fetch(`/api/imagesearch?q=${encodeURIComponent(query)}${coordQs}`);
     if (!res.ok) return null;
     const data = await res.json();
     return data && data.results && data.results[0] ? data.results[0] : null;
@@ -4098,7 +4175,7 @@ el.btnBuilderAdd.addEventListener("click", async () => {
   if (el.builderAutoImage.checked) {
     el.btnBuilderAdd.disabled = true;
     el.btnBuilderAdd.textContent = "กำลังค้นภาพประกอบ...";
-    const found = await searchAutoImage(builderToPick.name);
+    const found = await searchAutoImage(builderToPick.name, builderToPick.lat, builderToPick.lng);
     if (found) geophoto = `${found.url}:${builderToPick.lat.toFixed(4)},${builderToPick.lng.toFixed(4)}:${builderToPick.name}`;
     el.btnBuilderAdd.disabled = false;
   }
