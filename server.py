@@ -264,6 +264,13 @@ def _title_relevant(query: str, title: str) -> bool:
     q, t = norm(query), norm(title)
     if not q or not t:
         return False
+    if q == t:
+        return True
+    # เคสจริงที่เจอตอนเทสสคริปต์ 31 ฉาก: "บูชา" (เมือง Bucha) ผ่านเช็ค substring เพราะ "บูชา" เป็นส่วนหนึ่งของคำว่า "แท่นบูชา"
+    # (แท่น+บูชา) พอดี — คำสั้นๆ ที่ไปฝังอยู่ในคำประสมยาวกว่ามาก มักไม่เกี่ยวกันเลย ต้องกันก่อนเช็ค substring/ความคล้ายอื่นๆ
+    shorter, longer = (q, t) if len(q) <= len(t) else (t, q)
+    if len(shorter) / len(longer) < 0.6:
+        return False
     if q in t or t in q:  # ครอบคลุมกรณีสะกดตรงเป๊ะ หรือ query มีคำต่อท้าย/นำหน้าเพิ่ม (เช่น "หุบเขากษัตริย์ ลักซอร์" ⊃ "หุบเขากษัตริย์")
         return True
     return difflib.SequenceMatcher(None, q, t).ratio() >= 0.5  # ยอมรับสะกดต่างเล็กน้อย (อาบูซิมเบล vs อะบูซิมเบล) แต่กันเรื่องคนละเรื่องเด็ดขาด
@@ -319,6 +326,11 @@ def fetch_image_search(query: str, limit: int = 5, near_lat: float = None, near_
     if not results:
         try:
             results = _commons_image_search(query, limit)
+            # เจอจริงตอนเทสสคริปต์ 31 ฉาก: ค้น "บูชา" (ภาษาไทย) ที่ Commons ดันได้ไฟล์ภาษาอังกฤษเรื่อง "Altar" มาห้าไฟล์ — full-text
+            # search ของ MediaWiki เดาคำใกล้เคียงให้เองเวลาคำค้นไม่ตรง ไม่ใช่ผลจริง ต้องกรองด้วยเกณฑ์เดียวกับ thwiki เฉพาะคำค้นไทย
+            # (คำค้นอังกฤษไม่ต้องกรอง เพราะชื่อไฟล์ Commons ส่วนใหญ่เป็นอังกฤษอยู่แล้ว ใช้ path เดิมที่ผ่านการเทสมานานแล้ว)
+            if not query.isascii():
+                results = [r for r in results if _title_relevant(query, r["title"])]
         except Exception as exc:  # เช่น Wikimedia จำกัดอัตราคำขอชั่วคราว (429) — ไม่ควรทำให้ทั้ง endpoint ล่มเป็น 500
             print(f"ค้นภาพจาก Commons ไม่สำเร็จ ({query}): {exc}", file=sys.stderr)
             results = []
