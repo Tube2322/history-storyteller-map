@@ -810,7 +810,10 @@ function showBoundary(scene) {
       if (!AUTO_FRAME_CAMS.has(scene.cam)) return;
       const bounds = boundsFromGeojson(data.geojson, scene.mainlandOnly);
       if (!bounds) return;
-      const cam = map.cameraForBounds(bounds, { padding: 60 });
+      // ฉากที่มีรูปปักพิกัดด้วย (geophoto/videoAsset) การ์ดรูปลอยอยู่เหนือหมุดจริง (offset ขึ้น ~34px + สูงการ์ด ~140px)
+      // padding เท่ากันทุกด้านแบบเดิมไม่เผื่อพื้นที่ตรงนี้ไว้ ทำให้ขอบเขตที่พอดีกรอบพอดีจน "ผลัก" การ์ดรูปหลุดขอบจอบนไปเลย
+      const hasFloatingCard = !!(scene.geophoto || scene.videoAsset);
+      const cam = map.cameraForBounds(bounds, hasFloatingCard ? { padding: { top: 280, bottom: 60, left: 60, right: 60 } } : { padding: 60 });
       // จุดเดียวที่ขยับกล้องให้ฉากไฮไลต์แบบ auto-frame — กัน moveCamera() ชนกันกลางอากาศ (สาเหตุอนิเมชันกระตุก)
       if (cam) {
         map.easeTo({ center: cam.center, zoom: cam.zoom, bearing: scene.bearing || 0, pitch: scene.tilt || 0, duration: 800, easing: EASE_CINEMATIC });

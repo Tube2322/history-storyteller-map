@@ -421,7 +421,9 @@ html, body {
 .insert-float {
   position: absolute;
   left: 50%;
-  top: 18%;
+  /* ยกป้ายหัวข้อ evidence= ขึ้นสูงกว่าเดิม (18%→9%) — เดิมชนกับการ์ดรูปปักพิกัด (geophoto) ที่ลอยเหนือหมุดตรงกลางจอพอดี
+     เพราะกล้อง insert-overlay/cut-to-insert เล็งกลางจอไปที่พิกัดฉากเสมอ ทำให้ป้ายกับรูปช้อนทับกัน (เจอจริงตอนเทสสคริปต์ยาว) */
+  top: 9%;
   transform: translate(-50%, -50%) scale(0.9);
   width: 30%;
   aspect-ratio: 16 / 10;
