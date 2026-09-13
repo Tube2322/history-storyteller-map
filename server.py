@@ -258,6 +258,11 @@ def _commons_image_search(query: str, limit: int) -> list:
 # เคยได้ผลลัพธ์ผิดเรื่องสิ้นเชิงมาแล้ว: "บูชา" (เมืองบูชา) ได้ภาพสมเด็จพระสันตะปาปาฟรานซิส (คำว่า "บูชา" ในความหมายกราบไหว้),
 # "เกาะงู" ได้ภาพงูเหลือม (จับแค่คำว่า "งู"), "มาริอูปอล" ได้ภาพนักบุญโฮเซมารีอา (เสียงคล้าย "มารี")
 # ใส่ภาพผิดเรื่องในสารคดีประวัติศาสตร์อันตรายกว่าไม่มีภาพเลย (ขัดกฎ "ห้ามให้ข้อมูลเท็จ") จึงกรองด้วยความคล้ายชื่อบทความก่อนใช้ทุกครั้ง
+# คำนำหน้าทั่วไปที่วิกิพีเดียไทยติดกับชื่อสถานที่เป็นธรรมเนียม (เช่น "ประเทศ"+"ยูเครน" = ชื่อบทความจริงของยูเครน) — ไม่นับเป็น
+# ความเสี่ยง "คำสั้นฝังในคำประสมไม่เกี่ยวกัน" แบบ "แท่น"+"บูชา" แม้สัดส่วนความยาวจะพอๆ กันก็ตาม (ทั้งคู่ยาวลงท้ายด้วยคำค้นเป๊ะ)
+_GENERIC_PLACE_PREFIXES = {"ประเทศ", "เมือง", "จังหวัด", "รัฐ", "แคว้น", "สาธารณรัฐ", "มณฑล", "เขต", "หมู่เกาะ"}
+
+
 def _title_relevant(query: str, title: str) -> bool:
     def norm(s):
         return re.sub(r"\s+", "", s or "").lower()
@@ -266,9 +271,14 @@ def _title_relevant(query: str, title: str) -> bool:
         return False
     if q == t:
         return True
+    shorter, longer = (q, t) if len(q) <= len(t) else (t, q)
     # เคสจริงที่เจอตอนเทสสคริปต์ 31 ฉาก: "บูชา" (เมือง Bucha) ผ่านเช็ค substring เพราะ "บูชา" เป็นส่วนหนึ่งของคำว่า "แท่นบูชา"
     # (แท่น+บูชา) พอดี — คำสั้นๆ ที่ไปฝังอยู่ในคำประสมยาวกว่ามาก มักไม่เกี่ยวกันเลย ต้องกันก่อนเช็ค substring/ความคล้ายอื่นๆ
-    shorter, longer = (q, t) if len(q) <= len(t) else (t, q)
+    # ยกเว้นกรณีส่วนที่เหลือเป็นคำนำหน้าสถานที่มาตรฐานข้างบน (ไม่งั้นจะกันแม้แต่ "ประเทศยูเครน" ที่ถูกต้องเป๊ะไปด้วย — เคสจริงที่เจอ)
+    if longer.startswith(shorter) and longer[len(shorter):] in _GENERIC_PLACE_PREFIXES:
+        return True
+    if longer.endswith(shorter) and longer[:len(longer) - len(shorter)] in _GENERIC_PLACE_PREFIXES:
+        return True
     if len(shorter) / len(longer) < 0.6:
         return False
     if q in t or t in q:  # ครอบคลุมกรณีสะกดตรงเป๊ะ หรือ query มีคำต่อท้าย/นำหน้าเพิ่ม (เช่น "หุบเขากษัตริย์ ลักซอร์" ⊃ "หุบเขากษัตริย์")
@@ -309,6 +319,20 @@ def _km_between(lat1, lng1, lat2, lng2) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
+def _openverse_image_search(query: str, limit: int) -> list:
+    qs = urllib.parse.urlencode({"q": query, "page_size": limit})
+    url = f"https://api.openverse.org/v1/images/?{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool)"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    results = []
+    for item in data.get("results") or []:
+        img_url = item.get("thumbnail") or item.get("url")
+        if img_url:
+            results.append({"title": item.get("title") or "", "url": img_url})
+    return results
+
+
 def fetch_image_search(query: str, limit: int = 5, near_lat: float = None, near_lng: float = None) -> list:
     key = (query.lower(), limit, near_lat, near_lng)
     if key in _imagesearch_cache:
@@ -337,6 +361,7 @@ def fetch_image_search(query: str, limit: int = 5, near_lat: float = None, near_
     # ยังไม่เจอ และเป็นคำค้นภาษาไทย: ลองแปลงชื่อเป็นอังกฤษผ่าน Wikidata ก่อนค่อยยอมแพ้ (ยังไม่ใช่การเดา — อ่านชื่ออังกฤษที่ผูกกับ
     # entity นั้นจริงบน Wikidata) แล้วค้น Commons ซ้ำด้วยชื่ออังกฤษ+ปี (ถ้าคำค้นเดิมมีปีต่อท้ายอยู่ เช่น "อาบูซิมเบล -1264" จาก
     # extractYearHint ฝั่งเว็บ ตัดปีออกก่อนถาม Wikidata แล้วต่อกลับตอนค้น Commons ไม่งั้น Wikidata หาไม่เจอเพราะมีตัวเลขปนชื่อ)
+    resolved_en_query = None  # เก็บชื่ออังกฤษที่ผ่านการเช็คระยะทางแล้ว (ถ้ามี) ให้ชั้น Openverse ด้านล่างใช้ต่อได้ ไม่ต้องถาม Wikidata ซ้ำ
     if not results and not query.isascii():
         m = re.match(r"^(.*?)(\s+-?\d{3,4})?$", query.strip())
         base_name = (m.group(1) if m else query).strip()
@@ -358,10 +383,20 @@ def fetch_image_search(query: str, limit: int = 5, near_lat: float = None, near_
                 elif usable and (near_lat is None or near_lng is None):
                     usable = False
                 if usable:
-                    en_query = f"{entity['labelEn']} {year_suffix}".strip() if year_suffix else entity["labelEn"]
-                    results = _commons_image_search(en_query, limit)
+                    resolved_en_query = f"{entity['labelEn']} {year_suffix}".strip() if year_suffix else entity["labelEn"]
+                    results = _commons_image_search(resolved_en_query, limit)
             except Exception as exc:
                 print(f"ค้นภาพผ่าน Wikidata fallback ไม่สำเร็จ ({query}): {exc}", file=sys.stderr)
+    # ชั้นสุดท้าย: Openverse (คลังภาพ CC เสรีอีกแหล่ง รวม Flickr/museum archives ฯลฯ ฟรีไม่ต้องมีคีย์) — ครอบคลุมเหตุการณ์ร่วมสมัย
+    # ที่ Wikipedia/Commons ยังไม่มีบทความ/ไฟล์ ใช้คำค้นได้เฉพาะที่ "เชื่อได้แล้ว" เท่านั้น: ชื่ออังกฤษที่ผ่านเช็คระยะทางจาก Wikidata
+    # ไปแล้ว (resolved_en_query) หรือคำค้นอังกฤษที่ผู้ใช้พิมพ์เอง — ไม่เอาคำไทยดิบไปค้นตรงๆ กันเดาผิดเรื่องแบบที่เจอมาแล้วซ้ำอีก
+    if not results:
+        openverse_query = resolved_en_query or (query if query.isascii() else None)
+        if openverse_query:
+            try:
+                results = _openverse_image_search(openverse_query, limit)
+            except Exception as exc:
+                print(f"ค้นภาพจาก Openverse ไม่สำเร็จ ({query}): {exc}", file=sys.stderr)
     _imagesearch_cache[key] = results
     return results
 
