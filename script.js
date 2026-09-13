@@ -2741,7 +2741,9 @@ function goToScene(index, durationOverride) {
       } else {
         const routeBounds = new maplibregl.LngLatBounds(a, a).extend(b);
         const cam = map.cameraForBounds(routeBounds, { padding: 90 });
-        if (cam) flyFrame = { center: cam.center, zoom: Math.min(Math.max(cam.zoom, 3), 10) };
+        // โฟกัสจบที่ "ปลายทางจริง" (b) เสมอ ไม่ใช่จุดกึ่งกลางเส้นทาง (cam.center) — เดิมทำให้เป้าหมายหลุดขอบจอตอนเดินทางไกล
+        // (เช่น fly-to ไปบ้านนายก กล้องเข้าตรงกลางเส้นระหว่างจุดเริ่ม-ปลายทางแทนที่จะโฟกัสบ้านนายกจริงๆ) ยังใช้ซูมแบบปรับตามระยะทางจริงเหมือนเดิม
+        if (cam) flyFrame = { center: b, zoom: Math.min(Math.max(cam.zoom, 3), 10) };
       }
     }
 
@@ -3175,15 +3177,59 @@ function extractYearHint(scene) {
   return null;
 }
 
+// เดิม insert-overlay/cut-to-insert ถูกกันไว้ไม่ให้ดึงภาพอัตโนมัติเลย (โชว์แค่ข้อความ insert= เปล่าๆ) — ผู้ใช้ขอให้ดึงภาพ/คลิปจริงให้ด้วย
+// เหมือนฉากอื่น เลยเปิดให้ 2 cam นี้เข้าคิวดึงอัตโนมัติเหมือนกันแล้ว (ยังเคารพ autoImagePref=off ของแต่ละฉากเหมือนเดิม)
+const INSERT_CAMS = new Set(["cut-to-insert", "insert-overlay"]);
+
+// เฉพาะฉาก insert-overlay/cut-to-insert: ลองหาคลิปวิดีโอสั้นๆของเหตุการณ์จริงจาก Internet Archive ก่อนค่อย fallback เป็นภาพนิ่ง
+// ให้มีลุกเล่นคลิปจริงแทรกบ้าง ไม่ใช่ภาพนิ่งล้วนทุกฉาก — ตามที่ผู้ใช้ขอ "มีคลิปตัวอย่างสั้นๆเหตุการณ์บ้างนิดๆ"
+// คำค้นภาษาไทยแปลงเป็นอังกฤษผ่าน Wikidata ก่อนเสมอ (archive.org แทบไม่มีชื่อไฟล์ภาษาไทยเลย) พร้อมเช็คระยะทางกันชื่อซ้ำข้ามประเทศแบบเดียวกับภาพ
+// หาไม่เจอ/ไม่มั่นใจ = คืน null เงียบๆ ให้ไปใช้เส้นทางภาพนิ่งตามปกติ ไม่ใช่ความผิดพลาด
+async function tryAutoVideoClip(scene, query) {
+  try {
+    let searchQuery = query;
+    if (!/^[\x00-\x7F]*$/.test(query)) {
+      const wdRes = await fetch(`/api/wikidata?q=${encodeURIComponent(scene.place)}`);
+      const wd = await wdRes.json();
+      const entity = wd && wd.result;
+      const hasCoord = entity && entity.labelEn && entity.lat != null && entity.lng != null;
+      if (hasCoord && haversine([scene.lng, scene.lat], [entity.lng, entity.lat]) <= 300000) {
+        searchQuery = entity.labelEn;
+      } else {
+        return null; // แปลงชื่อไม่ได้/ไม่มั่นใจว่าที่เดียวกัน ปลอดภัยกว่าไม่ลองคลิปเลย
+      }
+    }
+    const res = await fetch(`/api/archivesearch?q=${encodeURIComponent(searchQuery)}`);
+    const { results } = await res.json();
+    if (!results || !results.length) return null;
+    // ชื่อคลิปต้องมีคำสำคัญของคำค้นจริงๆ (กันแบบเดียวกับตัวกรองภาพ) ไม่เอาผลลัพธ์ที่ full-text search เดามั่วมาให้
+    const tokens = searchQuery.split(/\s+/).filter((w) => w.length >= 4).map((w) => w.toLowerCase());
+    const candidate = results.find((r) => tokens.some((tok) => (r.title || "").toLowerCase().includes(tok)));
+    if (!candidate) return null;
+    const fres = await fetch(`/api/archivefile?id=${encodeURIComponent(candidate.identifier)}`);
+    const { result } = await fres.json();
+    if (!result || !result.duration || result.duration > 90) return null; // เอาเฉพาะคลิปสั้นพอเป็น "ตัวอย่างเหตุการณ์" ไม่ใช่สารคดีเต็มเรื่อง
+    return { url: result.url, duration: result.duration, label: candidate.title };
+  } catch (e) {
+    return null;
+  }
+}
+
 async function autoFetchMissingImages(list, myToken) {
-  const INSERT_CAMS = new Set(["cut-to-insert", "insert-overlay"]);
-  const targets = list.filter((s) => !s.geophoto && !s.videoAsset && !INSERT_CAMS.has(s.cam) && shouldAutoFetchImage(s));
+  const targets = list.filter((s) => !s.geophoto && !s.videoAsset && shouldAutoFetchImage(s));
   if (!targets.length) return true;
-  el.subtitleText.textContent = "กำลังค้นภาพประกอบอัตโนมัติ (Wikimedia Commons)...";
+  el.subtitleText.textContent = "กำลังค้นภาพ/คลิปประกอบอัตโนมัติ...";
   for (const scene of targets) {
     if (myToken !== playToken) return false;
     const yearHint = extractYearHint(scene);
     const query = yearHint ? `${scene.place} ${yearHint}` : scene.place;
+
+    if (INSERT_CAMS.has(scene.cam)) {
+      const clip = await tryAutoVideoClip(scene, query);
+      if (myToken !== playToken) return false;
+      if (clip) { scene.videoAsset = clip; continue; }
+    }
+
     if (!autoImageCache.has(query)) autoImageCache.set(query, searchAutoImage(query, scene.lat, scene.lng));
     let found = await autoImageCache.get(query);
     if (myToken !== playToken) return false;
