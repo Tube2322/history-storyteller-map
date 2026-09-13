@@ -224,6 +224,8 @@ const el = {
   smartDiagnostics: document.getElementById("smartDiagnostics"),
   smartReviewList: document.getElementById("smartReviewList"),
   btnSmartApprove: document.getElementById("btnSmartApprove"),
+  smartAssetGallery: document.getElementById("smartAssetGallery"),
+  btnSmartAutoFillEmpty: document.getElementById("btnSmartAutoFillEmpty"),
 };
 
 let scenes = [];
@@ -2257,6 +2259,13 @@ function sceneStyleTags(s) {
   return tags;
 }
 
+// การ์ดสื่อปัจจุบันของฉาก (ถ้ามี) — ใช้ thumbnail เดียวกับที่ Smart Import ใช้ (slotThumbHtml) ให้หน้าตาสอดคล้องกันทั้งเว็ป
+function prCurrentMediaHtml(s) {
+  if (s.geophoto) return `<img class="pr-media-thumb" src="${s.geophoto.url}" alt="" loading="lazy" title="${escapeHtml(s.geophoto.label || "รูปที่เลือกไว้")}" />`;
+  if (s.videoAsset) return `<video class="pr-media-thumb" src="${s.videoAsset.url}" muted preload="metadata" title="${escapeHtml(s.videoAsset.label || "วิดีโอที่เลือกไว้")}"></video>`;
+  return `<div class="pr-media-thumb pr-media-empty">ไม่มีสื่อ</div>`;
+}
+
 function renderPreview() {
   el.importPreview.innerHTML = scenes
     .map((s, i) => {
@@ -2274,10 +2283,128 @@ function renderPreview() {
         <div class="pr-meta">${CAM_LABELS[s.cam]} · ${s.duration}s · ${s.lat.toFixed(3)},${s.lng.toFixed(3)}</div>
         <div class="pr-visual-makeup">${escapeHtml(sceneVisualMakeup(s))}</div>
         ${tagsHtml}
+        <div class="pr-media-tools">
+          ${prCurrentMediaHtml(s)}
+          <label class="pr-dur-field">วินาที <input type="number" min="1" step="1" class="pr-dur-input" data-dur-scene="${i}" value="${s.duration}" title="ความยาวฉากนี้ — คลิปสั้น(เลขน้อย)/คลิปยาว(เลขมาก)" /></label>
+          <button class="ghost-btn pr-media-btn" type="button" data-scene="${i}" data-kind="image">🔍 ค้นภาพจริง</button>
+          <button class="ghost-btn pr-media-btn" type="button" data-scene="${i}" data-kind="video">🎬 ค้นวิดีโอจริง</button>
+        </div>
+        <div class="pr-media-panel" id="prMediaPanel${i}" hidden></div>
       </div>`;
     })
     .join("");
 }
+
+// เปิดแผงค้นสื่อจริงของฉากนั้นๆ (inline ใต้การ์ด) — คำค้นตั้งต้นจากชื่อสถานที่ของฉาก แก้ไขเองได้ก่อนกด
+function openMediaSearchPanel(idx, kind) {
+  const scene = scenes[idx];
+  const panel = document.getElementById(`prMediaPanel${idx}`);
+  if (!panel) return;
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="pr-media-search-row">
+      <input type="text" class="pr-media-query" id="prMediaQuery${idx}" value="${escapeHtml(scene.place)}" />
+      <button class="primary-btn" type="button" id="prMediaGo${idx}">ค้นหา</button>
+      <button class="ghost-btn" type="button" id="prMediaClose${idx}">ปิด</button>
+    </div>
+    <div class="pr-media-search-results" id="prMediaResults${idx}"></div>`;
+  const run = () => (kind === "image" ? runImageSearchForScene(idx) : runVideoSearchForScene(idx));
+  document.getElementById(`prMediaGo${idx}`).addEventListener("click", run);
+  document.getElementById(`prMediaQuery${idx}`).addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+  document.getElementById(`prMediaClose${idx}`).addEventListener("click", () => { panel.hidden = true; panel.innerHTML = ""; });
+  run();
+}
+
+async function runImageSearchForScene(idx) {
+  const q = document.getElementById(`prMediaQuery${idx}`).value.trim();
+  const resultsEl = document.getElementById(`prMediaResults${idx}`);
+  if (!q || !resultsEl) return;
+  resultsEl.innerHTML = `<div class="pr-media-loading">กำลังค้นหา...</div>`;
+  try {
+    const res = await fetch(`/api/imagesearch?q=${encodeURIComponent(q)}`);
+    const { results } = await res.json();
+    if (!results || !results.length) { resultsEl.innerHTML = `<div class="pr-media-loading">ไม่พบภาพจริงที่ตรงพอ ลองแก้คำค้นเป็นภาษาอังกฤษ (ไม่แต่งภาพให้เดาส่งเดช)</div>`; return; }
+    resultsEl.innerHTML = results.map((r, i) => `
+      <button class="pr-media-result" type="button" data-idx="${i}" title="${escapeHtml(r.title)}">
+        <img src="${r.url}" alt="" loading="lazy" />
+      </button>`).join("");
+    resultsEl.querySelectorAll(".pr-media-result").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const r = results[Number(btn.dataset.idx)];
+        const scene = scenes[idx];
+        scene.geophoto = { url: r.url, lat: scene.lat, lng: scene.lng, label: r.title || scene.place };
+        document.getElementById(`prMediaPanel${idx}`).hidden = true;
+        renderPreview();
+      });
+    });
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="pr-media-loading">ค้นหาไม่สำเร็จ: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// วิดีโอค้น 2 ขั้นเหมือนเครื่องมือใน "ตรวจสอบ" (พาท 37): รายการก่อน → กด "ใช้คลิปนี้" ค่อยดึงลิงก์เล่นได้จริง+ความยาว
+// โชว์ความยาว/ขนาดไฟล์ให้เห็นก่อนตัดสินใจ — ผู้ใช้เลือกเองว่าจะเอาคลิปสั้นหรือยาว ระบบไม่เดาให้
+async function runVideoSearchForScene(idx) {
+  const q = document.getElementById(`prMediaQuery${idx}`).value.trim();
+  const resultsEl = document.getElementById(`prMediaResults${idx}`);
+  if (!q || !resultsEl) return;
+  resultsEl.innerHTML = `<div class="pr-media-loading">กำลังค้นหา...</div>`;
+  try {
+    const res = await fetch(`/api/archivesearch?q=${encodeURIComponent(q)}`);
+    const { results } = await res.json();
+    if (!results || !results.length) { resultsEl.innerHTML = `<div class="pr-media-loading">ไม่พบคลิปวิดีโอจริง ลองคำค้นภาษาอังกฤษที่เจาะจงกว่านี้</div>`; return; }
+    resultsEl.innerHTML = results.map((r, i) => `
+      <div class="pr-video-result">
+        <strong>${escapeHtml(r.title)}</strong>
+        <span class="pr-video-desc">${escapeHtml((r.description || "").slice(0, 100))}</span>
+        <button class="ghost-btn" type="button" data-arc-idx="${i}">ดึงลิงก์เล่นได้</button>
+        <span class="pr-video-status" id="prVideoStatus${idx}_${i}"></span>
+      </div>`).join("");
+    resultsEl.querySelectorAll("[data-arc-idx]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const r = results[Number(btn.dataset.arcIdx)];
+        const statusEl = document.getElementById(`prVideoStatus${idx}_${btn.dataset.arcIdx}`);
+        statusEl.textContent = "กำลังโหลด...";
+        try {
+          const fres = await fetch(`/api/archivefile?id=${encodeURIComponent(r.identifier)}`);
+          const { result } = await fres.json();
+          if (!result) { statusEl.textContent = "ไม่มีไฟล์เล่นได้ในรายการนี้"; return; }
+          const durText = result.duration ? `${Math.round(result.duration)}s` : "ไม่ทราบความยาว";
+          statusEl.textContent = `${durText} · ${result.sizeMb}MB — ใช้คลิปนี้แล้ว`;
+          const scene = scenes[idx];
+          scene.videoAsset = { url: result.url, duration: result.duration || scene.duration, label: r.title };
+          renderPreview();
+        } catch (err) {
+          statusEl.textContent = `โหลดไม่สำเร็จ: ${err.message}`;
+        }
+      });
+    });
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="pr-media-loading">ค้นหาไม่สำเร็จ: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// ปุ่ม "ค้นภาพจริง"/"ค้นวิดีโอจริง" บนการ์ดฉากไหน → เปิดแผงค้นหา inline ใต้การ์ดนั้น
+el.importPreview.addEventListener("click", (e) => {
+  const mediaBtn = e.target.closest(".pr-media-btn");
+  if (mediaBtn) {
+    openMediaSearchPanel(Number(mediaBtn.dataset.scene), mediaBtn.dataset.kind);
+  }
+});
+
+// ช่องวินาที inline บนการ์ด → ปรับ scene.duration ตรงๆ (คลิปสั้น/ยาว) โดยไม่ต้องเปิดแผงแก้ไขเต็ม
+el.importPreview.addEventListener("change", (e) => {
+  const input = e.target.closest(".pr-dur-input");
+  if (!input) return;
+  const idx = Number(input.dataset.durScene);
+  const scene = scenes[idx];
+  if (!scene) return;
+  const val = Number(input.value);
+  if (!Number.isFinite(val) || val <= 0) { input.value = scene.duration; return; }
+  scene.duration = val;
+  const metaEl = input.closest(".preview-row").querySelector(".pr-meta");
+  if (metaEl) metaEl.textContent = `${CAM_LABELS[scene.cam]} · ${scene.duration}s · ${scene.lat.toFixed(3)},${scene.lng.toFixed(3)}`;
+});
 
 // คลิก "แก้ไข" บนการ์ดฉากไหน → โหลดค่าฉากนั้นกลับเข้าแผงสร้างฉาก แก้ไขเสร็จกด "บันทึกการแก้ไข" อัปเดตแทนที่แถวเดิม (ไม่เพิ่มแถวใหม่)
 let editingSceneIndex = null;
@@ -2575,17 +2702,38 @@ async function fetchTts(text, rateOverride, pitchOverride) {
   return result;
 }
 
+// Music ducking: ตอนมีเสียงพากย์ ลดวอลุ่ม bgm ลงเหลือ 35% ของที่ตั้งไว้ ตอนพากย์จบคืนกลับเต็ม — ไล่ระดับด้วย rAF กันเสียงกระตุก ไม่ใช่ Web Audio GainNode (bgmPlayer เป็น <audio> element ธรรมดาอยู่แล้ว ปรับ .volume ตรงๆ พอ ไม่ต้องเพิ่ม AudioContext)
+const BGM_DUCK_RATIO = 0.35;
+let duckRafId = null;
+function rampBgmVolume(targetRatio, ms) {
+  if (duckRafId) cancelAnimationFrame(duckRafId);
+  const player = el.bgmPlayer;
+  const from = player.volume;
+  const to = bgmVolumeLevel * targetRatio;
+  if (!bgmUrl || Math.abs(from - to) < 0.001) { player.volume = to; return; }
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / ms);
+    player.volume = from + (to - from) * t;
+    if (t < 1) duckRafId = requestAnimationFrame(step);
+    else duckRafId = null;
+  };
+  duckRafId = requestAnimationFrame(step);
+}
+
 function playAudioClip(url, myToken) {
   return new Promise((resolve) => {
     const player = el.ttsPlayer;
     const cleanup = () => {
       player.removeEventListener("ended", onEnded);
       player.removeEventListener("error", onEnded);
+      rampBgmVolume(1, 400);
     };
     const onEnded = () => { cleanup(); resolve(); };
     player.addEventListener("ended", onEnded);
     player.addEventListener("error", onEnded);
     player.src = url;
+    rampBgmVolume(BGM_DUCK_RATIO, 250);
     player.play().catch(onEnded);
     const poll = setInterval(() => {
       if (myToken !== playToken) { clearInterval(poll); cleanup(); resolve(); }
@@ -3588,6 +3736,23 @@ function updateSmartAssetCounts() {
   el.smartAssetCounts.textContent = assetManifest.length
     ? `${n.image} รูป · ${n.video} วิดีโอ · ${n.audio} เสียง (${assetManifest.length} ไฟล์รวม)`
     : "ยังไม่มีไฟล์สื่อ";
+  renderAssetGallery();
+}
+
+// แสดงรูปย่อของทุกไฟล์ที่ลากเข้ามา พร้อมเลขลำดับ (image=01/video=01) ให้เห็นชัดว่าไฟล์ไหนคือไฟล์ไหน ก่อนกด "วิเคราะห์ & จับคู่"
+function renderAssetGallery() {
+  if (!el.smartAssetGallery) return;
+  if (!assetManifest.length) { el.smartAssetGallery.innerHTML = ""; return; }
+  el.smartAssetGallery.innerHTML = assetManifest.map((a) => {
+    const thumb = a.type === "image" ? `<img class="ag-thumb" src="${a.url}" alt="" loading="lazy" />`
+      : a.type === "video" ? `<video class="ag-thumb" src="${a.url}" muted preload="metadata"></video>`
+      : `<div class="ag-thumb ag-thumb-audio">🔊</div>`;
+    return `
+      <div class="asset-gallery-item" title="${a.originalFilename}">
+        ${thumb}
+        <span class="ag-seq">${a.type} ${String(a.sequence).padStart(2, "0")}</span>
+      </div>`;
+  }).join("");
 }
 
 async function ingestFileList(fileList) {
@@ -3691,6 +3856,13 @@ function buildAssetSelectOptions(type, selectedAssetId) {
   return html;
 }
 
+function slotThumbHtml(type, asset) {
+  if (!asset) return `<div class="sr-thumb sr-thumb-empty">—</div>`;
+  if (type === "image") return `<img class="sr-thumb" src="${asset.url}" alt="" loading="lazy" />`;
+  if (type === "video") return `<video class="sr-thumb" src="${asset.url}" muted preload="metadata"></video>`;
+  return `<div class="sr-thumb sr-thumb-audio">🔊</div>`;
+}
+
 function renderSmartReview(matches) {
   const rows = matches.map((m, idx) => {
     const scene = scenes[idx];
@@ -3706,6 +3878,7 @@ function renderSmartReview(matches) {
       return `
         <div class="smart-review-slot" data-scene="${idx}" data-type="${type}">
           <span class="sr-type">${type}</span>
+          ${slotThumbHtml(type, asset)}
           <select data-scene="${idx}" data-type="${type}" class="sr-asset-select">${buildAssetSelectOptions(type, asset ? asset.id : "")}</select>
           <span class="confidence-badge ${badgeClass}">${badgeText}</span>
         </div>`;
@@ -3728,7 +3901,7 @@ function renderSmartReview(matches) {
       const assetId = sel.value;
       const asset = assetId ? assetManifest.find((a) => a.id === assetId) : null;
       lastMatches[idx][type] = asset ? { asset, confidence: CONFIDENCE_SCORE.MANUAL, method: "manual" } : null;
-      renderSmartReview(lastMatches); // รีเฟรช badge/dropdown ทั้งชุดให้ตรงกับ assignment ใหม่ (กัน asset ซ้ำโชว์ผิด state)
+      renderSmartReview(lastMatches); // รีเฟรช badge/dropdown/thumbnail ทั้งชุดให้ตรงกับ assignment ใหม่ (กัน asset ซ้ำโชว์ผิด state)
       renderSmartDiagnostics(lastMatches);
     });
   });
@@ -3760,6 +3933,18 @@ el.btnSmartAnalyze.addEventListener("click", () => {
   renderSmartReview(lastMatches);
   renderSmartDiagnostics(lastMatches);
   el.smartReviewWrap.hidden = false;
+});
+
+// ฉากที่ไม่มีรูปจับคู่เลย (ไม่ได้ลากไฟล์มาให้ครบ) → เปิด autoImagePref=on ให้เว็ปหารูปให้เองตอนเล่น (ใช้ระบบดึงภาพอัตโนมัติที่มีอยู่แล้ว ไม่ทับของที่ผู้ใช้เลือกไว้แล้ว)
+el.btnSmartAutoFillEmpty.addEventListener("click", () => {
+  if (!lastMatches) return;
+  let filled = 0;
+  lastMatches.forEach((m, idx) => {
+    if (m.image && m.image.asset) return; // มีรูปจับคู่อยู่แล้ว ไม่แตะ
+    scenes[idx].autoImagePref = "on";
+    filled++;
+  });
+  alert(filled ? `เปิดดึงภาพอัตโนมัติให้ ${filled} ฉากที่ยังว่างรูป — ระบบจะหาภาพให้เองตอนกดเล่น` : "ทุกฉากมีรูปจับคู่ครบแล้ว ไม่มีฉากว่าง");
 });
 
 // อนุมัติ: เขียนผลจับคู่เข้า scenes[] ผ่านฟิลด์ที่ engine เดิมรู้จักอยู่แล้วเป๊ะ (geophoto/videoAsset/overrideAudioUrl) แล้วเรียก renderTimeline/goToScene เหมือน parseImportText ปกติ

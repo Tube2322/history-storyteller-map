@@ -7,6 +7,7 @@ Microsoft Edge) เบราว์เซอร์เรียกตรงไม�
 
 import asyncio
 import base64
+import difflib
 import hashlib
 import http.server
 import json
@@ -221,15 +222,14 @@ def fetch_route(lat1: float, lng1: float, lat2: float, lng2: float) -> list:
 _imagesearch_cache = {}
 
 
-def fetch_image_search(query: str, limit: int = 5) -> list:
-    key = (query.lower(), limit)
-    if key in _imagesearch_cache:
-        return _imagesearch_cache[key]
+def _commons_image_search(query: str, limit: int) -> list:
     qs = urllib.parse.urlencode({
         "action": "query",
         "generator": "search",
-        "gsrsearch": query,
-        "gsrnamespace": 6,  # namespace 6 = File:
+        # namespace 6 (File:) ไม่ได้มีแต่รูป — มี PDF/SVG/เสียง/วิดีโอปนอยู่ด้วย เคยได้ File:FreeSerif.pdf (ไฟล์ตัวอย่างฟอนต์)
+        # กลับมาเป็น "ภาพประกอบ" ของฉากพีระมิดกีซา เพราะในไฟล์ฟอนต์มีอักษรไทยอยู่ — จำกัดเป็นภาพ raster เท่านั้น
+        "gsrsearch": f"{query} filetype:bitmap",
+        "gsrnamespace": 6,
         "gsrlimit": limit,
         "prop": "imageinfo",
         "iiprop": "url",
@@ -250,6 +250,69 @@ def fetch_image_search(query: str, limit: int = 5) -> list:
         img_url = info.get("thumburl") or info.get("url")
         if img_url:
             results.append({"title": page.get("title", ""), "url": img_url})
+    return results
+
+
+# วิกิพีเดียไทย full-text search จับคำตรงตัวอักษรอย่างเดียว ไม่เข้าใจความหมาย — คำค้นที่บังเอิญพ้องกับคำไทยทั่วไป
+# เคยได้ผลลัพธ์ผิดเรื่องสิ้นเชิงมาแล้ว: "บูชา" (เมืองบูชา) ได้ภาพสมเด็จพระสันตะปาปาฟรานซิส (คำว่า "บูชา" ในความหมายกราบไหว้),
+# "เกาะงู" ได้ภาพงูเหลือม (จับแค่คำว่า "งู"), "มาริอูปอล" ได้ภาพนักบุญโฮเซมารีอา (เสียงคล้าย "มารี")
+# ใส่ภาพผิดเรื่องในสารคดีประวัติศาสตร์อันตรายกว่าไม่มีภาพเลย (ขัดกฎ "ห้ามให้ข้อมูลเท็จ") จึงกรองด้วยความคล้ายชื่อบทความก่อนใช้ทุกครั้ง
+def _title_relevant(query: str, title: str) -> bool:
+    def norm(s):
+        return re.sub(r"\s+", "", s or "").lower()
+    q, t = norm(query), norm(title)
+    if not q or not t:
+        return False
+    if q in t or t in q:  # ครอบคลุมกรณีสะกดตรงเป๊ะ หรือ query มีคำต่อท้าย/นำหน้าเพิ่ม (เช่น "หุบเขากษัตริย์ ลักซอร์" ⊃ "หุบเขากษัตริย์")
+        return True
+    return difflib.SequenceMatcher(None, q, t).ratio() >= 0.5  # ยอมรับสะกดต่างเล็กน้อย (อาบูซิมเบล vs อะบูซิมเบล) แต่กันเรื่องคนละเรื่องเด็ดขาด
+
+
+def _thwiki_image_search(query: str, limit: int) -> list:
+    qs = urllib.parse.urlencode({
+        "action": "query",
+        "generator": "search",
+        "gsrsearch": query,
+        "gsrlimit": limit,
+        "prop": "pageimages",   # ภาพหลักของบทความที่ชาววิกิพีเดียเลือกไว้เอง ไม่ใช่ผลค้นข้อความ
+        "piprop": "thumbnail",
+        "pithumbsize": 800,
+        "format": "json",
+    })
+    url = f"https://th.wikipedia.org/w/api.php?{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "history-storyteller-map/1.0 (local dev tool)"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    pages = ((data.get("query") or {}).get("pages") or {}).values()
+    results = []
+    for page in sorted(pages, key=lambda p: p.get("index", 999)):  # index = อันดับผลค้น ต้องเรียงเอง (API คืนมาเป็น dict ไม่เรียงลำดับ)
+        title = page.get("title", "")
+        thumb = (page.get("thumbnail") or {}).get("source")
+        if thumb and _title_relevant(query, title):
+            results.append({"title": title, "url": thumb})
+    return results
+
+
+def fetch_image_search(query: str, limit: int = 5) -> list:
+    key = (query.lower(), limit)
+    if key in _imagesearch_cache:
+        return _imagesearch_cache[key]
+    # คำค้นภาษาไทย: full-text search ของ Commons หาแทบไม่เจอเลย เพราะคำบรรยายไฟล์ส่วนใหญ่เป็นภาษาอังกฤษ
+    # (เทสจริง: "มหาพีระมิดกีซา" ได้ไฟล์ตัวอย่างฟอนต์, "รอเซตตา" ได้กราฟยอดผู้เสียชีวิตจากสงคราม)
+    # ถามวิกิพีเดียไทยก่อนแทน แล้วใช้ "ภาพหลักของบทความ" ที่ตรงกับคำค้น — เทสเดียวกันได้ Kheops-Pyramid.jpg,
+    # Panorama_Abu_Simbel, หน้ากากทองตุตันคาเมน ครบถ้วน — คำค้นภาษาอังกฤษยังเดินทางเดิม (Commons) ทุกอย่าง
+    results = []
+    if not query.isascii():
+        try:
+            results = _thwiki_image_search(query, limit)
+        except Exception as exc:
+            print(f"ค้นภาพจากวิกิพีเดียไทยไม่สำเร็จ ({query}): {exc}", file=sys.stderr)
+    if not results:
+        try:
+            results = _commons_image_search(query, limit)
+        except Exception as exc:  # เช่น Wikimedia จำกัดอัตราคำขอชั่วคราว (429) — ไม่ควรทำให้ทั้ง endpoint ล่มเป็น 500
+            print(f"ค้นภาพจาก Commons ไม่สำเร็จ ({query}): {exc}", file=sys.stderr)
+            results = []
     _imagesearch_cache[key] = results
     return results
 

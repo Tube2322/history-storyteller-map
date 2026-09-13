@@ -361,6 +361,7 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
             <input id="smartFileAudio" type="file" accept="audio/*" multiple hidden />
           </div>
           <p class="import-hint" id="smartAssetCounts">ยังไม่มีไฟล์สื่อ</p>
+          <div class="smart-asset-gallery" id="smartAssetGallery"></div>
 
           <div class="import-actions">
             <button id="btnSmartAnalyze" class="primary-btn" type="button">วิเคราะห์ &amp; จับคู่ (Analyze &amp; Match)</button>
@@ -369,6 +370,10 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
 
           <div id="smartReviewWrap" hidden>
             <p class="import-hint" id="smartDiagnostics"></p>
+            <p class="import-hint">รูปย่อในแต่ละช่องคือไฟล์ที่ระบบจับคู่ไว้ให้ ดูรูปให้แน่ใจก่อนว่าตรงฉาก แล้วค่อยเปลี่ยนจาก dropdown ได้ถ้าไม่ตรง — หรือกด "เติมภาพอัตโนมัติ" ด้านล่างให้เว็ปหารูปให้เองในฉากที่ยังว่าง</p>
+            <div class="import-actions">
+              <button id="btnSmartAutoFillEmpty" class="ghost-btn" type="button">🪄 เติมภาพอัตโนมัติทุกฉากที่ว่าง (ไม่ต้องลากไฟล์เอง)</button>
+            </div>
             <div class="smart-review-list" id="smartReviewList"></div>
             <div class="import-actions">
               <button id="btnSmartApprove" class="primary-btn" type="button">✓ อนุมัติ &amp; สร้าง Timeline</button>

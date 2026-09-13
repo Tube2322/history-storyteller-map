@@ -828,6 +828,14 @@ body.is-render-mode .import-panel {
 .smart-review-slot { display: flex; align-items: center; gap: 6px; }
 .smart-review-slot .sr-type { width: 42px; font-size: 10px; color: var(--ink-dim); text-transform: uppercase; }
 .smart-review-slot select { flex: 1; background: #05070a; color: var(--ink); border: 1px solid var(--panel-border); border-radius: 6px; font-size: 11px; padding: 3px 4px; }
+.sr-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 5px; border: 1px solid var(--panel-border); flex-shrink: 0; background: #05070a; }
+.sr-thumb-empty, .sr-thumb-audio { display: flex; align-items: center; justify-content: center; color: var(--ink-dim); font-size: 13px; }
+
+.smart-asset-gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.asset-gallery-item { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 64px; }
+.ag-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--panel-border); background: #05070a; }
+.ag-thumb-audio { display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--ink-dim); }
+.ag-seq { font-size: 9px; color: var(--ink-dim); text-transform: uppercase; text-align: center; }
 .confidence-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
 .confidence-badge.conf-high { background: rgba(52,199,89,0.18); color: #34c759; }
 .confidence-badge.conf-medium { background: rgba(255,184,0,0.18); color: #ffb800; }
@@ -945,6 +953,26 @@ body.is-render-mode .import-panel {
   border: 1px solid rgba(242, 181, 68, 0.35);
   white-space: nowrap;
 }
+
+/* เลือกภาพ/วิดีโอจริงต่อฉาก + คุมความยาวคลิปสั้น/ยาว (sec=) ตรงจากการ์ดพรีวิว ไม่ต้องเปิดแผงแก้ไขเต็ม */
+.pr-media-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.pr-media-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 5px; border: 1px solid var(--panel-border); background: #05070a; flex-shrink: 0; }
+.pr-media-empty { display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--ink-dim); text-align: center; }
+.pr-dur-field { font-family: var(--thai); font-size: 10px; color: var(--ink-dim); display: flex; align-items: center; gap: 4px; }
+.pr-dur-input { width: 46px; background: #05070a; color: var(--ink); border: 1px solid var(--panel-border); border-radius: 5px; font-size: 11px; padding: 2px 4px; }
+.pr-media-btn { font-size: 10px; padding: 3px 8px; }
+.pr-media-panel { margin-top: 6px; padding: 8px; border-radius: 8px; background: rgba(0,0,0,0.25); border: 1px solid var(--panel-border); }
+.pr-media-search-row { display: flex; gap: 6px; }
+.pr-media-query { flex: 1; background: #05070a; color: var(--ink); border: 1px solid var(--panel-border); border-radius: 6px; font-size: 11px; padding: 4px 6px; }
+.pr-media-search-results { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pr-media-loading { font-family: var(--thai); font-size: 11px; color: var(--ink-dim); }
+.pr-media-result { padding: 0; border: 1px solid var(--panel-border); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; line-height: 0; }
+.pr-media-result img { width: 72px; height: 72px; object-fit: cover; display: block; }
+.pr-media-result:hover { border-color: var(--accent); }
+.pr-video-result { display: block; width: 100%; padding: 6px 0; border-bottom: 1px solid var(--panel-border); font-size: 11px; }
+.pr-video-result:last-child { border-bottom: none; }
+.pr-video-desc { display: block; color: var(--ink-dim); font-size: 10px; margin: 2px 0 4px; }
+.pr-video-status { font-family: var(--mono); font-size: 10px; color: var(--ink-dim); margin-left: 6px; }
 
 .brand-settings {
   border-top: 1px solid var(--panel-border);
