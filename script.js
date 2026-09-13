@@ -2259,6 +2259,42 @@ function sceneStyleTags(s) {
   return tags;
 }
 
+// เขียนคีย์เดียวลงบรรทัดดิบของฉากนั้น (แทนที่ถ้ามีอยู่แล้ว/ต่อท้ายถ้ายังไม่มี) โดยไม่แตะคีย์อื่นบนบรรทัดเดียวกันเลย
+function upsertTagInLine(line, key, value) {
+  const segments = line.split("|").map((s) => s.trim()).filter(Boolean);
+  const re = new RegExp(`^${key}\\s*=`, "i");
+  let found = false;
+  const next = segments.map((seg) => {
+    if (re.test(seg)) { found = true; return `${key}=${value}`; }
+    return seg;
+  });
+  if (!found) next.push(`${key}=${value}`);
+  return next.join(" | ");
+}
+
+// จุดบกพร่องที่พบ: การเลือกภาพ/วิดีโอ/วินาทีผ่านการ์ดพรีวิวแก้แค่ scenes[idx] ในหน่วยความจำ ไม่เคยเขียนกลับ sceneRawLines/textarea
+// เลยไม่ติด autosave (ซึ่งเซฟแค่ el.importText.value) และ "บันทึกโปรเจกต์" ก็เซฟแค่ข้อความเดิมด้วย — ปิดแอปแล้วหาย
+// แก้โดยเขียนค่าที่เลือกกลับเป็น geophoto=/videourl=/sec= ในบรรทัดดิบของฉากนั้นทันทีที่เลือก ให้ autosave จับได้เหมือนพิมพ์เองเป๊ะ
+function syncSceneToRawLine(idx) {
+  const scene = scenes[idx];
+  if (!scene || !sceneRawLines[idx]) return;
+  let line = sceneRawLines[idx];
+  if (scene.geophoto) {
+    const val = `${sanitizeTagValue(scene.geophoto.url)}:${scene.geophoto.lat.toFixed(4)},${scene.geophoto.lng.toFixed(4)}:${sanitizeTagValue(scene.geophoto.label || "")}`;
+    line = upsertTagInLine(line, "geophoto", val);
+  }
+  if (scene.videoAsset) {
+    line = upsertTagInLine(line, "videourl", sanitizeTagValue(scene.videoAsset.url));
+  }
+  if (scene.overrideAudioUrl) {
+    line = upsertTagInLine(line, "audiourl", sanitizeTagValue(scene.overrideAudioUrl));
+  }
+  line = upsertTagInLine(line, "sec", scene.duration);
+  sceneRawLines[idx] = line;
+  el.importText.value = sceneRawLines.join("\n") + "\n";
+  try { localStorage.setItem(AUTOSAVE_KEY, el.importText.value); } catch (e) { /* ไม่มี localStorage ก็ข้ามไป */ }
+}
+
 // การ์ดสื่อปัจจุบันของฉาก (ถ้ามี) — ใช้ thumbnail เดียวกับที่ Smart Import ใช้ (slotThumbHtml) ให้หน้าตาสอดคล้องกันทั้งเว็ป
 function prCurrentMediaHtml(s) {
   if (s.geophoto) return `<img class="pr-media-thumb" src="${s.geophoto.url}" alt="" loading="lazy" title="${escapeHtml(s.geophoto.label || "รูปที่เลือกไว้")}" />`;
@@ -2333,6 +2369,7 @@ async function runImageSearchForScene(idx) {
         const r = results[Number(btn.dataset.idx)];
         const scene = scenes[idx];
         scene.geophoto = { url: r.url, lat: scene.lat, lng: scene.lng, label: r.title || scene.place };
+        syncSceneToRawLine(idx);
         document.getElementById(`prMediaPanel${idx}`).hidden = true;
         renderPreview();
       });
@@ -2373,6 +2410,7 @@ async function runVideoSearchForScene(idx) {
           statusEl.textContent = `${durText} · ${result.sizeMb}MB — ใช้คลิปนี้แล้ว`;
           const scene = scenes[idx];
           scene.videoAsset = { url: result.url, duration: result.duration || scene.duration, label: r.title };
+          syncSceneToRawLine(idx);
           renderPreview();
         } catch (err) {
           statusEl.textContent = `โหลดไม่สำเร็จ: ${err.message}`;
@@ -2402,6 +2440,7 @@ el.importPreview.addEventListener("change", (e) => {
   const val = Number(input.value);
   if (!Number.isFinite(val) || val <= 0) { input.value = scene.duration; return; }
   scene.duration = val;
+  syncSceneToRawLine(idx);
   const metaEl = input.closest(".preview-row").querySelector(".pr-meta");
   if (metaEl) metaEl.textContent = `${CAM_LABELS[scene.cam]} · ${scene.duration}s · ${scene.lat.toFixed(3)},${scene.lng.toFixed(3)}`;
 });
@@ -3963,6 +4002,7 @@ el.btnSmartApprove.addEventListener("click", () => {
       scene.overrideAudioUrl = m.audio.asset.url;
       scene.overrideAudioDuration = m.audio.asset.duration || scene.duration;
     }
+    syncSceneToRawLine(idx);
   });
   renderTimeline();
   goToScene(0);
