@@ -418,6 +418,8 @@ function startDashFlowAnimation() {
     if (step !== dashFlowStep) {
       dashFlowStep = step;
       map.setPaintProperty("scene-line-layer", "line-dasharray", DASH_FLOW_SEQUENCE[step]);
+      // แผนที่สนามรบ: ลูกศรเดินทัพ "วิ่ง" แบบเดียวกัน ให้รู้สึกว่ากองทัพกำลังเคลื่อนที่จริงแทนเส้นทึบนิ่งๆ (ผู้ใช้ขอเพิ่มลูกเล่นให้ cam=battle-map)
+      map.setPaintProperty("battle-arrows-layer", "line-dasharray", DASH_FLOW_SEQUENCE[step]);
     }
     requestAnimationFrame(tick);
   }
@@ -837,6 +839,8 @@ function renderBattleArrows(scene) {
     const labelMarker = getBattleLabelMarker(i);
     const labelEl = labelMarker.getElement();
     labelEl.innerHTML = `<span style="background:${a.color}">${escapeHtml(a.label)}</span>`;
+    // Battle Buildup Sync: บทพากย์พูดถึง "สะสม/เสริมกำลัง" ให้จุดเริ่มลูกศรที่มีอยู่แล้ว (a.from) เต้น pulse เน้นย้ำ — ไม่สร้างพิกัด/ลูกศรใหม่
+    labelEl.classList.toggle("is-buildup", !!scene.tacticalBuildup);
     labelMarker.setLngLat(a.from).addTo(map);
   });
   clearBattleMarkers(scene.arrows.length);
@@ -1506,6 +1510,44 @@ function inferCam(script) {
   return "establishing"; // เดาไม่ออก = ดีฟอลต์กลางสุดปลอดภัยสุดเหมือน cam อื่นๆที่ resolve ไม่ได้
 }
 
+// ---------- Motion Sync: กล้องบินเดินทาง (fly-to) เร็ว/ช้าตามน้ำเสียงบทพากย์ เมื่อไม่ได้ตั้ง motion= เอง ----------
+// ต่างจาก inferCam/inferMood ตรงที่มีผลจริงต่อความเร็วเคลื่อนกล้อง (motionMul) ไม่ใช่แค่ label เพราะจุดประสงค์คือให้ "แอนิเมชันสัมพันธ์กับเนื้อเรื่องจริง"
+// ยังคงลำดับความสำคัญเดิมของทั้งระบบ: motion= ที่พิมพ์เองชนะเสมอ ไม่เจอคำเลย = ไม่มีผลอะไรเพิ่ม (พฤติกรรมเดิมเป๊ะเหมือนก่อนมีฟีเจอร์นี้)
+const MOTION_KEYWORD_RULES = [
+  { words: ["อย่างรวดเร็ว", "สายฟ้าแลบ", "เร่งรีบ", "รีบเร่ง", "ฉับพลัน", "อย่างเร่งด่วน", "swiftly", "rapidly", "lightning", "blitz"], motion: "fast" },
+  { words: ["อย่างช้าๆ", "ค่อยๆ", "เชื่องช้า", "อย่างเชื่องช้า", "slowly", "gradually"], motion: "slow" },
+];
+function inferMotion(script) {
+  const text = (script || "").toLowerCase();
+  for (const rule of MOTION_KEYWORD_RULES) {
+    if (rule.words.some((w) => text.includes(w.toLowerCase()))) return rule.motion;
+  }
+  return null;
+}
+
+// ---------- Insert Transition Sync: แทรกภาพลอย/ตัดเข้าภาพเต็มจอ เลือกจังหวะเข้าให้สัมพันธ์กับเนื้อหา เมื่อไม่ได้ตั้ง inserttransition= เอง ----------
+// เลือกจาก 6 แบบที่มีอยู่แล้วเท่านั้น (INSERTTRANSITION_VALUES ด้านล่าง) ไม่สร้างเอฟเฟกต์ใหม่ ไม่แตะ insert=/geophoto=/evidence= เดิมเลย
+const INSERTTRANSITION_KEYWORD_RULES = [
+  { words: ["ระเบิด", "ถูกทำลาย", "พังทลาย", "ยิงถล่ม", "โจมตี", "explosion", "destroyed", "bombard", "struck"], transition: "flash" },
+  { words: ["ทันใดนั้น", "จู่ๆ", "กะทันหัน", "ไม่ทันตั้งตัว", "suddenly", "abruptly"], transition: "slide" },
+  { words: ["เผยให้เห็น", "ค้นพบ", "ปรากฏ", "reveal", "discover", "emerge"], transition: "dissolve" },
+];
+function inferInsertTransition(script) {
+  const text = (script || "").toLowerCase();
+  for (const rule of INSERTTRANSITION_KEYWORD_RULES) {
+    if (rule.words.some((w) => text.includes(w.toLowerCase()))) return rule.transition;
+  }
+  return null;
+}
+
+// ---------- Battle Buildup Sync: แผนที่สนามรบ (RTS) ตรวจคำ "สะสม/เสริมกำลัง" ในบทพากย์ เพิ่มจังหวะ pulse ที่จุดเริ่มลูกศรเดิมเท่านั้น ----------
+// ไม่สร้างลูกศร/พิกัด/ฝ่ายใหม่เด็ดขาด (ขัดกฎห้ามสร้างหลักฐานเอง) แค่เพิ่มแอนิเมชันบนสิ่งที่ผู้ใช้พิมพ์ arrows= ไว้แล้วเท่านั้น
+const BATTLE_BUILDUP_WORDS = ["สะสมกำลัง", "เสริมกำลัง", "ระดมพล", "รวมพล", "ระดมกำลัง", "สั่งสมกำลัง", "amass", "reinforcement", "build-up", "buildup"];
+function isBattleBuildup(script) {
+  const text = (script || "").toLowerCase();
+  return BATTLE_BUILDUP_WORDS.some((w) => text.includes(w.toLowerCase()));
+}
+
 function inferNarrativeBeat(script, cam, effect, highlight) {
   const text = script || "";
   for (const rule of NARRATIVE_KEYWORD_RULES) {
@@ -1767,27 +1809,32 @@ function finalizeScene(raw) {
   // ---------- resolve insertmode/inserttransition/evidence: label + เลย์เอาต์เท่านั้น ไม่แตะ insert/geophoto/callout เดิม ----------
   const insertmodeValid = INSERTMODE_VALUES.includes(insertmode) ? insertmode : null;
   const insertModeKey = insertmodeValid || DEFAULT_INSERTMODE_FOR_CAM[camKey] || "full";
+  // ไม่ได้ตั้ง inserttransition= เอง: เดาจากเนื้อหาบทพากย์ (Insert Transition Sync) ก่อนค่อยตกไปดีฟอลต์ "dissolve" ตอน resolve transition จริง
   const insertTransitionValid = INSERTTRANSITION_VALUES.includes(inserttransition) ? inserttransition : null;
+  const insertTransitionInferred = insertTransitionValid ? null : inferInsertTransition(script);
   const evidenceValid = EVIDENCE_VALUES.includes(evidence) ? evidence : null;
 
-  // ---------- resolve shot/cameraaction/motion/motioncurve: label ดีฟอลต์ตาม cam เดิม แต่ผลจริงใช้เฉพาะตอนผู้ใช้ระบุเอง ----------
+  // ---------- resolve shot/cameraaction/motion/motioncurve: label ดีฟอลต์ตาม cam เดิม แต่ผลจริงใช้เฉพาะตอนผู้ใช้ระบุเองหรือเดาได้จากเนื้อเรื่อง (Motion Sync) ----------
   const shotValid = SHOT_VALUES.includes(shotRaw) ? shotRaw : null;
   const cameraactionValid = CAMERAACTION_VALUES.includes(cameraactionRaw) ? cameraactionRaw : null;
   const motionValid = MOTION_VALUES.includes(motionRaw) ? motionRaw : null;
+  // เดาความเร็วจากบทพากย์เฉพาะ cam=fly-to เท่านั้น (คำว่า "รวดเร็ว/ช้าๆ" มีความหมายกับกล้องบินเดินทางเป็นหลัก) และเฉพาะตอนไม่ได้ตั้ง motion= เอง
+  const motionInferred = motionValid || camKey !== "fly-to" ? null : inferMotion(script);
+  const motionEffective = motionValid || motionInferred;
   const motioncurveValid = MOTIONCURVE_VALUES.includes(motioncurveRaw) ? motioncurveRaw : null;
 
   // กฎ 13: narrative=conclusion เดา shot ให้เป็น wide (เห็นภาพรวม) ถ้าไม่ได้ตั้งเอง — label เท่านั้น ไม่มีผลเลขจริงจนกว่าจะตั้ง shot= เอง (เหมือนดีฟอลต์อื่นทุกจุด)
   const shotKey = shotValid || (narrativeKey === "conclusion" ? "wide" : null) || DEFAULT_SHOT_FOR_CAM[camKey] || "wide";
   const cameraactionKey = cameraactionValid || DEFAULT_CAMERAACTION_FOR_CAM[camKey] || "gentle";
-  const motionKey = motionValid || DEFAULT_MOTION_FOR_CAM[camKey] || "normal";
-  const resolvedMotioncurveName = motioncurveValid || (motionValid && MOTION_IMPLIED_CURVE[motionValid]) || DEFAULT_MOTIONCURVE_FOR_CAM[camKey] || "ease-in-out";
+  const motionKey = motionEffective || DEFAULT_MOTION_FOR_CAM[camKey] || "normal";
+  const resolvedMotioncurveName = motioncurveValid || (motionEffective && MOTION_IMPLIED_CURVE[motionEffective]) || DEFAULT_MOTIONCURVE_FOR_CAM[camKey] || "ease-in-out";
 
   const shotZoomOverride = shotValid ? SHOT_ZOOM[shotValid] : null; // null = ไม่ยุ่งกับซูมเดิมของ cam นั้นเลย
   const cameraactionMul = cameraactionValid ? CAMERAACTION_MUL[cameraactionValid] : 1;
-  const motionMul = motionValid ? MOTION_MUL[motionValid] : 1;
-  const camActionMotionMul = cameraactionMul * motionMul; // ไม่ระบุทั้งคู่ = 1 = พฤติกรรมเดิมเป๊ะ (คูณรวมกับ camPaceMul ของ Story System อีกที)
-  // ไม่ระบุ motioncurve และไม่ระบุ motion (หรือ motion ที่ไม่มี curve โดยนัย) = null = ใช้ EASE_CINEMATIC เดิมของระบบ ไม่เปลี่ยนอะไร
-  const motioncurveFn = (motioncurveValid || (motionValid && MOTION_IMPLIED_CURVE[motionValid])) ? MOTIONCURVE_EASE_FN[resolvedMotioncurveName] : null;
+  const motionMul = motionEffective ? MOTION_MUL[motionEffective] : 1;
+  const camActionMotionMul = cameraactionMul * motionMul; // ไม่ระบุ/เดาไม่ออกทั้งคู่ = 1 = พฤติกรรมเดิมเป๊ะ (คูณรวมกับ camPaceMul ของ Story System อีกที)
+  // ไม่ระบุ motioncurve และไม่มี motion ที่ระบุ/เดาได้ (หรือมีแต่ไม่มี curve โดยนัย) = null = ใช้ EASE_CINEMATIC เดิมของระบบ ไม่เปลี่ยนอะไร
+  const motioncurveFn = (motioncurveValid || (motionEffective && MOTION_IMPLIED_CURVE[motionEffective])) ? MOTIONCURVE_EASE_FN[resolvedMotioncurveName] : null;
 
   const focusPointVal = parseFocusPoint(focuspoint);
   const tiltExplicit = tilt !== undefined && String(tilt).trim() !== "";
@@ -1885,7 +1932,8 @@ function finalizeScene(raw) {
     mapmodeSource: mapmodeValid ? "user" : "auto",
     insertMode: insertModeKey,
     insertModeSource: insertmodeValid ? "user" : "auto",
-    insertTransition: insertTransitionValid,
+    insertTransition: insertTransitionValid || insertTransitionInferred,
+    tacticalBuildup: isBattleBuildup(script), // Battle Buildup Sync — ใช้เฉพาะตอน cam=battle-map ตอน render (renderBattleArrows) ไม่มีผลกับ cam อื่น
     evidenceType: evidenceValid,
     pace: paceKey,
     paceSource: paceValid ? "user" : "auto",
