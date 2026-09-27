@@ -898,7 +898,7 @@ const calloutRingWrapEl = makeMarkerEl("callout-ring-wrap", `<span class="callou
 const markerTo = new maplibregl.Marker({ element: pinToEl, anchor: "center" });
 const markerFrom = new maplibregl.Marker({ element: pinFromEl, anchor: "center" });
 const markerArrow = new maplibregl.Marker({ element: arrowWrapEl, anchor: "center", rotationAlignment: "map" });
-const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "bottom" });
+const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "bottom", offset: [0, -14] }); // ยกขึ้นพ้นหมุด+ป้ายชื่อ (หมุด anchor=center ที่พิกัดเดียวกัน เดิมไอคอนเอฟเฟกต์ทับกลางชื่อสถานที่)
 // offset ยกขึ้น กันป้ายชื่อใต้รูป (geo-photo-label) ไปทับป้ายชื่อหมุดหลัก (pin label) ที่อยู่จุดพิกัดเดียวกัน
 const markerGeoPhoto = new maplibregl.Marker({ element: geoPhotoWrapEl, anchor: "bottom", offset: [0, -34] });
 const markerGeoVideo = new maplibregl.Marker({ element: geoVideoWrapEl, anchor: "bottom", offset: [152, -34] }); // เลื่อนไปข้างขวาให้พ้นการ์ดรูป (กว้าง 140px) ถ้าฉากมีทั้งรูปและวิดีโอ
@@ -930,21 +930,39 @@ function clearBattleMarkers(fromIndex) {
   }
 }
 
+// camSeq เพิ่มทุกครั้งที่เปลี่ยนฉาก — งานกล้องที่รอคิวอยู่ (หมุน orbit / drift หลังกล้องถึงที่) เช็กค่านี้ก่อนทำงาน
+// กันงานของฉากเก่ามาแย่งกล้องฉากใหม่ (เดิม orbit หมุนค้างข้ามฉาก และ setTimeout ของฉากเก่ายิงกล้องไปผิดฉากตอนกดข้ามเร็วๆ)
+let camSeq = 0;
 let orbitRAF = null;
 function stopOrbit() {
   if (orbitRAF) cancelAnimationFrame(orbitRAF);
   orbitRAF = null;
 }
-function startOrbit(durationSec, startBearing = map.getBearing()) {
+const EASE_IN_OUT_SINE = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
+function startOrbit(durationMs, startBearing = map.getBearing()) {
   stopOrbit();
   const start = performance.now();
-  const totalMs = Math.max(durationSec, 1) * 1000;
+  const totalMs = Math.max(durationMs, 1000);
   function step(now) {
     const t = Math.min(1, (now - start) / totalMs);
-    map.setBearing(startBearing + t * 90);
+    map.setBearing(startBearing + EASE_IN_OUT_SINE(t) * 90); // ค่อยๆเร่ง-ค่อยๆผ่อน ไม่กระชากตอนเริ่ม/จบ
     if (t < 1) orbitRAF = requestAnimationFrame(step);
   }
   orbitRAF = requestAnimationFrame(step);
+}
+// รันงานกล้องต่อ "หลังกล้องถึงที่จริง" (moveend) แทนการเดาเวลาด้วย setTimeout — ข้ามทิ้งถ้าฉากเปลี่ยนไปแล้ว
+// moveend ของท่าเก่าที่ถูกขัดจังหวะก็ยิงมาได้ — ต้องรอให้ถึงเวลาที่ท่าปัจจุบันควรจบจริงก่อน ไม่งั้น drift จะไปตัดท่าเข้าฉากกลางทาง
+let arrivalJobId = 0;
+function afterCameraArrives(arriveMs, fn) {
+  const jobId = ++arrivalJobId; // มีงานรอได้ทีละงาน — งานใหม่แทนที่งานเก่า (ฉากเดียวกันถูกสั่งซ้ำก็ไม่ drift ซ้อน)
+  const seq = camSeq;
+  const due = performance.now() + arriveMs - 50;
+  const onEnd = () => {
+    if (seq !== camSeq || jobId !== arrivalJobId) return;
+    if (performance.now() < due) { map.once("moveend", onEnd); return; }
+    fn();
+  };
+  map.once("moveend", onEnd);
 }
 
 function compassBearing(a, b) {
@@ -1191,7 +1209,7 @@ let lastCamZoom = null;
 let lastMapCamState = null;
 const GEO_CONTINUITY_THRESHOLD_M = 60000; // ~60กม. ถือว่า "พื้นที่ต่อเนื่องกัน"
 
-function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
+function moveCamera(scene, durationSecOverride, frameOverride, prevScene, travelMs = 0) {
   // focuspoint=lat,lng — กล้องเล็งจุดนี้แทนพิกัดหลักของฉาก (scene.lat/lng ยังใช้กับหมุด/ไฮไลต์/มาร์กเกอร์อื่นเหมือนเดิมทุกจุด ไม่กระทบ)
   const center = frameOverride ? frameOverride.center : scene.focusPoint ? [scene.focusPoint.lng, scene.focusPoint.lat] : [scene.lng, scene.lat];
   const durationSec = durationSecOverride || scene.duration;
@@ -1218,12 +1236,23 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
   // ไม่มีทั้งคู่ = ใช้ baseline เดิมเป๊ะทุกจุด (ค่า fallback ท้ายสุดในแต่ละ branch ด้านล่าง)
   const shotZoom = scene.shotZoomOverride;
   const isInsertCam = scene.cam === "cut-to-insert" || scene.cam === "insert-overlay";
+  // travelMs > 0 = ฉากอยู่ไกลจากฉากก่อน: บินโค้งทีเดียว (flyTo ซูมออก→เดินทาง→ซูมเข้าเองในตัว) แทนการต่อ 2 ท่อนแบบเดิมที่กระชากตรงรอยต่อ
+  const move = (opts, baseMs) =>
+    travelMs ? map.flyTo({ ...opts, duration: travelMs, curve: 1.42, easing: easingFn }) : map.easeTo({ ...opts, duration: baseMs, easing: easingFn });
+  const arriveMs = (baseMs) => (travelMs || baseMs);
+  // drift: หลังกล้องถึงที่ ให้เคลื่อนช้าๆต่อจนจบฉาก (ซูมดันเข้า/ถอยเบาๆ) ภาพไม่นิ่งตายแบบสไลด์ — ข้ามถ้าผู้ใช้สั่ง cameraaction=static หรือฉากสั้นเกิน
+  const scheduleDrift = (zoom, zoomDelta, baseMs) => {
+    const remainingMs = durationSec * 1000 - arriveMs(baseMs);
+    if (scene.cameraaction === "static" || remainingMs < 1500) return zoom;
+    afterCameraArrives(arriveMs(baseMs), () => map.easeTo({ zoom: zoom + zoomDelta, duration: remainingMs, easing: EASE_IN_OUT_SINE }));
+    return zoom + zoomDelta;
+  };
 
   if (isInsertCam) {
     stopOrbit();
     const zoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : null;
     const zoomParam = zoom != null ? { zoom } : {};
-    map.easeTo({ center, duration: 450 * paceMul, bearing: map.getBearing(), easing: easingFn, ...zoomParam });
+    move({ center, bearing: map.getBearing(), ...zoomParam }, 450 * paceMul);
     lastCamPitch = pitch;
     lastCamBearing = bearing;
     if (zoom != null) lastCamZoom = zoom;
@@ -1234,8 +1263,8 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
     const setupMs = 650 * paceMul;
     const orbitPitch = pitch || 45;
     const orbitZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 8;
-    map.easeTo({ center, zoom: orbitZoom, duration: setupMs, pitch: orbitPitch, bearing, easing: easingFn });
-    setTimeout(() => startOrbit(durationSec, bearing), setupMs);
+    move({ center, zoom: orbitZoom, pitch: orbitPitch, bearing }, setupMs);
+    afterCameraArrives(arriveMs(setupMs), () => startOrbit(durationSec * 1000 - arriveMs(setupMs), bearing));
     lastCamPitch = orbitPitch;
     lastCamBearing = bearing;
     lastCamZoom = orbitZoom;
@@ -1260,27 +1289,31 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene) {
     // มุมมองแบบเกม RTS: เอียงเล็กน้อยพอเห็นมิติ ไม่หมุน (เว้นแต่ผู้ใช้ตั้ง bearing เอง)
     appliedZoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 6;
     appliedPitch = pitch || 35;
-    map.easeTo({ center, zoom: appliedZoom, duration: 800 * paceMul, bearing, pitch: appliedPitch, easing: easingFn });
+    move({ center, zoom: appliedZoom, bearing, pitch: appliedPitch }, 800 * paceMul);
   } else if (scene.cam === "fly-to") {
     // fly-to ที่มี frameOverride (มาจาก route bounds จริง) ใช้ค่านั้นเสมอ ไม่รับซูมสืบทอด กันเส้นทางจริงถูกบังจนเห็นไม่ครบ
     appliedZoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 6.2;
     if (scene.follow) {
       // follow=on: กล้องแค่ขยับไปตั้งต้นที่จุดเริ่มเร็วๆ แล้วปล่อยให้ startPathIcon() เป็นคนลากกล้องตามไอคอนเองทุกเฟรม
       appliedPitch = pitch || 30;
-      map.easeTo({ center, zoom: appliedZoom, duration: 550 * paceMul, bearing, pitch: appliedPitch, easing: easingFn });
+      move({ center, zoom: appliedZoom, bearing, pitch: appliedPitch }, 550 * paceMul);
     } else {
       // ไม่คูณ paceMul: ระยะเวลานี้ผูกกับความยาวฉากจริง (จากเสียงพากย์) อยู่แล้ว ไม่ใช่ค่าคงที่แบบอื่นๆ
       map.flyTo({ center, zoom: appliedZoom, duration: durationSec * 1000, curve: 1.4, bearing, pitch, easing: easingFn });
     }
   } else if (scene.cam === "push-in") {
-    appliedZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 10;
-    map.easeTo({ center, zoom: appliedZoom, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
+    // ต่อเนื่องจากฉากใกล้กัน: ดันเข้า "จากช็อตเดิม" แทนการยืนซูมเดิม (เดิม push-in ต่อจากฉากใกล้ๆ แทบไม่ขยับเลย)
+    appliedZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? Math.min(inheritedZoom + 1.2, 16) : 10;
+    move({ center, zoom: appliedZoom, bearing, pitch }, 850 * paceMul);
+    appliedZoom = scheduleDrift(appliedZoom, 0.35, 850 * paceMul);
   } else if (scene.cam === "zoom-out") {
-    appliedZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 4.2;
-    map.easeTo({ center, zoom: appliedZoom, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
+    appliedZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? Math.max(inheritedZoom - 1.5, 2) : 4.2;
+    move({ center, zoom: appliedZoom, bearing, pitch }, 850 * paceMul);
+    appliedZoom = scheduleDrift(appliedZoom, -0.25, 850 * paceMul);
   } else {
     appliedZoom = shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 4.3;
-    map.easeTo({ center, zoom: appliedZoom, duration: 850 * paceMul, bearing, pitch, easing: easingFn });
+    move({ center, zoom: appliedZoom, bearing, pitch }, 850 * paceMul);
+    appliedZoom = scheduleDrift(appliedZoom, 0.2, 850 * paceMul);
   }
   lastCamPitch = appliedPitch;
   lastCamBearing = bearing;
@@ -2815,24 +2848,11 @@ function goToScene(index, durationOverride) {
 
   // Smooth Geographic Navigation (+ visualbridge=on เดิม): ฉากที่ไม่ใช่ fly-to (มีเส้นทาง/บินข้ามพื้นที่อยู่แล้วในตัว) ถ้ากระโดดไกลจากฉากก่อนหน้า
   // ให้ซูมออกเห็นบริบทภูมิศาสตร์สั้นๆก่อน แล้วค่อยเข้ากล้องจริงของฉากนี้ต่อ กันความรู้สึก "รีเซ็ตแผนที่เริ่มใหม่"/เวียนหัว (ดีฟอลต์ใหม่: ระยะ regional/global ทำอัตโนมัติ ไม่ต้องพิมพ์ visualbridge=on เองแล้ว)
-  const doMoveCamera = () => moveCamera(scene, durationOverride, battleFrame || flyFrame, prevScene);
   const navDecision = resolveNavigationBridge(scene, prevScene);
-  if (navDecision.bridge) {
-    const bounds = new maplibregl.LngLatBounds([prevScene.lng, prevScene.lat], [prevScene.lng, prevScene.lat]).extend([scene.lng, scene.lat]);
-    const bridgeCam = map.cameraForBounds(bounds, { padding: 80 });
-    if (bridgeCam) {
-      // global เผยบริบทกว้างกว่า regional (ซูมออกมากกว่า+นานกว่านิดหน่อย) แต่ยังกันไม่ให้ซูมออกไกลเกินจำเป็น (เพดานต่ำสุด zoom 2)
-      const isGlobal = navDecision.tier === "global";
-      const bridgeMs = isGlobal ? 650 : 500;
-      const zoomFloor = isGlobal ? 2 : 3;
-      map.easeTo({ center: bridgeCam.center, zoom: Math.max(bridgeCam.zoom - (isGlobal ? 1 : 0.5), zoomFloor), duration: bridgeMs, easing: EASE_CINEMATIC });
-      setTimeout(doMoveCamera, bridgeMs);
-    } else {
-      doMoveCamera();
-    }
-  } else {
-    doMoveCamera();
-  }
+  const sceneMs = (durationOverride || scene.duration) * 1000;
+  // global บินนานกว่า regional ให้เห็นบริบทโลก แต่ไม่เกินครึ่งฉาก (ยังเหลือเวลาให้เนื้อหา)
+  const travelMs = navDecision.bridge ? Math.max(900, Math.min(navDecision.tier === "global" ? 2400 : 1600, sceneMs * 0.5)) : 0;
+  moveCamera(scene, durationOverride, battleFrame || flyFrame, prevScene, travelMs);
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
     btn.classList.toggle("is-active", i === activeIndex);
