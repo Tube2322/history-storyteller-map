@@ -873,6 +873,15 @@ function placeBattleArrows(scene) {
     const marker = getBattleArrowMarker(i);
     marker.setRotation(compassBearing(a.from, a.to) - 90).setLngLat(tips[i]).addTo(map);
     requestAnimationFrame(() => marker.getElement().classList.remove("is-pending"));
+
+    // ป้ายฝ่าย (ที่จุดเริ่มลูกศร) ใกล้หมุดบนจอแคบ ๆ อาจทับชื่อสถานที่ — ดันขึ้น/ลงให้พ้นป้ายชื่อหมุด
+    const labelMarker = getBattleLabelMarker(i);
+    const lr = labelMarker.getElement().getBoundingClientRect();
+    const gap = 6;
+    if (lr.right > pinRect.left - gap && lr.left < pinRect.right + gap && lr.bottom > pinRect.top - gap && lr.top < pinRect.bottom + gap) {
+      const above = lr.top + lr.height / 2 < pinRect.top + pinRect.height / 2;
+      labelMarker.setOffset([0, above ? pinRect.top - gap - lr.bottom : pinRect.bottom + gap - lr.top]);
+    }
   });
 }
 
@@ -907,7 +916,7 @@ function renderBattleArrows(scene) {
     labelEl.innerHTML = `<span style="background:${a.color}">${escapeHtml(a.label)}</span>`;
     // Battle Buildup Sync: บทพากย์พูดถึง "สะสม/เสริมกำลัง" ให้จุดเริ่มลูกศรที่มีอยู่แล้ว (a.from) เต้น pulse เน้นย้ำ — ไม่สร้างพิกัด/ลูกศรใหม่
     labelEl.classList.toggle("is-buildup", !!scene.tacticalBuildup);
-    labelMarker.setLngLat(a.from).addTo(map);
+    labelMarker.setOffset([0, 0]).setLngLat(a.from).addTo(map);
   });
   clearBattleMarkers(scene.arrows.length);
   return cam ? { center: cam.center, zoom: cam.zoom } : null;
