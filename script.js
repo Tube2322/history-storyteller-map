@@ -280,6 +280,8 @@ let lastExportAspect = "916";
 function fitStage() {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  el.stageEl.dataset.aspect = currentAspect;
+  document.getElementById("previewAspect").value = currentAspect; // อัดเสร็จแล้วคืนเป็นเต็มจอ ตัวเลือกพรีวิวต้องตามด้วย
   if (currentAspect === "free") {
     el.stageEl.style.width = "100%";
     el.stageEl.style.height = "100%";
@@ -2216,6 +2218,17 @@ function renderValidationReport() {
 el.debugModeToggle.addEventListener("change", () => {
   debugMode = el.debugModeToggle.checked;
   renderValidationReport();
+});
+
+// พรีวิวกรอบวิดีโอขณะแก้ไข — เห็นปัญหาตัวหนังสือล้น/โดนบังก่อนกดอัดจริง (ตอนอัดเสร็จ startExport คืนเป็นเต็มจอเองอยู่แล้ว)
+const previewAspectSelect = document.getElementById("previewAspect");
+const safeZoneToggle = document.getElementById("safeZoneToggle");
+previewAspectSelect.addEventListener("change", () => {
+  currentAspect = previewAspectSelect.value;
+  fitStage();
+});
+safeZoneToggle.addEventListener("change", () => {
+  el.stageEl.classList.toggle("show-safe-zone", safeZoneToggle.checked);
 });
 
 function isImageUrl(str) {
