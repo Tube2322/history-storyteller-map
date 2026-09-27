@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" />
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -344,6 +344,17 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
           <div class="import-actions">
             <button id="btnBulkImageSearch" class="ghost-btn" type="button">🔍 ค้นภาพจริงทั้งสคริปต์อัตโนมัติ (เฉพาะฉากที่ยังไม่มีสื่อ)</button>
           </div>
+          <div class="import-actions">
+            <button id="btnRhythm" class="ghost-btn" type="button">🎬 จัดจังหวะกล้องให้หลากหลาย</button>
+          </div>
+          <div id="rhythmReviewWrap" hidden>
+            <p class="import-hint">ข้อเสนอมุมกล้องตามเนื้อเรื่อง (ระยะทาง / จังหวะเรื่อง / อารมณ์) ไม่ให้ซ้ำติดกัน — ติ๊กออกข้อที่ไม่อยากเปลี่ยน แล้วกด "ใช้ที่เลือก"</p>
+            <div class="bulk-image-review-list" id="rhythmReviewList"></div>
+            <div class="import-actions">
+              <button id="btnRhythmApply" class="primary-btn" type="button">ใช้ที่เลือก</button>
+              <button id="btnRhythmClose" class="ghost-btn" type="button">ปิด</button>
+            </div>
+          </div>
           <p class="import-hint" id="bulkImageStatus" hidden></p>
           <div id="bulkImageReviewWrap" hidden>
             <p class="import-hint">คลิกรูปที่ตรงเพื่อเลือกให้ฉากนั้น — ฉากไหนไม่พบภาพจริงจะไม่ใส่อะไรให้ (ไม่เดาส่งเดะ) เลือกครบแล้วกดปิด</p>
@@ -571,7 +582,7 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
       <p class="import-hint">งานบันทึกอัตโนมัติในเบราว์เซอร์ทุกครั้งที่แก้ไข — ปิดเว็บแล้วเปิดใหม่ทำต่อได้ทันที</p>
       <form method="dialog"><button class="primary-btn">ปิด</button></form>
     </dialog>
-    <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="script.js"></script>
   </body>

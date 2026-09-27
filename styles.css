@@ -476,7 +476,8 @@ html, body {
   left: 50%;
   /* ยกป้ายหัวข้อ evidence= ขึ้นสูงกว่าเดิม (18%→9%) — เดิมชนกับการ์ดรูปปักพิกัด (geophoto) ที่ลอยเหนือหมุดตรงกลางจอพอดี
      เพราะกล้อง insert-overlay/cut-to-insert เล็งกลางจอไปที่พิกัดฉากเสมอ ทำให้ป้ายกับรูปช้อนทับกัน (เจอจริงตอนเทสสคริปต์ยาว) */
-  top: 9%;
+  /* จุดกึ่งกลางกล่อง = ขอบบนที่ปลอดภัย + ครึ่งความสูงกล่อง (กว้าง 30% × 10/16 → สูง 18.75cqw) — เดิม top:9% ตรงๆ ทำให้ครึ่งบนของกล่องหลุดขอบจอในกรอบ 16:9 */
+  top: calc(max(12px, var(--safe-top)) + 9.4cqw);
   transform: translate(-50%, -50%) scale(0.9);
   width: 30%;
   aspect-ratio: 16 / 10;
@@ -766,6 +767,8 @@ body.is-render-mode .import-panel {
 }
 .scene-chip:hover { background: rgba(255,255,255,0.07); }
 .scene-chip.is-active { color: var(--ink); background: rgba(255,255,255,0.1); }
+.scene-chip.is-droptarget { outline: 2px dashed var(--accent); outline-offset: 2px; background: var(--accent-dim); color: var(--ink); }
+.scene-chip.is-uploading { opacity: 0.6; cursor: progress; }
 .scene-chip .chip-place { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
 .scene-chip .chip-cam { display: block; font-family: var(--mono); opacity: .8; margin-top: 2px; }
 
@@ -1044,6 +1047,10 @@ body.is-render-mode .import-panel {
 .bulk-image-review-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; max-height: 420px; overflow-y: auto; }
 .bulk-review-row { padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,0.04); }
 .bulk-review-chosen { font-size: 10px; color: #34c759; margin-left: 6px; }
+.rhythm-row { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.rhythm-row input { margin-top: 3px; flex: none; }
+.rhythm-change { font-family: var(--mono); font-size: 11px; }
+.rhythm-reason { display: block; font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
 
 .brand-settings {
   border-top: 1px solid var(--panel-border);

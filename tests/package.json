@@ -1,0 +1,14 @@
+{
+  "name": "history-storyteller-map-ui-check",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "type": "module",
+  "scripts": {
+    "test": "node ui-check.mjs"
+  },
+  "devDependencies": {
+    "maplibre-gl": "4.7.1",
+    "playwright": "^1.47.0",
+    "xlsx": "0.18.5"
+  }
+}

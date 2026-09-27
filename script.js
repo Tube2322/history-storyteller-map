@@ -233,6 +233,11 @@ const el = {
   bulkImageReviewWrap: document.getElementById("bulkImageReviewWrap"),
   bulkImageReviewList: document.getElementById("bulkImageReviewList"),
   btnBulkImageClose: document.getElementById("btnBulkImageClose"),
+  btnRhythm: document.getElementById("btnRhythm"),
+  rhythmReviewWrap: document.getElementById("rhythmReviewWrap"),
+  rhythmReviewList: document.getElementById("rhythmReviewList"),
+  btnRhythmApply: document.getElementById("btnRhythmApply"),
+  btnRhythmClose: document.getElementById("btnRhythmClose"),
 };
 
 let scenes = [];
@@ -828,31 +833,19 @@ function showBoundary(scene) {
 }
 
 // วาดลูกศรเดินทัพหลายเส้นพร้อมกัน (แผนที่สนามรบ) แล้วคืนกรอบกล้องที่ครอบทุกจุดพอดี
+// ลูกศรที่พุ่งเข้าหมุดของฉากเอง: หยุดหัวลูกศรก่อนถึงหมุด (วัดเป็นพิกเซลที่ซูมจริงของฉาก) ไม่ให้ไปปักทับป้ายชื่อสถานที่
+// ป้ายชื่ออยู่ทางขวาของหมุด — ลูกศรที่มาจากทิศตะวันออกต้องหยุดให้พ้นความกว้างป้ายด้วย
+function battleArrowTip(a, scene, zoom) {
+  if (zoom == null || haversine(a.to, [scene.lng, scene.lat]) > 3000) return a.to;
+  const metersPerPx = (156543.03 * Math.cos((scene.lat * Math.PI) / 180)) / 2 ** zoom;
+  const dLng = a.from[0] - a.to[0];
+  const fromEast = dLng > 0 && Math.abs(dLng) > Math.abs(a.from[1] - a.to[1]) * 0.5;
+  const labelWidth = pinToEl.querySelector(".pin-label").offsetWidth || 120;
+  const stopPx = fromEast ? labelWidth + 40 : 40;
+  const f = Math.max(0.3, 1 - (stopPx * metersPerPx) / haversine(a.from, a.to));
+  return [a.from[0] + (a.to[0] - a.from[0]) * f, a.from[1] + (a.to[1] - a.from[1]) * f];
+}
 function renderBattleArrows(scene) {
-  const features = scene.arrows.map((a) => ({
-    type: "Feature",
-    properties: { color: a.color },
-    geometry: { type: "LineString", coordinates: [a.from, a.to] },
-  }));
-  const src = map.getSource("battle-arrows");
-  if (src) src.setData({ type: "FeatureCollection", features });
-
-  scene.arrows.forEach((a, i) => {
-    const arrowMarker = getBattleArrowMarker(i);
-    const bearing = compassBearing(a.from, a.to);
-    const el2 = arrowMarker.getElement().querySelector(".battle-arrow-head");
-    el2.style.color = a.color;
-    arrowMarker.setRotation(bearing - 90).setLngLat(a.to).addTo(map);
-
-    const labelMarker = getBattleLabelMarker(i);
-    const labelEl = labelMarker.getElement();
-    labelEl.innerHTML = `<span style="background:${a.color}">${escapeHtml(a.label)}</span>`;
-    // Battle Buildup Sync: บทพากย์พูดถึง "สะสม/เสริมกำลัง" ให้จุดเริ่มลูกศรที่มีอยู่แล้ว (a.from) เต้น pulse เน้นย้ำ — ไม่สร้างพิกัด/ลูกศรใหม่
-    labelEl.classList.toggle("is-buildup", !!scene.tacticalBuildup);
-    labelMarker.setLngLat(a.from).addTo(map);
-  });
-  clearBattleMarkers(scene.arrows.length);
-
   const points = scene.arrows.flatMap((a) => [a.from, a.to]);
   points.push([scene.lng, scene.lat]);
   let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
@@ -864,6 +857,31 @@ function renderBattleArrows(scene) {
   });
   const bounds = new maplibregl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
   const cam = map.cameraForBounds(bounds, { padding: 70 });
+  const tips = scene.arrows.map((a) => battleArrowTip(a, scene, cam ? cam.zoom : null));
+
+  const features = scene.arrows.map((a, i) => ({
+    type: "Feature",
+    properties: { color: a.color },
+    geometry: { type: "LineString", coordinates: [a.from, tips[i]] },
+  }));
+  const src = map.getSource("battle-arrows");
+  if (src) src.setData({ type: "FeatureCollection", features });
+
+  scene.arrows.forEach((a, i) => {
+    const arrowMarker = getBattleArrowMarker(i);
+    const bearing = compassBearing(a.from, a.to);
+    const el2 = arrowMarker.getElement().querySelector(".battle-arrow-head");
+    el2.style.color = a.color;
+    arrowMarker.setRotation(bearing - 90).setLngLat(tips[i]).addTo(map);
+
+    const labelMarker = getBattleLabelMarker(i);
+    const labelEl = labelMarker.getElement();
+    labelEl.innerHTML = `<span style="background:${a.color}">${escapeHtml(a.label)}</span>`;
+    // Battle Buildup Sync: บทพากย์พูดถึง "สะสม/เสริมกำลัง" ให้จุดเริ่มลูกศรที่มีอยู่แล้ว (a.from) เต้น pulse เน้นย้ำ — ไม่สร้างพิกัด/ลูกศรใหม่
+    labelEl.classList.toggle("is-buildup", !!scene.tacticalBuildup);
+    labelMarker.setLngLat(a.from).addTo(map);
+  });
+  clearBattleMarkers(scene.arrows.length);
   return cam ? { center: cam.center, zoom: cam.zoom } : null;
 }
 
@@ -1207,6 +1225,9 @@ let lastCamZoom = null;
 // สถานะกล้องล่าสุดจาก "ฉากแผนที่จริง" เท่านั้น (ไม่นับ cut-to-insert/insert-overlay) — ใช้กับ returnmap=on
 // ให้กลับไปจุดเดิมก่อนตัดเข้า insert ได้ แม้ฉากก่อนหน้าตรงๆจะเป็น insert scene ที่ไม่มีตำแหน่งกล้องแผนที่จริงของมันเอง
 let lastMapCamState = null;
+// ฉากที่อยู่จุดเดียวกับฉากก่อน (เช่น ตัดเข้าภาพแทรกที่เดิม) ไม่มีการเดินทาง — ไม่วาดเส้นทาง/ลูกศรความยาวศูนย์ทับป้ายชื่อหมุด
+const ROUTE_MIN_DISTANCE_M = 2000;
+const ROUTE_MIN_MARKER_PX = 220; // ป้ายชื่อหมุดกว้างได้ถึง ~220px ทางขวาของหมุด
 const GEO_CONTINUITY_THRESHOLD_M = 60000; // ~60กม. ถือว่า "พื้นที่ต่อเนื่องกัน"
 
 function moveCamera(scene, durationSecOverride, frameOverride, prevScene, travelMs = 0) {
@@ -2595,6 +2616,106 @@ function renderBulkImageReview() {
 }
 
 el.btnBulkImageSearch.addEventListener("click", runBulkImageSearch);
+
+// ---------- จัดจังหวะกล้องให้หลากหลาย: เสนอ cam/cameraaction ตามเนื้อเรื่อง ให้ผู้ใช้ติ๊กเลือกก่อนเขียนลงสคริปต์ ----------
+// ไม่แตะฉากที่ "เนื้อหา" กำหนดกล้องอยู่แล้ว (ภาพแทรก / แผนที่สนามรบ) และไม่ทับมุมกล้องที่ผู้ใช้ตั้งเอง เว้นแต่มันซ้ำกับฉากก่อนหน้า
+
+const RHYTHM_FIXED_CAMS = new Set(["cut-to-insert", "insert-overlay", "battle-map"]);
+const RHYTHM_MOOD_ACTION = { tension: "dynamic", fear: "dynamic", shock: "urgent", tragic: "gentle", calm: "gentle", mysterious: "drift", epic: "cinematic", hope: "cinematic" };
+
+function rhythmCandidates(scene, prev, i) {
+  if (i === 0) return { cams: ["establishing"], reason: "ฉากเปิด — เห็นภาพรวมก่อน" };
+  if (prev && haversine([prev.lng, prev.lat], [scene.lng, scene.lat]) > GEO_CONTINUITY_THRESHOLD_M) {
+    return { cams: ["fly-to", "establishing"], reason: "ย้ายพื้นที่ไกล — พาคนดูเดินทางไปด้วย" };
+  }
+  const beat = scene.narrative;
+  if (["climax", "reveal", "turningpoint"].includes(beat) || ["epic", "shock"].includes(scene.mood)) {
+    return { cams: ["orbit", "push-in", "zoom-out"], reason: "จุดพีคของเรื่อง — มุมกล้องเด่น" };
+  }
+  if (["conclusion", "resolution", "consequence"].includes(beat)) {
+    return { cams: ["zoom-out", "establishing", "push-in"], reason: "ช่วงสรุป — ถอยกล้องให้เห็นภาพรวม" };
+  }
+  if (["tension", "fear", "mysterious"].includes(scene.mood)) {
+    return { cams: ["push-in", "zoom-out", "establishing"], reason: "บรรยากาศตึงเครียด — ดันกล้องเข้าหา" };
+  }
+  return { cams: ["push-in", "zoom-out", "establishing", "orbit"], reason: "" };
+}
+
+function proposeRhythm(list) {
+  const proposals = [];
+  const finalCams = [];
+  list.forEach((scene, i) => {
+    const prevCam = finalCams[i - 1];
+    if (RHYTHM_FIXED_CAMS.has(scene.cam)) { finalCams.push(scene.cam); return; }
+    const orbitRecently = finalCams.slice(-3).includes("orbit"); // orbit เด่นมาก ใช้ถี่แล้วเวียนหัว
+    const { cams, reason } = rhythmCandidates(scene, list[i - 1], i);
+    const pick = cams.find((c) => c !== prevCam && !(c === "orbit" && orbitRecently)) || scene.cam;
+    const repeats = scene.cam === prevCam;
+    const camChange = pick !== scene.cam && (scene.camSource === "auto" || repeats);
+    const cam = camChange ? pick : scene.cam;
+    finalCams.push(cam);
+    const action = RHYTHM_MOOD_ACTION[scene.mood];
+    const actionChange = action && scene.cameraactionSource === "auto" && action !== scene.cameraaction;
+    if (!camChange && !actionChange) return;
+    proposals.push({
+      idx: i,
+      cam: camChange ? cam : null,
+      action: actionChange ? action : null,
+      reason: camChange ? [repeats ? "มุมกล้องซ้ำกับฉากก่อนหน้า" : "", reason].filter(Boolean).join(" — ") : `อารมณ์ฉาก "${scene.mood}"`,
+    });
+  });
+  return proposals;
+}
+
+let lastRhythmProposals = [];
+let lastRhythmScenes = null; // parseImportText สร้าง scenes ชุดใหม่ทุกครั้ง — ใช้เช็กว่าข้อเสนอยังตรงกับสคริปต์ปัจจุบัน
+function renderRhythmReview() {
+  el.rhythmReviewWrap.hidden = false;
+  el.rhythmReviewList.innerHTML = lastRhythmProposals.map((p, n) => {
+    const s = scenes[p.idx];
+    const changes = [
+      p.cam ? `กล้อง: ${escapeHtml(CAM_LABELS[s.cam])} → <strong>${escapeHtml(CAM_LABELS[p.cam])}</strong>` : "",
+      p.action ? `การเคลื่อน: ${escapeHtml(s.cameraaction)} → <strong>${escapeHtml(p.action)}</strong>` : "",
+    ].filter(Boolean).join(" · ");
+    return `
+      <label class="bulk-review-row rhythm-row">
+        <input type="checkbox" data-rhythm="${n}" checked />
+        <span><span class="pr-place">${p.idx + 1}. ${escapeHtml(s.place)}</span>
+          <span class="rhythm-change">${changes}</span>
+          <span class="rhythm-reason">${escapeHtml(p.reason)}</span></span>
+      </label>`;
+  }).join("");
+}
+
+el.btnRhythm.addEventListener("click", () => {
+  if (!scenes.length) { showToast("กด \"แปลงเป็นฉาก\" ให้มีฉากก่อน ถึงจะจัดจังหวะกล้องได้", "warn"); return; }
+  lastRhythmProposals = proposeRhythm(scenes);
+  lastRhythmScenes = scenes;
+  if (!lastRhythmProposals.length) { el.rhythmReviewWrap.hidden = true; showToast("จังหวะกล้องหลากหลายดีอยู่แล้ว ไม่มีอะไรต้องปรับ", "ok"); return; }
+  renderRhythmReview();
+});
+el.btnRhythmApply.addEventListener("click", () => {
+  if (lastRhythmScenes !== scenes) {
+    el.rhythmReviewWrap.hidden = true;
+    showToast("สคริปต์ถูกแก้หลังเปิดรายการนี้ — กด \"จัดจังหวะกล้อง\" ใหม่อีกครั้ง", "warn");
+    return;
+  }
+  let applied = 0;
+  el.rhythmReviewList.querySelectorAll("input[data-rhythm]:checked").forEach((box) => {
+    const p = lastRhythmProposals[Number(box.dataset.rhythm)];
+    let line = sceneRawLines[p.idx];
+    if (p.cam) line = upsertTagInLine(line, "cam", p.cam);
+    if (p.action) line = upsertTagInLine(line, "cameraaction", p.action);
+    sceneRawLines[p.idx] = line;
+    applied++;
+  });
+  el.rhythmReviewWrap.hidden = true;
+  if (!applied) return;
+  el.importText.value = sceneRawLines.join("\n") + "\n";
+  parseImportText();
+  showToast(`ปรับจังหวะกล้องแล้ว ${applied} ฉาก (เขียน cam=/cameraaction= ลงสคริปต์ แก้กลับเองได้)`, "ok");
+});
+el.btnRhythmClose.addEventListener("click", () => { el.rhythmReviewWrap.hidden = true; });
 el.btnBulkImageClose.addEventListener("click", () => { el.bulkImageReviewWrap.hidden = true; });
 
 // ปุ่ม "ค้นภาพจริง"/"ค้นวิดีโอจริง" บนการ์ดฉากไหน → เปิดแผงค้นหา inline ใต้การ์ดนั้น
@@ -2673,7 +2794,7 @@ function renderTimeline() {
   el.timelineTrack.innerHTML = scenes
     .map(
       (s, i) => `
-      <button class="scene-chip" data-index="${i}" data-cam="${s.cam}">
+      <button class="scene-chip" data-index="${i}" data-cam="${s.cam}" title="คลิกเพื่อไปฉากนี้ · ลากรูปมาวางเพื่อใส่ภาพประกอบให้ฉากนี้">
         <span class="chip-place">${i + 1}. ${escapeHtml(s.place)}</span>
         <span class="chip-cam">${CAM_LABELS[s.cam]}</span>
       </button>`
@@ -2683,6 +2804,51 @@ function renderTimeline() {
     btn.addEventListener("click", () => goToSceneManual(Number(btn.dataset.index)));
   });
 }
+
+// ลากรูปวางบนชิปฉากในเส้นเวลา = ใส่ภาพประกอบ (geophoto) ให้ฉากนั้นทันที — ไฟล์จากเครื่องอัปโหลดผ่าน server.py,
+// รูปที่ลากมาจากแท็บเว็บอื่นใช้ URL ตรงๆ ไม่ต้องดาวน์โหลดก่อน
+function chipFromEvent(e) {
+  return e.target.closest && e.target.closest(".scene-chip");
+}
+el.timelineTrack.addEventListener("dragover", (e) => {
+  const chip = chipFromEvent(e);
+  if (!chip) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+  el.timelineTrack.querySelectorAll(".is-droptarget").forEach((c) => c !== chip && c.classList.remove("is-droptarget"));
+  chip.classList.add("is-droptarget");
+});
+el.timelineTrack.addEventListener("dragleave", (e) => {
+  const chip = chipFromEvent(e);
+  if (chip && !chip.contains(e.relatedTarget)) chip.classList.remove("is-droptarget");
+});
+el.timelineTrack.addEventListener("drop", async (e) => {
+  const chip = chipFromEvent(e);
+  if (!chip) return;
+  e.preventDefault();
+  chip.classList.remove("is-droptarget");
+  const idx = Number(chip.dataset.index);
+  const scene = scenes[idx];
+  const file = [...e.dataTransfer.files].find((f) => f.type.startsWith("image/"));
+  const droppedUrl = (e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain")).split("\n")[0].trim();
+  let url = "";
+  if (file) {
+    chip.classList.add("is-uploading");
+    try { url = await uploadFileForDrop(file); }
+    catch (err) { showToast(`อัพโหลดรูปไม่สำเร็จ: ${err.message} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`, "error"); }
+    finally { chip.classList.remove("is-uploading"); }
+  } else if (/^https?:\/\//.test(droppedUrl)) {
+    url = droppedUrl;
+  } else {
+    showToast("ลากได้เฉพาะไฟล์รูปภาพ หรือรูปจากหน้าเว็บอื่น", "warn");
+  }
+  if (!url || scenes[idx] !== scene) return; // ฉากถูกแปลงใหม่ระหว่างอัปโหลด — ไม่ใส่ผิดฉาก
+  scene.geophoto = { url, lat: scene.lat, lng: scene.lng, label: scene.geophoto?.label || scene.place };
+  syncSceneToRawLine(idx);
+  renderPreview();
+  goToSceneManual(idx);
+  showToast(`ใส่ภาพให้ฉาก ${idx + 1}. ${scene.place} แล้ว`, "ok");
+});
 
 function splitSegments(script) {
   const parts = script.split(SEGMENT_DELIM).map((s) => s.trim()).filter(Boolean);
@@ -2763,11 +2929,9 @@ function goToScene(index, durationOverride) {
   playTransitionOverlay(resolveTransition(scene, prevScene), scene);
   const lineSource = map.getSource("scene-line");
   let flyFrame = null; // fly-to: ซูมให้พอดีระยะทางจริงระหว่างจุดเดิม-จุดใหม่ (คำนวณด้านล่างถ้ามี prevScene)
-  if (scene.cam === "battle-map") {
-    markerFrom.remove();
-    markerArrow.remove();
-    if (lineSource) lineSource.setData(emptyFC());
-  } else if (prevScene) {
+  // battle-map ใช้ลูกศรเดินทัพของตัวเอง ไม่วาดเส้นทางระหว่างฉาก
+  const routeShown = scene.cam !== "battle-map" && !!prevScene && haversine([prevScene.lng, prevScene.lat], [scene.lng, scene.lat]) >= ROUTE_MIN_DISTANCE_M;
+  if (routeShown) {
     const a = [prevScene.lng, prevScene.lat];
     const b = [scene.lng, scene.lat];
     markerFrom.setLngLat(a).addTo(map);
@@ -2853,6 +3017,12 @@ function goToScene(index, durationOverride) {
   // global บินนานกว่า regional ให้เห็นบริบทโลก แต่ไม่เกินครึ่งฉาก (ยังเหลือเวลาให้เนื้อหา)
   const travelMs = navDecision.bridge ? Math.max(900, Math.min(navDecision.tier === "global" ? 2400 : 1600, sceneMs * 0.5)) : 0;
   moveCamera(scene, durationOverride, battleFrame || flyFrame, prevScene, travelMs);
+  if (routeShown && lastCamZoom != null) {
+    // เส้นทางสั้นบนจอที่ซูมปลายทาง: ลูกศรกลางเส้น/จุดเริ่มจะกองทับป้ายชื่อหมุด อ่านไม่ออกทั้งคู่ — ซ่อนเฉพาะมาร์กเกอร์ เส้นยังอยู่
+    const metersPerPx = (156543.03 * Math.cos((scene.lat * Math.PI) / 180)) / 2 ** lastCamZoom;
+    const routePx = haversine([prevScene.lng, prevScene.lat], [scene.lng, scene.lat]) / metersPerPx;
+    if (routePx < ROUTE_MIN_MARKER_PX) { markerArrow.remove(); markerFrom.remove(); }
+  }
 
   el.timelineTrack.querySelectorAll(".scene-chip").forEach((btn, i) => {
     btn.classList.toggle("is-active", i === activeIndex);
