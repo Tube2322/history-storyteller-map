@@ -146,7 +146,8 @@ html, body {
   background: rgba(4,6,9,0.72);
   backdrop-filter: blur(4px);
   border: 1px solid var(--panel-border);
-  max-width: min(220px, 46cqw);
+  /* ป้ายเริ่มที่ขวาของหมุดซึ่งอยู่กลางจอ — ต้องไม่เกินครึ่งจอที่เหลือ */
+  max-width: min(220px, 40cqw);
   white-space: normal;
   overflow-wrap: anywhere;
   text-align: center;
@@ -165,6 +166,8 @@ html, body {
   align-items: center;
   justify-content: center;
 }
+.arrow-marker-wrap { transition: opacity .35s ease; }
+.arrow-marker-wrap.is-pending { opacity: 0; }
 .arrow-marker {
   display: block;
   color: var(--accent);
@@ -591,7 +594,7 @@ html, body {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 10px;
-  padding: 12px 14px 12px 56px;
+  padding: 12px 14px 12px calc(max(14px, var(--safe-left)) + 44px); /* เว้นที่ให้โลโก้แบรนด์มุมซ้าย (ขยับตาม safe zone ในกรอบ 9:16/16:9) */
   background: linear-gradient(180deg, rgba(0,0,0,0.55), transparent);
   z-index: 5;
 }
@@ -1104,6 +1107,31 @@ body.is-render-mode .import-panel {
 .upload-item img { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; flex: none; }
 .upload-item .up-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .upload-item .up-copied { color: var(--accent); font-weight: 600; flex: none; }
+
+/* ---------- หน้าเริ่มต้นตอนยังไม่มีฉาก ---------- */
+
+.empty-state {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  width: min(440px, calc(100% - 32px));
+  padding: 24px 22px 18px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+  text-align: center;
+}
+.empty-state[hidden] { display: none; }
+.empty-state h2 { margin: 0 0 6px; font-family: var(--display); font-size: 20px; }
+.empty-state p { margin: 0 0 16px; color: var(--ink-dim); font-size: 13px; line-height: 1.5; }
+.empty-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.empty-actions button { width: 100%; padding: 11px 14px; font-size: 14px; }
+.empty-state .empty-tip { margin: 0; font-size: 11px; }
+.empty-state kbd { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--panel-border); }
+body.is-render-mode .empty-state { display: none; }
 
 /* ---------- แจ้งเตือนแบบไม่บล็อกหน้าจอ ---------- */
 

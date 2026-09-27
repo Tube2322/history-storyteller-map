@@ -833,18 +833,30 @@ function showBoundary(scene) {
 }
 
 // วาดลูกศรเดินทัพหลายเส้นพร้อมกัน (แผนที่สนามรบ) แล้วคืนกรอบกล้องที่ครอบทุกจุดพอดี
-// ลูกศรที่พุ่งเข้าหมุดของฉากเอง: หยุดหัวลูกศรก่อนถึงหมุด (วัดเป็นพิกเซลที่ซูมจริงของฉาก) ไม่ให้ไปปักทับป้ายชื่อสถานที่
-// ป้ายชื่ออยู่ทางขวาของหมุด — ลูกศรที่มาจากทิศตะวันออกต้องหยุดให้พ้นความกว้างป้ายด้วย
-function battleArrowTip(a, scene, zoom) {
-  if (zoom == null || haversine(a.to, [scene.lng, scene.lat]) > 3000) return a.to;
-  const metersPerPx = (156543.03 * Math.cos((scene.lat * Math.PI) / 180)) / 2 ** zoom;
-  const dLng = a.from[0] - a.to[0];
-  const fromEast = dLng > 0 && Math.abs(dLng) > Math.abs(a.from[1] - a.to[1]) * 0.5;
-  const labelWidth = pinToEl.querySelector(".pin-label").offsetWidth || 120;
-  const stopPx = fromEast ? labelWidth + 40 : 40;
-  const f = Math.max(0.3, 1 - (stopPx * metersPerPx) / haversine(a.from, a.to));
-  return [a.from[0] + (a.to[0] - a.from[0]) * f, a.from[1] + (a.to[1] - a.from[1]) * f];
+// ลูกศรเดินทัพโผล่ "หลังกล้องถึงที่" — ตำแหน่งหัวลูกศรคำนวณจากพิกเซลจริงบนจอ (รวมผลของมุมเอียงกล้อง)
+function placeBattleArrows(scene) {
+  const mapRect = map.getContainer().getBoundingClientRect();
+  const pinRect = pinToEl.getBoundingClientRect();
+  const pad = 12;
+  const box = { left: pinRect.left - mapRect.left - pad, right: pinRect.right - mapRect.left + pad, top: pinRect.top - mapRect.top - pad, bottom: pinRect.bottom - mapRect.top + pad };
+  const lerp = (a, f) => [a.from[0] + (a.to[0] - a.from[0]) * f, a.from[1] + (a.to[1] - a.from[1]) * f];
+  // หัวลูกศรตัวไหนตกลงบนหมุด/ป้ายชื่อ (บนจอจริง) ถอยกลับตามแนวเส้นจนพ้น — ปลายทางไม่ต้องตรงพิกัดหมุดเป๊ะก็ทับได้
+  const tips = scene.arrows.map((a) => {
+    for (let f = 1; f >= 0.3; f -= 0.02) {
+      const p = map.project(lerp(a, f));
+      if (p.x < box.left || p.x > box.right || p.y < box.top || p.y > box.bottom) return lerp(a, f);
+    }
+    return lerp(a, 0.3);
+  });
+  const src = map.getSource("battle-arrows");
+  if (src) src.setData({ type: "FeatureCollection", features: scene.arrows.map((a, i) => ({ type: "Feature", properties: { color: a.color }, geometry: { type: "LineString", coordinates: [a.from, tips[i]] } })) });
+  scene.arrows.forEach((a, i) => {
+    const marker = getBattleArrowMarker(i);
+    marker.setRotation(compassBearing(a.from, a.to) - 90).setLngLat(tips[i]).addTo(map);
+    requestAnimationFrame(() => marker.getElement().classList.remove("is-pending"));
+  });
 }
+
 function renderBattleArrows(scene) {
   const points = scene.arrows.flatMap((a) => [a.from, a.to]);
   points.push([scene.lng, scene.lat]);
@@ -856,23 +868,20 @@ function renderBattleArrows(scene) {
     if (lat > maxLat) maxLat = lat;
   });
   const bounds = new maplibregl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
-  const cam = map.cameraForBounds(bounds, { padding: 70 });
-  const tips = scene.arrows.map((a) => battleArrowTip(a, scene, cam ? cam.zoom : null));
+  // เผื่อที่: ขวา = ป้ายชื่อหมุด (อยู่ขวาของหมุด), ล่าง = โซนซับไตเติล — เดิม padding 70 เท่ากันทุกด้าน ป้ายชื่อหลุดขอบ/หมุดจมใต้ซับ
+  const { width: W, height: H } = map.getContainer().getBoundingClientRect();
+  const labelWidth = pinToEl.querySelector(".pin-label").offsetWidth || 120;
+  const padding = { top: Math.round(H * 0.14), bottom: Math.round(H * 0.3), left: 60, right: Math.min(labelWidth + 70, Math.round(W * 0.42)) };
+  const cam = map.cameraForBounds(bounds, { padding }) || map.cameraForBounds(bounds, { padding: 40 });
 
-  const features = scene.arrows.map((a, i) => ({
-    type: "Feature",
-    properties: { color: a.color },
-    geometry: { type: "LineString", coordinates: [a.from, tips[i]] },
-  }));
+  // ระหว่างกล้องกำลังเดินทาง: โชว์แค่ป้ายฝ่าย ลูกศรตามมาทีหลังใน placeBattleArrows()
   const src = map.getSource("battle-arrows");
-  if (src) src.setData({ type: "FeatureCollection", features });
-
+  if (src) src.setData(emptyFC());
   scene.arrows.forEach((a, i) => {
     const arrowMarker = getBattleArrowMarker(i);
-    const bearing = compassBearing(a.from, a.to);
-    const el2 = arrowMarker.getElement().querySelector(".battle-arrow-head");
-    el2.style.color = a.color;
-    arrowMarker.setRotation(bearing - 90).setLngLat(tips[i]).addTo(map);
+    arrowMarker.getElement().classList.add("is-pending");
+    arrowMarker.getElement().querySelector(".battle-arrow-head").style.color = a.color;
+    arrowMarker.remove();
 
     const labelMarker = getBattleLabelMarker(i);
     const labelEl = labelMarker.getElement();
@@ -913,10 +922,13 @@ const geoVideoWrapEl = makeMarkerEl("geo-photo-wrap", `<span class="geo-video-ca
 const badgeWrapEl = makeMarkerEl("badge-wrap", `<span class="badge-circle"></span><span class="badge-pill"></span>`);
 const calloutRingWrapEl = makeMarkerEl("callout-ring-wrap", `<span class="callout-ring"></span>`);
 
-const markerTo = new maplibregl.Marker({ element: pinToEl, anchor: "center" });
+// จุดหมุด (กว้าง 26px) ต้องอยู่บนพิกัดจริงพอดี ป้ายชื่อยื่นไปทางขวา — เดิม anchor=center ของทั้ง "จุด+ป้าย"
+// ทำให้จุดเลื่อนซ้ายจากพิกัดจริงครึ่งความกว้างป้าย เส้นทาง/ไอคอนจึงไปจบกลางชื่อสถานที่แทนที่จะจบที่จุด
+const markerTo = new maplibregl.Marker({ element: pinToEl, anchor: "left", offset: [-13, 0] });
 const markerFrom = new maplibregl.Marker({ element: pinFromEl, anchor: "center" });
 const markerArrow = new maplibregl.Marker({ element: arrowWrapEl, anchor: "center", rotationAlignment: "map" });
-const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "bottom", offset: [0, -14] }); // ยกขึ้นพ้นหมุด+ป้ายชื่อ (หมุด anchor=center ที่พิกัดเดียวกัน เดิมไอคอนเอฟเฟกต์ทับกลางชื่อสถานที่)
+// ไอคอนเอฟเฟกต์อยู่ซ้ายของจุดหมุด: ขวาเป็นป้ายชื่อ ด้านบนเป็นการ์ดรูป/ไอคอนปักพิกัด — ไม่ทับอะไรเลย
+const markerEffect = new maplibregl.Marker({ element: effectWrapEl, anchor: "right", offset: [-16, 0] });
 // offset ยกขึ้น กันป้ายชื่อใต้รูป (geo-photo-label) ไปทับป้ายชื่อหมุดหลัก (pin label) ที่อยู่จุดพิกัดเดียวกัน
 const markerGeoPhoto = new maplibregl.Marker({ element: geoPhotoWrapEl, anchor: "bottom", offset: [0, -34] });
 const markerGeoVideo = new maplibregl.Marker({ element: geoVideoWrapEl, anchor: "bottom", offset: [152, -34] }); // เลื่อนไปข้างขวาให้พ้นการ์ดรูป (กว้าง 140px) ถ้าฉากมีทั้งรูปและวิดีโอ
@@ -1311,6 +1323,7 @@ function moveCamera(scene, durationSecOverride, frameOverride, prevScene, travel
     appliedZoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 6;
     appliedPitch = pitch || 35;
     move({ center, zoom: appliedZoom, bearing, pitch: appliedPitch }, 800 * paceMul);
+    if (scene.arrows.length) afterCameraArrives(arriveMs(800 * paceMul), () => placeBattleArrows(scene));
   } else if (scene.cam === "fly-to") {
     // fly-to ที่มี frameOverride (มาจาก route bounds จริง) ใช้ค่านั้นเสมอ ไม่รับซูมสืบทอด กันเส้นทางจริงถูกบังจนเห็นไม่ครบ
     appliedZoom = frameOverride ? frameOverride.zoom : shotZoom != null ? shotZoom : inheritedZoom != null ? inheritedZoom : 6.2;
@@ -2790,7 +2803,30 @@ function cancelBuilderEdit() {
   el.builderAutoImage.checked = false;
 }
 
+// หน้าเริ่มต้นแสดงเฉพาะตอนยังไม่มีฉาก — มีฉากแล้วซ่อน ไม่บังแผนที่
+const emptyStateEl = document.getElementById("emptyState");
+emptyStateEl.addEventListener("click", async (e) => {
+  const action = e.target.closest("[data-empty]")?.dataset.empty;
+  if (!action) return;
+  if (action === "example") {
+    try {
+      const res = await fetch("examples/egypt-1min.txt");
+      if (!res.ok) throw new Error(res.status);
+      el.importText.value = await res.text();
+      parseImportText();
+      showToast("โหลดตัวอย่างอียิปต์ 1 นาทีแล้ว — กด Space หรือ ▶ เพื่อเล่น", "ok");
+    } catch (err) {
+      showToast("โหลดตัวอย่างไม่สำเร็จ — เปิดเว็บผ่าน server.py", "error");
+    }
+    return;
+  }
+  switchImportTab(action);
+  setImportPanelOpen(true);
+  (action === "script" ? el.importText : el.builderFromInput).focus();
+});
+
 function renderTimeline() {
+  emptyStateEl.hidden = scenes.length > 0;
   el.timelineTrack.innerHTML = scenes
     .map(
       (s, i) => `

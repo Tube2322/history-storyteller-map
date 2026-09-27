@@ -35,6 +35,17 @@
         <div id="brandChip" class="brand-chip brand-tl"><span id="brandText">HS</span></div>
 
         <!-- แถบบน: ชื่อตอน / ลำดับฉาก / แผนกล้อง / ปุ่มควบคุม -->
+        <section id="emptyState" class="empty-state" aria-labelledby="emptyStateTitle">
+          <h2 id="emptyStateTitle">เล่าประวัติศาสตร์บนแผนที่จริง</h2>
+          <p>เริ่มจากสคริปต์ฉาก แล้วระบบจัดกล้อง หมุด เส้นทาง และเสียงพากย์ให้เอง</p>
+          <div class="empty-actions">
+            <button class="primary-btn" type="button" data-empty="script">✍️ เขียน / วางสคริปต์</button>
+            <button class="ghost-btn" type="button" data-empty="builder">🧭 สร้างฉากทีละขั้น</button>
+            <button class="ghost-btn" type="button" data-empty="example">▶ ลองตัวอย่าง 1 นาที</button>
+          </div>
+          <p class="empty-tip">กด <kbd>?</kbd> ดูคีย์ลัด · งานบันทึกอัตโนมัติในเบราว์เซอร์</p>
+        </section>
+
         <header class="topbar">
           <div class="transport">
             <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า (←)" aria-label="ฉากก่อนหน้า">⏮</button>
@@ -66,7 +77,7 @@
         <!-- คำบรรยาย/ซับไตเติล -->
         <div class="subtitle-scrim" id="subtitleScrim"></div>
         <div class="subtitle-wrap" id="subtitleWrap">
-          <p id="subtitleText" class="subtitle-text">วางสคริปต์ฉากของคุณ แล้วกด "นำเข้าสคริปต์" เพื่อเริ่มดูตัวอย่าง</p>
+          <p id="subtitleText" class="subtitle-text"></p>
         </div>
 
         <!-- เส้นเวลาฉาก -->
