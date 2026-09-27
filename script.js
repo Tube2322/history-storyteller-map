@@ -779,10 +779,23 @@ const AUTO_FRAME_CAMS = new Set(["establishing", "fly-to", "push-in", "zoom-out"
 
 function showBoundary(scene) {
   const mySeq = ++boundaryRequestSeq;
+  const myCamSeq = camSeq;
   el.regionLabel.classList.remove("is-visible");
+  // ฉาก auto-frame ให้ showBoundary คุมกล้องคนเดียว — ถ้าขอบเขตโหลดช้า/ไม่สำเร็จ (เน็ตหลุด, ไม่มีข้อมูล) กล้องต้องไม่ค้างที่ฉากเก่า:
+  // ไปที่หมุดก่อน แล้วค่อยปรับกรอบตามขอบเขตทีหลังถ้าข้อมูลตามมา
+  const ownsCamera = AUTO_FRAME_CAMS.has(scene.cam);
+  let movedToPin = false;
+  const moveToPin = () => {
+    if (!ownsCamera || movedToPin || myCamSeq !== camSeq) return;
+    movedToPin = true;
+    map.easeTo({ center: [scene.lng, scene.lat], zoom: lastCamZoom ?? 6, bearing: scene.bearing || 0, pitch: scene.tilt || 0, duration: 900, easing: EASE_CINEMATIC });
+  };
+  const slowTimer = setTimeout(moveToPin, 1200);
   fetchBoundary(scene.lat, scene.lng, scene.highlight)
     .then((data) => {
-      if (mySeq !== boundaryRequestSeq || !data.geojson) return; // กันฉากเปลี่ยนไปแล้วแต่ผลลัพธ์เก่ามาช้า
+      clearTimeout(slowTimer);
+      if (mySeq !== boundaryRequestSeq || myCamSeq !== camSeq) return; // กันฉากเปลี่ยนไปแล้วแต่ผลลัพธ์เก่ามาช้า
+      if (!data.geojson) { moveToPin(); return; }
       map.getSource("region-boundary").setData({ type: "Feature", geometry: data.geojson, properties: {} });
 
       // highlightcolor= กำหนดสีไฮไลต์เอง (ดีฟอลต์เหลืองทอง), focus=on จอทั้งจอเป็นขาวดำยกเว้นเขตที่ไฮไลต์ (สไตล์ Whyhistory)
@@ -817,9 +830,9 @@ function showBoundary(scene) {
         clearWarmorph();
       }
 
-      if (!AUTO_FRAME_CAMS.has(scene.cam)) return;
+      if (!ownsCamera) return;
       const bounds = boundsFromGeojson(data.geojson, scene.mainlandOnly);
-      if (!bounds) return;
+      if (!bounds) { moveToPin(); return; }
       // ฉากที่มีรูปปักพิกัดด้วย (geophoto/videoAsset) การ์ดรูปลอยอยู่เหนือหมุดจริง (offset ขึ้น ~34px + สูงการ์ด ~140px)
       // padding เท่ากันทุกด้านแบบเดิมไม่เผื่อพื้นที่ตรงนี้ไว้ ทำให้ขอบเขตที่พอดีกรอบพอดีจน "ผลัก" การ์ดรูปหลุดขอบจอบนไปเลย
       const hasFloatingCard = !!(scene.geophoto || scene.videoAsset);
@@ -827,9 +840,15 @@ function showBoundary(scene) {
       // จุดเดียวที่ขยับกล้องให้ฉากไฮไลต์แบบ auto-frame — กัน moveCamera() ชนกันกลางอากาศ (สาเหตุอนิเมชันกระตุก)
       if (cam) {
         map.easeTo({ center: cam.center, zoom: cam.zoom, bearing: scene.bearing || 0, pitch: scene.tilt || 0, duration: 800, easing: EASE_CINEMATIC });
+      } else {
+        moveToPin();
       }
     })
-    .catch((e) => console.warn(e));
+    .catch((e) => {
+      clearTimeout(slowTimer);
+      console.warn(e);
+      moveToPin();
+    });
 }
 
 // วาดลูกศรเดินทัพหลายเส้นพร้อมกัน (แผนที่สนามรบ) แล้วคืนกรอบกล้องที่ครอบทุกจุดพอดี

@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
 const OUT = path.join(HERE, "output");
-const PORT = 5299;
+const PORT = Number(process.env.UI_CHECK_PORT) || 5299;
 const SETTLE_MS = 2900; // ฉากที่ไกลจากฉากก่อนบินโค้งได้ถึง 2.4 วิ — ต้องวัดตอนกล้องถึงที่แล้ว ไม่ใช่กลางทาง
 
 const VIEWS = [
