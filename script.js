@@ -25,7 +25,9 @@ const CAM_STAGE_CLASS = {
 const DEFAULT_DURATION = 5;
 const FALLBACK_COORD = { lat: 13.7563, lng: 100.5018 }; // กรุงเทพฯ (ใช้เมื่อไม่ระบุ lat,lng)
 const DEFAULT_VOICE = "th-TH-PremwadeeNeural";
-const AUTOSAVE_KEY = "hsm_last_script_v1";
+const AUTOSAVE_KEY = "hsm_autosave_v2"; // สคริปต์ + ค่าตั้งทั้งหมด (โครงเดียวกับไฟล์โปรเจกต์ .json)
+const LEGACY_SCRIPT_KEY = "hsm_last_script_v1";
+const UI_TAB_KEY = "hsm_ui_tab";
 const SEGMENT_DELIM = ";;";
 
 const ICON_GLYPHS = {
@@ -240,6 +242,7 @@ let isPlaying = false;
 let highlightPersistLeft = 0; // persist=N — จำนวนฉากถัดไปที่ยังคงให้เขตแดนที่ไฮไลต์ค้างอยู่ ไม่เคลียร์ทันที
 let playToken = 0;
 let isExporting = false;
+let autosaveTimer = null;
 
 // ---------- ตั้งค่าการอัด: เสียงพากย์ / เพลงพื้นหลัง / จังหวะฉาก / สไตล์ซับไตเติล ----------
 let voiceSettings = { voice: DEFAULT_VOICE, rate: "+0%", pitch: "+0Hz" };
@@ -2245,7 +2248,7 @@ function parseImportText() {
   renderTimeline();
   renderPreview();
   goToScene(0);
-  try { localStorage.setItem(AUTOSAVE_KEY, el.importText.value); } catch (e) { /* ไม่มี localStorage ก็ข้ามไป */ }
+  scheduleAutosave();
 }
 
 // สรุปลูกเล่น/สไตล์ที่เปิดใช้งานจริงในฉากนี้ เป็น chip สั้นๆ ให้เห็นภาพรวมทั้งคลิปว่าฉากไหนใช้อะไรบ้าง
@@ -2348,7 +2351,7 @@ function syncSceneToRawLine(idx) {
   line = upsertTagInLine(line, "sec", scene.duration);
   sceneRawLines[idx] = line;
   el.importText.value = sceneRawLines.join("\n") + "\n";
-  try { localStorage.setItem(AUTOSAVE_KEY, el.importText.value); } catch (e) { /* ไม่มี localStorage ก็ข้ามไป */ }
+  scheduleAutosave();
 }
 
 // การ์ดสื่อปัจจุบันของฉาก (ถ้ามี) — ใช้ thumbnail เดียวกับที่ Smart Import ใช้ (slotThumbHtml) ให้หน้าตาสอดคล้องกันทั้งเว็ป
@@ -2483,7 +2486,7 @@ async function runVideoSearchForScene(idx) {
 // ใช้ query เดียวกับ autoFetchMissingImages (place + yearHint ถ้ามี) ให้ผลตรงกันไม่ว่าจะค้นทางไหน
 let lastBulkImageCandidates = [];
 async function runBulkImageSearch() {
-  if (!scenes.length) { alert("กด \"แปลงเป็นฉาก\" ให้มีฉากก่อน ถึงจะค้นภาพได้"); return; }
+  if (!scenes.length) { showToast("กด \"แปลงเป็นฉาก\" ให้มีฉากก่อน ถึงจะค้นภาพได้", "warn"); return; }
   const targets = scenes.map((_, i) => i).filter((i) => !scenes[i].geophoto && !scenes[i].videoAsset);
   if (!targets.length) {
     el.bulkImageStatus.hidden = false;
@@ -3351,13 +3354,17 @@ function importXlsxFile(file) {
 
 el.btnPrev.addEventListener("click", () => goToSceneManual(activeIndex - 1));
 el.btnNext.addEventListener("click", () => goToSceneManual(activeIndex + 1));
-el.btnPlay.addEventListener("click", () => setPlaying(!isPlaying));
+function togglePlay() {
+  if (!isPlaying && !scenes.length) { showToast("ยังไม่มีฉาก — กด \"นำเข้าสคริปต์\" (หรือปุ่ม I) เพื่อเริ่ม", "warn"); return; }
+  setPlaying(!isPlaying);
+}
+el.btnPlay.addEventListener("click", togglePlay);
 
 // ---------- บันทึกเป็นวิดีโอ (อัดหน้าจอผ่าน getDisplayMedia — ต้องเลือก "แท็บนี้" ตอนเบราว์เซอร์ถาม) ----------
 // เลือกสัดส่วนตอนกดอัดเท่านั้น เอดิเตอร์เต็มจอปกติตลอดตอนแก้ไข
 
 async function startExport(aspect) {
-  if (!scenes.length) { alert("ยังไม่มีฉาก นำเข้าสคริปต์ก่อน"); return; }
+  if (!scenes.length) { showToast("ยังไม่มีฉาก นำเข้าสคริปต์ก่อน", "warn"); return; }
   lastExportAspect = aspect;
   try {
     // ขอสิทธิ์แชร์หน้าจอ "ก่อน" ค่อยย่อเวที — ถ้าผู้ใช้ปิด/ไม่ตอบ dialog เอดิเตอร์ต้องไม่ถูกบีบจอทิ้งไว้ค้างแบบกู้คืนไม่ได้
@@ -3387,7 +3394,7 @@ async function startExport(aspect) {
     setPlaying(true);
   } catch (e) {
     console.warn(e);
-    alert("เปิดการอัดหน้าจอไม่สำเร็จ — ต้องอนุญาตแชร์แท็บนี้ตอนเบราว์เซอร์ถาม");
+    showToast("เปิดการอัดหน้าจอไม่สำเร็จ — ต้องอนุญาตแชร์แท็บนี้ตอนเบราว์เซอร์ถาม", "error");
     currentAspect = "free";
     fitStage();
   }
@@ -3419,6 +3426,8 @@ document.addEventListener("click", (e) => {
 function setImportPanelOpen(open) {
   el.importPanel.classList.toggle("is-open", open);
   el.importPanel.setAttribute("aria-hidden", open ? "false" : "true");
+  // โฟกัสค้างในช่องพิมพ์ที่ซ่อนไปแล้วจะกินคีย์ลัดทั้งหมด (←/→/Space) — ย้ายโฟกัสกลับมาที่ปุ่มเปิดแผง
+  if (!open && el.importPanel.contains(document.activeElement)) el.btnImport.focus();
 }
 el.btnImport.addEventListener("click", () => {
   setImportPanelOpen(!el.importPanel.classList.contains("is-open"));
@@ -3429,6 +3438,7 @@ el.btnCloseImport.addEventListener("click", () => setImportPanelOpen(false));
 function switchImportTab(tabName) {
   document.querySelectorAll(".import-tab-btn").forEach((btn) => btn.classList.toggle("is-active", btn.dataset.tab === tabName));
   document.querySelectorAll(".tab-panel").forEach((panel) => { panel.hidden = panel.dataset.tab !== tabName; });
+  try { localStorage.setItem(UI_TAB_KEY, tabName); } catch (e) { /* ไม่มี localStorage ก็ข้ามไป */ }
 }
 document.querySelectorAll(".import-tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => switchImportTab(btn.dataset.tab));
@@ -3609,8 +3619,9 @@ el.fileUploadBgm.addEventListener("change", async (e) => {
     const { url } = await res.json();
     bgmUrl = url;
     el.bgmFileName.textContent = `เพลง: ${file.name}`;
+    scheduleAutosave();
   } catch (err) {
-    alert(`อัพโหลดเพลงไม่สำเร็จ: ${err.message} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`);
+    showToast(`อัพโหลดเพลงไม่สำเร็จ: ${err.message} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`, "error");
   }
 });
 el.btnClearBgm.addEventListener("click", () => {
@@ -3618,6 +3629,7 @@ el.btnClearBgm.addEventListener("click", () => {
   el.bgmPlayer.pause();
   el.bgmPlayer.removeAttribute("src");
   el.bgmFileName.textContent = "ยังไม่ได้เลือกเพลง";
+  scheduleAutosave();
 });
 el.bgmVolume.addEventListener("input", () => {
   bgmVolumeLevel = Number(el.bgmVolume.value) / 100;
@@ -3643,8 +3655,8 @@ el.subtitleWeight.addEventListener("change", () => { subtitleStyle.weight = el.s
 
 // ---------- บันทึก/โหลดโปรเจกต์เป็นไฟล์ .json ----------
 
-function saveProject() {
-  const data = {
+function buildProjectData() {
+  return {
     version: 1,
     script: el.importText.value,
     brand: { text: el.brandInput.value, corner: el.brandCorner.value },
@@ -3658,17 +3670,21 @@ function saveProject() {
     assetManifest,
     assetSeqCounters,
   };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+}
+
+function saveProject() {
+  const blob = new Blob([JSON.stringify(buildProjectData(), null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = "history-map-project.json";
   a.click();
   URL.revokeObjectURL(url);
+  showToast("บันทึกไฟล์โปรเจกต์แล้ว", "ok");
 }
 
 function applyProjectData(data) {
-  if (!data || typeof data.script !== "string") { alert("ไฟล์โปรเจกต์ไม่ถูกต้อง"); return; }
+  if (!data || typeof data.script !== "string") { showToast("ไฟล์โปรเจกต์ไม่ถูกต้อง", "error"); return; }
   el.importText.value = data.script;
   if (data.brand) {
     el.brandInput.value = data.brand.text || "HS";
@@ -3687,10 +3703,13 @@ function applyProjectData(data) {
     el.voicePitch.value = parseInt(voiceSettings.pitch, 10) || 0;
     el.voicePitchOut.textContent = voiceSettings.pitch;
   }
-  if (data.bgm && data.bgm.url) {
-    bgmUrl = data.bgm.url;
-    bgmVolumeLevel = Number(data.bgm.volume) || 0.25;
-    el.bgmFileName.textContent = "เพลง: (โหลดจากโปรเจกต์)";
+  if (data.bgm) {
+    if (data.bgm.url) {
+      bgmUrl = data.bgm.url;
+      el.bgmFileName.textContent = "เพลง: (โหลดจากโปรเจกต์)";
+    }
+    const vol = Number(data.bgm.volume);
+    bgmVolumeLevel = Number.isFinite(vol) && vol >= 0 && vol <= 1 ? vol : 0.25;
     el.bgmVolume.value = Math.round(bgmVolumeLevel * 100);
     el.bgmVolumeOut.textContent = `${el.bgmVolume.value}%`;
   }
@@ -3728,7 +3747,7 @@ function loadProjectFile(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     try { applyProjectData(JSON.parse(e.target.result)); }
-    catch (err) { alert("อ่านไฟล์โปรเจกต์ไม่สำเร็จ: " + err.message); }
+    catch (err) { showToast("อ่านไฟล์โปรเจกต์ไม่สำเร็จ: " + err.message, "error"); }
   };
   reader.readAsText(file, "utf-8");
 }
@@ -3778,7 +3797,7 @@ el.fileUploadImage.addEventListener("change", async (e) => {
       const { url } = await res.json();
       addUploadListItem(url, dataUrl);
     } catch (err) {
-      alert(`อัพโหลด ${file.name} ไม่สำเร็จ: ${err.message} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`);
+      showToast(`อัพโหลด ${file.name} ไม่สำเร็จ: ${err.message} — ต้องรัน server.py ไม่ใช่ http.server เฉยๆ`, "error");
     }
   }
   e.target.value = "";
@@ -3948,6 +3967,7 @@ function updateSmartAssetCounts() {
     ? `${n.image} รูป · ${n.video} วิดีโอ · ${n.audio} เสียง (${assetManifest.length} ไฟล์รวม)`
     : "ยังไม่มีไฟล์สื่อ";
   renderAssetGallery();
+  scheduleAutosave();
 }
 
 // แสดงรูปย่อของทุกไฟล์ที่ลากเข้ามา พร้อมเลขลำดับ (image=01/video=01) ให้เห็นชัดว่าไฟล์ไหนคือไฟล์ไหน ก่อนกด "วิเคราะห์ & จับคู่"
@@ -4138,8 +4158,8 @@ function renderSmartDiagnostics(matches) {
 }
 
 el.btnSmartAnalyze.addEventListener("click", () => {
-  if (!scenes.length) { alert("กด \"แปลงเป็นฉาก\" ให้มีฉากก่อน ถึงจะวิเคราะห์ & จับคู่สื่อได้"); return; }
-  if (!assetManifest.length) { alert("ยังไม่มีไฟล์สื่อ ลากรูป/วิดีโอ/เสียงเข้ามาก่อน"); return; }
+  if (!scenes.length) { showToast("กด \"แปลงเป็นฉาก\" ให้มีฉากก่อน ถึงจะวิเคราะห์ & จับคู่สื่อได้", "warn"); return; }
+  if (!assetManifest.length) { showToast("ยังไม่มีไฟล์สื่อ ลากรูป/วิดีโอ/เสียงเข้ามาก่อน", "warn"); return; }
   lastMatches = runAssetMatching(scenes, assetManifest);
   renderSmartReview(lastMatches);
   renderSmartDiagnostics(lastMatches);
@@ -4155,7 +4175,7 @@ el.btnSmartAutoFillEmpty.addEventListener("click", () => {
     scenes[idx].autoImagePref = "on";
     filled++;
   });
-  alert(filled ? `เปิดดึงภาพอัตโนมัติให้ ${filled} ฉากที่ยังว่างรูป — ระบบจะหาภาพให้เองตอนกดเล่น` : "ทุกฉากมีรูปจับคู่ครบแล้ว ไม่มีฉากว่าง");
+  showToast(filled ? `เปิดดึงภาพอัตโนมัติให้ ${filled} ฉากที่ยังว่างรูป — ระบบจะหาภาพให้เองตอนกดเล่น` : "ทุกฉากมีรูปจับคู่ครบแล้ว ไม่มีฉากว่าง", "ok");
 });
 
 // อนุมัติ: เขียนผลจับคู่เข้า scenes[] ผ่านฟิลด์ที่ engine เดิมรู้จักอยู่แล้วเป๊ะ (geophoto/videoAsset/overrideAudioUrl) แล้วเรียก renderTimeline/goToScene เหมือน parseImportText ปกติ
@@ -4266,7 +4286,7 @@ async function searchAutoImage(query, lat, lng) {
 }
 
 el.btnBuilderAdd.addEventListener("click", async () => {
-  if (!builderToPick) { alert("ค้นหาแล้วเลือกจุดหมาย (ไป) ก่อน"); return; }
+  if (!builderToPick) { showToast("ค้นหาแล้วเลือกจุดหมาย (ไป) ก่อน", "warn"); return; }
 
   let geophoto = "";
   if (el.builderAutoImage.checked) {
@@ -4313,14 +4333,104 @@ el.btnBuilderAdd.addEventListener("click", async () => {
 
 el.btnBuilderCancelEdit.addEventListener("click", cancelBuilderEdit);
 
-// กู้สคริปต์ล่าสุดจาก localStorage อัตโนมัติ (ถ้ามีและยังไม่ได้มาจากโหมดเรนเดอร์)
-try {
-  const saved = localStorage.getItem(AUTOSAVE_KEY);
-  if (saved && !new URLSearchParams(location.search).get("autoplay")) {
-    el.importText.value = saved;
-    el.autosaveHint.hidden = false;
+// ---------- แจ้งเตือนแบบไม่บล็อกหน้าจอ (แทน alert ที่ต้องกดปิดทุกครั้ง) ----------
+
+function showToast(message, kind = "info", ms = 4000) {
+  if (isRenderMode) return;
+  const stack = document.getElementById("toastStack");
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${kind}`;
+  toast.setAttribute("role", kind === "error" ? "alert" : "status");
+  toast.textContent = message;
+  toast.addEventListener("click", () => toast.remove());
+  stack.appendChild(toast);
+  setTimeout(() => toast.remove(), kind === "error" ? ms * 2 : ms);
+}
+
+// ---------- บันทึกอัตโนมัติ: สคริปต์ + ค่าตั้งทั้งหมด เก็บในเบราว์เซอร์ ปิดเว็บแล้วเปิดใหม่ทำต่อได้ทันที ----------
+
+function writeAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+  if (isRenderMode) return; // โหมดเรนเดอร์ใช้สคริปต์จาก URL ห้ามเขียนทับงานของผู้ใช้
+  try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(buildProjectData())); } catch (e) { /* ไม่มี localStorage / เต็ม ก็ข้ามไป */ }
+}
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(writeAutosave, 600);
+}
+el.importPanel.addEventListener("input", scheduleAutosave);
+el.importPanel.addEventListener("change", scheduleAutosave);
+window.addEventListener("pagehide", () => { if (autosaveTimer) writeAutosave(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && autosaveTimer) writeAutosave(); });
+
+(function restoreSession() {
+  if (new URLSearchParams(location.search).get("autoplay")) return;
+  let data = null;
+  try {
+    const tab = localStorage.getItem(UI_TAB_KEY);
+    if (tab && document.querySelector(`.tab-panel[data-tab="${CSS.escape(tab)}"]`)) switchImportTab(tab);
+    data = JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || "null");
+    if (!data) {
+      const legacyScript = localStorage.getItem(LEGACY_SCRIPT_KEY);
+      if (legacyScript) data = { script: legacyScript };
+    }
+  } catch (e) { return; }
+  if (!data || typeof data.script !== "string") return;
+  const apply = () => {
+    applyProjectData(data);
+    if (data.script.trim()) {
+      el.autosaveHint.hidden = false;
+      showToast(`กู้งานล่าสุดแล้ว — ${scenes.length} ฉาก พร้อมทำต่อ (กด ? ดูคีย์ลัด)`, "ok");
+    }
+  };
+  // applyProjectData → parseImportText → goToScene อ่านค่าจาก map ต้องรอ style โหลดเสร็จก่อน
+  if (map.loaded()) apply();
+  else map.once("load", apply);
+})();
+
+// ---------- คีย์ลัด ----------
+
+const shortcutHelp = document.getElementById("shortcutHelp");
+
+function toggleShortcutHelp() {
+  if (shortcutHelp.open) shortcutHelp.close();
+  else shortcutHelp.showModal();
+}
+document.getElementById("btnShortcuts").addEventListener("click", toggleShortcutHelp);
+shortcutHelp.addEventListener("click", (e) => { if (e.target === shortcutHelp) shortcutHelp.close(); });
+
+function parseFromShortcut() {
+  parseImportText();
+  if (scenes.length) showToast(`แปลงสคริปต์แล้ว — ${scenes.length} ฉาก`, "ok", 2000);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (isRenderMode || e.isComposing) return;
+  const mod = e.ctrlKey || e.metaKey;
+  // ใช้ e.code (ตำแหน่งปุ่ม) ไม่ใช่ e.key — คีย์ลัดตัวอักษรจะได้ทำงานแม้เปิดแป้นพิมพ์ภาษาไทยอยู่
+  if (mod && e.code === "Enter") { e.preventDefault(); parseFromShortcut(); return; }
+  if (mod && e.code === "KeyS") { e.preventDefault(); saveProject(); return; }
+  if (e.code === "Escape") {
+    if (shortcutHelp.open) return; // <dialog> ปิดเองอยู่แล้ว
+    if (!el.exportMenu.hidden) el.exportMenu.hidden = true;
+    else if (el.importPanel.classList.contains("is-open")) setImportPanelOpen(false);
+    return;
   }
-} catch (e) { /* ไม่มี localStorage ก็ข้ามไป */ }
+  if (mod || e.altKey || shortcutHelp.open) return;
+  if (e.target.closest("input, textarea, select, [contenteditable='true']")) return;
+  switch (e.code) {
+    case "Space": togglePlay(); break;
+    case "ArrowLeft": goToSceneManual(activeIndex - 1); break;
+    case "ArrowRight": goToSceneManual(activeIndex + 1); break;
+    case "Home": goToSceneManual(0); break;
+    case "End": goToSceneManual(scenes.length - 1); break;
+    case "KeyI": setImportPanelOpen(!el.importPanel.classList.contains("is-open")); break;
+    case "Slash": if (!e.shiftKey) return; toggleShortcutHelp(); break;
+    default: return;
+  }
+  e.preventDefault();
+});
 
 // ---------- โหมดเรนเดอร์: รับสคริปต์+ความยาวเสียงจาก render.py ผ่าน URL แล้วเล่นอัตโนมัติ ----------
 

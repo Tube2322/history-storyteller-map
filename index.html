@@ -37,9 +37,9 @@
         <!-- แถบบน: ชื่อตอน / ลำดับฉาก / แผนกล้อง / ปุ่มควบคุม -->
         <header class="topbar">
           <div class="transport">
-            <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า">⏮</button>
-            <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด">▶</button>
-            <button id="btnNext" class="tbtn" title="ฉากถัดไป">⏭</button>
+            <button id="btnPrev" class="tbtn" title="ฉากก่อนหน้า (←)" aria-label="ฉากก่อนหน้า">⏮</button>
+            <button id="btnPlay" class="tbtn tbtn-main" title="เล่น/หยุด (Space)" aria-label="เล่น/หยุด">▶</button>
+            <button id="btnNext" class="tbtn" title="ฉากถัดไป (→)" aria-label="ฉากถัดไป">⏭</button>
           </div>
           <div class="ep-info">
             <span class="ep-title" id="epTitle">ยังไม่มีตอน</span>
@@ -57,7 +57,8 @@
               <button class="export-option" data-aspect="169" type="button">16:9 — YouTube</button>
             </div>
           </div>
-          <button id="btnImport" class="import-btn" type="button">นำเข้าสคริปต์</button>
+          <button id="btnImport" class="import-btn" type="button" title="เปิด/ปิดแผง (I)">นำเข้าสคริปต์</button>
+          <button id="btnShortcuts" class="tbtn" type="button" title="คีย์ลัด (?)" aria-label="คีย์ลัด">⌨</button>
         </header>
         <audio id="ttsPlayer" hidden></audio>
         <audio id="bgmPlayer" loop hidden></audio>
@@ -336,7 +337,7 @@ place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=cut-to-in
 place=ศรีสัชนาลัย | latlng=17.4270,99.8210 | cam=push-in | script=เมืองฟื้นตัวขึ้นอีกครั้งหลังเหตุการณ์นั้น | sec=5 | returnmap=on | narrative=resolution
 place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establishing | script=ขณะเดียวกัน ทางเหนือไกลออกไป อีกอาณาจักรหนึ่งกำลังเผชิญความเปลี่ยนแปลง | sec=6 | visualbridge=on | transition=dissolve"></textarea>
           <div class="import-actions import-actions-sticky">
-            <button id="btnParse" class="primary-btn" type="button">แปลงเป็นฉาก</button>
+            <button id="btnParse" class="primary-btn" type="button" title="Ctrl+Enter">แปลงเป็นฉาก</button>
             <button id="btnClear" class="ghost-btn" type="button">ล้าง</button>
             <button id="btnLoadMapFirstExample" class="ghost-btn" type="button">🗺️ โหลดตัวอย่าง MAP-FIRST</button>
           </div>
@@ -408,7 +409,7 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
               <input id="fileLoadProject" type="file" accept=".json" hidden />
             </label>
           </div>
-          <p class="import-hint" id="autosaveHint" hidden>กู้สคริปต์ล่าสุดที่เคยกรอกไว้อัตโนมัติ (เก็บในเบราว์เซอร์เครื่องนี้)</p>
+          <p class="import-hint" id="autosaveHint" hidden>กู้สคริปต์และค่าตั้งล่าสุดอัตโนมัติแล้ว (บันทึกในเบราว์เซอร์เครื่องนี้ทุกครั้งที่แก้ไข)</p>
           </div>
 
           <div class="tab-panel" data-tab="debug" hidden>
@@ -540,6 +541,22 @@ place=เมืองพันธมิตร | latlng=19.9,99.8 | cam=establish
 
       </main>
     </div>
+    <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+    <dialog id="shortcutHelp" class="shortcut-help" aria-labelledby="shortcutHelpTitle">
+      <h3 id="shortcutHelpTitle">คีย์ลัด</h3>
+      <dl>
+        <dt><kbd>Space</kbd></dt><dd>เล่น / หยุด</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>ฉากก่อนหน้า / ถัดไป</dd>
+        <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>ฉากแรก / ฉากสุดท้าย</dd>
+        <dt><kbd>I</kbd></dt><dd>เปิด/ปิดแผงนำเข้าสคริปต์</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>แปลงสคริปต์เป็นฉาก (ใช้ได้ขณะพิมพ์)</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>บันทึกไฟล์โปรเจกต์ (.json)</dd>
+        <dt><kbd>Esc</kbd></dt><dd>ปิดเมนู / แผง</dd>
+        <dt><kbd>?</kbd></dt><dd>เปิด/ปิดหน้านี้</dd>
+      </dl>
+      <p class="import-hint">งานบันทึกอัตโนมัติในเบราว์เซอร์ทุกครั้งที่แก้ไข — ปิดเว็บแล้วเปิดใหม่ทำต่อได้ทันที</p>
+      <form method="dialog"><button class="primary-btn">ปิด</button></form>
+    </dialog>
     <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
     <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="script.js"></script>

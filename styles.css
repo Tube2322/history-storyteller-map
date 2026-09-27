@@ -1040,3 +1040,70 @@ body.is-render-mode .import-panel {
 .upload-item img { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; flex: none; }
 .upload-item .up-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .upload-item .up-copied { color: var(--accent); font-weight: 600; flex: none; }
+
+/* ---------- แจ้งเตือนแบบไม่บล็อกหน้าจอ ---------- */
+
+.toast-stack {
+  position: fixed;
+  left: 50%;
+  top: 64px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+  width: min(92vw, 440px);
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-left: 4px solid var(--ink-dim);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  animation: toast-in .2s ease;
+}
+.toast-ok { border-left-color: var(--cam-flyto); }
+.toast-warn { border-left-color: var(--accent); }
+.toast-error { border-left-color: #e5484d; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+body.is-render-mode .toast-stack { display: none; }
+
+/* ---------- หน้าต่างคีย์ลัด ---------- */
+
+.shortcut-help {
+  width: min(92vw, 400px);
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--thai);
+}
+.shortcut-help::backdrop { background: rgba(0,0,0,0.55); }
+.shortcut-help h3 { margin: 0 0 12px; font-family: var(--display); }
+.shortcut-help dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 0 0 12px; font-size: 13px; align-items: center; }
+.shortcut-help dt { white-space: nowrap; }
+.shortcut-help dd { margin: 0; color: var(--ink-dim); }
+.shortcut-help kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255,255,255,0.06);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: center;
+}
+.shortcut-help form { display: flex; justify-content: flex-end; margin: 0; }
+/* จอสัมผัสไม่มีคีย์บอร์ด ไม่ต้องโชว์ปุ่มคีย์ลัดให้รกแถบบน */
+@media (hover: none) { #btnShortcuts { display: none; } }
