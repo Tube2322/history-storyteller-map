@@ -89,8 +89,15 @@ def fetch_tts_bytes(text: str, voice: str, rate: str, pitch: str) -> bytes:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return resp.read()
+    # edge-tts ล้มเป็นพักๆ แม้ server.py จะลองซ้ำ 3 ครั้งแล้ว — เรนเดอร์ยาวๆ ไม่ควรล้มทั้งคลิปเพราะท่อนเดียว
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.read()
+        except urllib.error.URLError:
+            if attempt == 3:
+                raise
+            time.sleep(3 * (attempt + 1))
 
 
 def make_silence(path: Path, seconds: float):
@@ -118,6 +125,7 @@ def probe_duration(path: Path) -> float:
 
 def build_audio_track(rows, workdir: Path, voice: str, rate: str, pitch: str, gap: float):
     clip_paths = []
+    seg_paths = {}  # (ฉาก, ท่อน) -> ไฟล์เสียง ใช้วางเสียงตามเวลาจริงที่ภาพเล่น (align_audio_to_video)
     durations = []  # [[seg1, seg2, ...], ...] ต่อฉาก — ไม่รวมช่วงเงียบคั่นฉาก (กล้อง/ซับไตเติลไม่ต้องรู้เรื่องนี้)
     silence_path = None
     if gap > 0:
@@ -135,6 +143,7 @@ def build_audio_track(rows, workdir: Path, voice: str, rate: str, pitch: str, ga
             dur = probe_duration(clip_path)
             clip_paths.append(clip_path)
             seg_durations.append(round(dur, 2))
+            seg_paths[(i, j)] = clip_path
         durations.append(seg_durations)
         if silence_path and i < len(rows) - 1:
             clip_paths.append(silence_path)  # จังหวะฉาก — พักเงียบก่อนตัดไปฉากถัดไป (เหมือนพากย์สด)
@@ -148,7 +157,31 @@ def build_audio_track(rows, workdir: Path, voice: str, rate: str, pitch: str, ga
         [FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(narration_out)],
         cwd=workdir, check=True, capture_output=True,
     )
-    return narration_out, durations
+    return narration_out, durations, seg_paths
+
+
+def align_audio_to_video(seg_paths: dict, clip_starts, workdir: Path) -> Path:
+    # วางแต่ละท่อนเสียงตรงเวลาที่หน้าเว็บเริ่มเล่นท่อนนั้นจริง (adelay) แทนการต่อเสียงติดกัน
+    # กันภาพกับเสียงเหลื่อมกันสะสมจากเวลาเตรียมฉาก/ช่วงพักที่มีแค่ฝั่งภาพ
+    inputs, filters, labels = [], [], []
+    for k, c in enumerate(clip_starts):
+        path = seg_paths.get((c["scene"], c["seg"]))
+        if not path:
+            continue
+        ms = max(0, int(round(c["t"] * 1000)))
+        n = len(inputs) // 2
+        inputs += ["-i", str(path)]
+        filters.append(f"[{n}:a]adelay={ms}|{ms}[a{n}]")
+        labels.append(f"[a{n}]")
+    out = workdir / "aligned.mp3"
+    filters.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0[out]")
+    script_path = workdir / "align_filter.txt"
+    script_path.write_text(";".join(filters), encoding="utf-8")
+    subprocess.run(
+        [FFMPEG, "-y", *inputs, "-filter_complex_script", str(script_path), "-map", "[out]", str(out)],
+        check=True, capture_output=True,
+    )
+    return out
 
 
 def mix_bgm(narration_path: Path, bgm_path: Path, bgm_volume: float, workdir: Path) -> Path:
@@ -201,6 +234,7 @@ def record_video(script_text: str, durations, aspect: str, workdir: Path, gap: f
         page.goto(url)
         print("[render] กำลังเล่นและอัดภาพ...")
         page.wait_for_function("window.__renderComplete === true", timeout=0)
+        clip_starts = page.evaluate("window.__renderClipStarts || []")
         time.sleep(0.5)  # กันเฟรมท้ายขาด
         context.close()
         browser.close()
@@ -208,7 +242,7 @@ def record_video(script_text: str, durations, aspect: str, workdir: Path, gap: f
     webm_files = list(video_dir.glob("*.webm"))
     if not webm_files:
         raise RuntimeError("ไม่พบไฟล์วิดีโอที่ Playwright อัดไว้")
-    return webm_files[0]
+    return webm_files[0], clip_starts
 
 
 def mux(video_path: Path, audio_path: Path, out_path: Path):
@@ -227,9 +261,11 @@ def mux(video_path: Path, audio_path: Path, out_path: Path):
 
 
 def main():
+    global SERVER_URL
     ap = argparse.ArgumentParser(description="เรนเดอร์วิดีโอจากสคริปต์ซีนฝั่งเซิร์ฟเวอร์")
     ap.add_argument("script_file", help="ไฟล์ข้อความสคริปต์ซีน (ฟอร์แมตเดียวกับกล่องนำเข้าบนเว็บ)")
     ap.add_argument("--aspect", choices=["916", "169"], default="916", help="9:16 แนวตั้ง (ดีฟอลต์) หรือ 16:9 แนวนอน")
+    ap.add_argument("--server", default=SERVER_URL, help="URL ของ server.py ที่รันอยู่ (ดีฟอลต์ http://localhost:5173)")
     ap.add_argument("--out", default="render-out.mp4", help="ชื่อไฟล์วิดีโอผลลัพธ์")
     ap.add_argument("--voice", default=DEFAULT_VOICE, help="ชื่อเสียง edge-tts เช่น th-TH-PremwadeeNeural (หญิง) หรือ th-TH-NiwatNeural (ชาย)")
     ap.add_argument("--rate", default="+0%", help="ปรับความเร็วเสียงพากย์ เช่น +20%% / -10%%")
@@ -242,6 +278,7 @@ def main():
     ap.add_argument("--subsize", type=int, default=None, help="ขนาดฟอนต์ซับไตเติล (px)")
     ap.add_argument("--subweight", default=None, help="น้ำหนักฟอนต์ซับไตเติล เช่น 400/600/800")
     args = ap.parse_args()
+    SERVER_URL = args.server.rstrip("/")
 
     script_text = Path(args.script_file).read_text(encoding="utf-8")
     rows = parse_rows(script_text)
@@ -253,13 +290,15 @@ def main():
     with tempfile.TemporaryDirectory(prefix="hsm_render_") as tmp:
         workdir = Path(tmp)
         print(f"[1/3] พากย์เสียงจริง {len(rows)} ฉาก...")
-        audio_path, durations = build_audio_track(rows, workdir, args.voice, args.rate, args.pitch, args.gap)
-        if args.bgm:
-            print("[1b/3] ผสมเพลงพื้นหลัง...")
-            audio_path = mix_bgm(audio_path, Path(args.bgm).resolve(), args.bgm_volume, workdir)
+        audio_path, durations, seg_paths = build_audio_track(rows, workdir, args.voice, args.rate, args.pitch, args.gap)
 
         print("[2/3] อัดภาพผ่านเบราว์เซอร์ headless...")
-        video_path = record_video(script_text, durations, args.aspect, workdir, args.gap, subtitle)
+        video_path, clip_starts = record_video(script_text, durations, args.aspect, workdir, args.gap, subtitle)
+        if clip_starts:
+            audio_path = align_audio_to_video(seg_paths, clip_starts, workdir)
+        if args.bgm:
+            print("[2b/3] ผสมเพลงพื้นหลัง...")
+            audio_path = mix_bgm(audio_path, Path(args.bgm).resolve(), args.bgm_volume, workdir)
 
         print("[3/3] รวมภาพ+เสียงเป็น mp4...")
         out_path = Path(args.out).resolve()

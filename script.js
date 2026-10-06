@@ -858,7 +858,13 @@ function renderBattleArrows(scene) {
     if (lat > maxLat) maxLat = lat;
   });
   const bounds = new maplibregl.LngLatBounds([minLng, minLat], [maxLng, maxLat]);
-  const cam = map.cameraForBounds(bounds, { padding: 70 });
+  // ป้ายชื่อลูกศรวางกึ่งกลางที่จุดเริ่ม (a.from) — padding 70 เท่ากันทุกด้านทำให้ป้ายยาวๆโดนตัดครึ่งที่ขอบจอ (เห็นชัดในจอแนวตั้ง 9:16)
+  // เผื่อซ้าย/ขวาตามความกว้างป้ายจริงที่วาดแล้ว แต่ไม่เกิน 30% ของความกว้างจอ กันกรอบแคบจนซูมออกไกลเกินเหตุ
+  const canvasW = map.getContainer().clientWidth || 800;
+  let widestLabel = 0;
+  scene.arrows.forEach((_, i) => { widestLabel = Math.max(widestLabel, getBattleLabelMarker(i).getElement().offsetWidth || 0); });
+  const sidePad = Math.min(Math.max(70, widestLabel / 2 + 24), canvasW * 0.3);
+  const cam = map.cameraForBounds(bounds, { padding: { top: 70, bottom: 70, left: sidePad, right: sidePad } });
   return cam ? { center: cam.center, zoom: cam.zoom } : null;
 }
 
@@ -947,6 +953,13 @@ function compassBearing(a, b) {
   const dLng = b[0] - a[0];
   const dLat = b[1] - a[1];
   return ((Math.atan2(dLng, dLat) * 180) / Math.PI + 360) % 360;
+}
+
+// ขยับลองจิจูด lng ไป ±360 ให้ห่างจาก refLng ไม่เกิน 180° — เส้นทาง/กรอบกล้องจะเลือกทางสั้นข้ามเส้นแบ่งวันสากลแทนวนอ้อมโลก
+function unwrapLng(lng, refLng) {
+  while (lng - refLng > 180) lng -= 360;
+  while (lng - refLng < -180) lng += 360;
+  return lng;
 }
 
 function curvedLine(a, b) {
@@ -2720,7 +2733,8 @@ function goToScene(index, durationOverride) {
     if (lineSource) lineSource.setData(emptyFC());
   } else if (prevScene) {
     const a = [prevScene.lng, prevScene.lat];
-    const b = [scene.lng, scene.lat];
+    // ข้ามเส้นแบ่งวันสากล: เลือกทางสั้นกว่า (เช่น พอร์ตสมัธ → โตเกียว ต้องข้ามแปซิฟิก ไม่ใช่วนผ่านยุโรป-เอเชีย)
+    const b = [unwrapLng(scene.lng, prevScene.lng), scene.lat];
     markerFrom.setLngLat(a).addTo(map);
     const coords = curvedLine(a, b);
     if (lineSource) lineSource.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
@@ -2802,7 +2816,7 @@ function goToScene(index, durationOverride) {
   const doMoveCamera = () => moveCamera(scene, durationOverride, battleFrame || flyFrame, prevScene);
   const navDecision = resolveNavigationBridge(scene, prevScene);
   if (navDecision.bridge) {
-    const bounds = new maplibregl.LngLatBounds([prevScene.lng, prevScene.lat], [prevScene.lng, prevScene.lat]).extend([scene.lng, scene.lat]);
+    const bounds = new maplibregl.LngLatBounds([prevScene.lng, prevScene.lat], [prevScene.lng, prevScene.lat]).extend([unwrapLng(scene.lng, prevScene.lng), scene.lat]);
     const bridgeCam = map.cameraForBounds(bounds, { padding: 80 });
     if (bridgeCam) {
       // global เผยบริบทกว้างกว่า regional (ซูมออกมากกว่า+นานกว่านิดหน่อย) แต่ยังกันไม่ให้ซูมออกไกลเกินจำเป็น (เพดานต่ำสุด zoom 2)
@@ -3126,6 +3140,9 @@ async function narrationLoop() {
       const clipStartMs = performance.now();
       const getElapsedSec = clip.url ? () => el.ttsPlayer.currentTime : () => (performance.now() - clipStartMs) / 1000;
       runKaraoke(clip.text, clip.duration, myToken, getElapsedSec);
+      // โหมดเรนเดอร์: จดเวลาจริงที่แต่ละท่อนเริ่ม (นับจากเปิดหน้า ≈ เริ่มอัดวิดีโอ) ให้ render.py วางเสียงตรงเวลาจริง
+      // เดิมต่อเสียงติดกันเฉยๆ แต่ภาพมีเวลาเตรียมฉาก/พัก 180ms/holdBonus เพิ่ม → ภาพช้ากว่าเสียงสะสม ฉากท้ายโดนตัดทิ้ง
+      if (isRenderMode) (window.__renderClipStarts ||= []).push({ scene: idx, seg: ci, t: clipStartMs / 1000 });
       if (clip.url) await playAudioClip(clip.url, myToken);
       else await wait(clip.duration * 1000);
       if (myToken !== playToken) return;

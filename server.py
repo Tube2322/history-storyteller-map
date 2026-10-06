@@ -12,6 +12,7 @@ import hashlib
 import http.server
 import json
 import math
+import os
 import re
 import socketserver
 import sys
@@ -26,7 +27,7 @@ import edge_tts
 from shapely.geometry import shape, mapping
 from shapely.ops import unary_union
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 5173))
 DEFAULT_VOICE = "th-TH-PremwadeeNeural"
 ASSETS_DIR = Path("assets")
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")

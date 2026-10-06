@@ -4,8 +4,9 @@
     {
       "name": "static-server",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["server.py", "5173"],
-      "port": 5173
+      "runtimeArgs": ["server.py"],
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }
